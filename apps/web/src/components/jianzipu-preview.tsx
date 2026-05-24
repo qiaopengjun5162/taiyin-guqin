@@ -12,13 +12,13 @@ export function JianzipuPreview({ state }: { state: JianziState }) {
         <span className="absolute top-1 left-1 text-xl font-bold text-amber-950 dark:text-amber-200">
           {state.leftFinger ?? ""}
         </span>
-        {/* 左下：徽位 */}
+        {/* 左下：右手指法 */}
         <span className="absolute bottom-1 left-1 text-lg font-bold text-amber-950 dark:text-amber-200">
-          {state.hui ?? ""}
-        </span>
-        {/* 右上：右手指法 */}
-        <span className="absolute top-1 right-1 text-xl font-bold text-amber-950 dark:text-amber-200">
           {state.rightAction ?? ""}
+        </span>
+        {/* 右上：徽位 */}
+        <span className="absolute top-1 right-1 text-xl font-bold text-amber-950 dark:text-amber-200">
+          {state.hui ?? ""}
         </span>
         {/* 右下：弦序 + 分 */}
         <span className="absolute bottom-1 right-1 text-lg font-bold text-amber-950 dark:text-amber-200">

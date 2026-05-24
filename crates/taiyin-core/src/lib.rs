@@ -117,6 +117,67 @@ pub enum Tuning {
 }
 
 // ──────────────────────────────────────────────
+// 音色与复合指法
+// ──────────────────────────────────────────────
+
+/// 音色类型——决定左手的触弦方式。
+///
+/// 古琴三种基本音色各有其独特的触弦技巧和音色特征。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub enum NoteType {
+    /// 散音（空弦）。左手不按弦，弹奏空弦得声。
+    /// 音色松沉旷远，是古琴最基本的音色。
+    #[serde(rename = "散")]
+    SanYin,
+    /// 泛音。左手轻触徽位，右手同时弹弦。
+    /// 音色清亮空灵，古琴泛音有"天籁"之誉。
+    #[serde(rename = "泛")]
+    FanYin,
+    /// 按音（走手音）。左手按弦得声，是最具表现力的音色。
+    /// 按音弹法在减字谱中一般不另行注明，为默认音色。
+    #[serde(rename = "按")]
+    AnYin,
+}
+
+impl Default for NoteType {
+    fn default() -> Self {
+        Self::AnYin
+    }
+}
+
+/// 复合右手指法——右手八法的组合与变体。
+///
+/// 古琴右手指法极为丰富，基本八法（擘托抹挑勾剔打摘）
+/// 可组合出多种复合指法，用于快速连奏、双音、滚拂等效果。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub enum CompoundAction {
+    /// 历：食指连挑两弦或三弦（节奏较快）
+    #[serde(rename = "历")]
+    Li,
+    /// 蠲：同一弦上急速抹勾，连续出二声
+    #[serde(rename = "蠲")]
+    Juan,
+    /// 轮：同一弦上急速摘剔挑，连续出三声
+    #[serde(rename = "轮")]
+    Lun,
+    /// 拨：食中名三指相并微屈，同时斜向左方快速拨入两根弦
+    #[serde(rename = "拨")]
+    Bo,
+    /// 剌：与"拨"方向相反，向外弹出两根弦
+    #[serde(rename = "剌")]
+    La,
+    /// 撮：双音弹法。小撮（隔一或两根弦）和大撮（隔三或四根弦）
+    #[serde(rename = "撮")]
+    Cuo,
+    /// 滚：名指自内向外，连续摘四至七声，连成一片
+    #[serde(rename = "滚")]
+    Gun,
+    /// 拂：食指自外向内，连续抹四至七声，连成一片
+    #[serde(rename = "拂")]
+    Fu,
+}
+
+// ──────────────────────────────────────────────
 // 核心音符结构
 // ──────────────────────────────────────────────
 
@@ -126,10 +187,11 @@ pub enum Tuning {
 ///
 /// ```text
 /// ┌───────┐
+/// │ 音色   │  ← note_type（散/泛/按）
 /// │ 左手   │  ← left_finger
 /// │ 徽位   │  ← hui
 /// ├───────┤
-/// │ 右手   │  ← right_action
+/// │ 右手   │  ← right_action / compound
 /// │ 弦序   │  ← string_number
 /// └───────┘
 ///      ↑ ornaments 在音符四角标记
@@ -137,20 +199,27 @@ pub enum Tuning {
 ///
 /// # 示例
 ///
-/// - **大九挑七**：`left_finger = Da`, `hui = 9徽`,
+/// - **大九挑七**：`left_finger = Da`, `hui = 9徽, fen = None`,
 ///   `right_action = 挑`, `string_number = 7`
-/// - **散音勾三**：`left_finger = None`, `hui = None`,
-///   `right_action = 勾`, `string_number = 3`
+/// - **散音勾三**：`note_type = SanYin`, `left_finger = None`,
+///   `hui = None`, `right_action = 勾`, `string_number = 3`
+/// - **泛音挑五**：`note_type = FanYin`, `left_finger = Da`,
+///   `hui = 10徽`, `right_action = 挑`, `string_number = 5`
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct GuqinNote {
-    /// 左手手指。`None` + `hui = None` = 散音。
+    /// 音色类型（散/泛/按）。默认按音。
+    #[serde(default)]
+    pub note_type: NoteType,
+    /// 左手手指。`None` + `hui = None` 且 `note_type = SanYin` 为散音。
     pub left_finger: Option<LeftFinger>,
-    /// 徽位位置。`None` + `left_finger = None` = 散音。
+    /// 徽位位置。`None` + `left_finger = None` 且 `note_type = SanYin` 为散音。
     pub hui: Option<HuiPosition>,
-    /// 右手指法（必填）。
+    /// 右手指法（基本八法之一，必填）。
     pub right_action: RightAction,
     /// 弦序（1..=7）。
     pub string_number: u8,
+    /// 复合右手指法（如历、轮、滚、拂等），非必填。
+    pub compound: Option<CompoundAction>,
     /// 装饰音列表（吟猱绰注等）。按出现顺序存储。
     pub ornaments: Vec<Ornament>,
     /// 时值。以四分音符为 1.0，八分音符为 0.5。
@@ -198,13 +267,15 @@ pub struct GuqinScore {
 impl GuqinNote {
     /// 创建一个散音（空弦音）。
     ///
-    /// 散音不需要左手动作，是古琴最基本的音色。
+    /// 散音不需要左手动作，是古琴最基本的音色。`note_type` 自动设为 `SanYin`。
     pub fn open_string(right_action: RightAction, string_number: u8) -> Self {
         Self {
+            note_type: NoteType::SanYin,
             left_finger: None,
             hui: None,
             right_action,
             string_number,
+            compound: None,
             ornaments: Vec::new(),
             duration: 1.0,
         }
@@ -212,7 +283,7 @@ impl GuqinNote {
 
     /// 创建一个完整的按音。
     ///
-    /// 按音是古琴最具表现力的音色，需要左手按弦确定音高。
+    /// 按音是古琴最具表现力的音色，需要左手按弦确定音高。`note_type` 自动设为 `AnYin`。
     pub fn pressed(
         left_finger: LeftFinger,
         hui: HuiPosition,
@@ -220,10 +291,33 @@ impl GuqinNote {
         string_number: u8,
     ) -> Self {
         Self {
+            note_type: NoteType::AnYin,
             left_finger: Some(left_finger),
             hui: Some(hui),
             right_action,
             string_number,
+            compound: None,
+            ornaments: Vec::new(),
+            duration: 1.0,
+        }
+    }
+
+    /// 创建一个泛音。
+    ///
+    /// 泛音需要左手轻触徽位、右手同时弹弦。`note_type` 自动设为 `FanYin`。
+    pub fn fan_yin(
+        left_finger: LeftFinger,
+        hui: HuiPosition,
+        right_action: RightAction,
+        string_number: u8,
+    ) -> Self {
+        Self {
+            note_type: NoteType::FanYin,
+            left_finger: Some(left_finger),
+            hui: Some(hui),
+            right_action,
+            string_number,
+            compound: None,
             ornaments: Vec::new(),
             duration: 1.0,
         }
@@ -231,16 +325,22 @@ impl GuqinNote {
 
     /// 检查是否为散音。
     pub fn is_open(&self) -> bool {
-        self.left_finger.is_none() && self.hui.is_none()
+        matches!(self.note_type, NoteType::SanYin)
     }
 
-    /// 设置装饰音并返回自身（链式调用用）。
+    /// 设置复合指法并返回自身（链式调用）。
+    pub fn with_compound(mut self, action: CompoundAction) -> Self {
+        self.compound = Some(action);
+        self
+    }
+
+    /// 设置装饰音并返回自身（链式调用）。
     pub fn with_ornaments(mut self, ornaments: Vec<Ornament>) -> Self {
         self.ornaments = ornaments;
         self
     }
 
-    /// 设置时值并返回自身（链式调用用）。
+    /// 设置时值并返回自身（链式调用）。
     pub fn with_duration(mut self, duration: f32) -> Self {
         self.duration = duration;
         self
@@ -275,8 +375,10 @@ mod tests {
     fn test_open_string_note() {
         let note = GuqinNote::open_string(RightAction::Tiao, 5);
         assert!(note.is_open());
+        assert_eq!(note.note_type, NoteType::SanYin);
         assert_eq!(note.string_number, 5);
         assert_eq!(note.duration, 1.0);
+        assert!(note.compound.is_none());
     }
 
     #[test]
@@ -288,8 +390,22 @@ mod tests {
             1,
         );
         assert!(!note.is_open());
+        assert_eq!(note.note_type, NoteType::AnYin);
         assert_eq!(note.left_finger, Some(LeftFinger::Da));
         assert_eq!(note.hui, Some(HuiPosition { hui: 9, fen: None }));
+    }
+
+    #[test]
+    fn test_fan_yin_note() {
+        let note = GuqinNote::fan_yin(
+            LeftFinger::Da,
+            HuiPosition { hui: 10, fen: None },
+            RightAction::Tiao,
+            5,
+        );
+        assert!(!note.is_open());
+        assert_eq!(note.note_type, NoteType::FanYin);
+        assert_eq!(note.left_finger, Some(LeftFinger::Da));
     }
 
     #[test]
@@ -301,9 +417,11 @@ mod tests {
             7,
         )
         .with_ornaments(vec![Ornament::Yin])
+        .with_compound(CompoundAction::Cuo)
         .with_duration(2.0);
 
         assert!(note.ornaments.contains(&Ornament::Yin));
+        assert_eq!(note.compound, Some(CompoundAction::Cuo));
         assert_eq!(note.duration, 2.0);
     }
 
@@ -313,6 +431,41 @@ mod tests {
         let json = serde_json::to_string(&note).unwrap();
         let deserialized: GuqinNote = serde_json::from_str(&json).unwrap();
         assert_eq!(note, deserialized);
+    }
+
+    #[test]
+    fn test_note_type_deserialize() {
+        // 散音
+        let json = r#"{"note_type":"散","left_finger":null,"hui":null,"right_action":"Tiao","string_number":5,"compound":null,"ornaments":[],"duration":1.0}"#;
+        let note: GuqinNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.note_type, NoteType::SanYin);
+        assert!(note.is_open());
+
+        // 按音
+        let json = r#"{"note_type":"按","left_finger":"Da","hui":{"hui":9,"fen":null},"right_action":"Gou","string_number":1,"compound":null,"ornaments":[],"duration":1.0}"#;
+        let note: GuqinNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.note_type, NoteType::AnYin);
+
+        // 泛音
+        let json = r#"{"note_type":"泛","left_finger":"Da","hui":{"hui":10,"fen":null},"right_action":"Tiao","string_number":5,"compound":null,"ornaments":[],"duration":1.0}"#;
+        let note: GuqinNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.note_type, NoteType::FanYin);
+    }
+
+    #[test]
+    fn test_compound_action_serialization() {
+        let note = GuqinNote::pressed(
+            LeftFinger::Da,
+            HuiPosition { hui: 7, fen: None },
+            RightAction::Gou,
+            1,
+        )
+        .with_compound(CompoundAction::Gun);
+        let json = serde_json::to_value(&note).unwrap();
+        assert_eq!(json.get("compound").unwrap(), "滚");
+
+        let back: GuqinNote = serde_json::from_value(json).unwrap();
+        assert_eq!(back.compound, Some(CompoundAction::Gun));
     }
 
     #[test]
@@ -342,7 +495,16 @@ mod tests {
         // 测试散音在 JSON 中 left_finger 和 hui 同时为 null
         let note = GuqinNote::open_string(RightAction::Gou, 3);
         let json = serde_json::to_value(&note).unwrap();
+        assert_eq!(json.get("note_type").unwrap(), "散");
         assert!(json.get("left_finger").unwrap().is_null());
         assert!(json.get("hui").unwrap().is_null());
+    }
+
+    #[test]
+    fn test_backward_compat_no_note_type() {
+        // 旧版 JSON 没有 note_type 字段，deserialize 时应该默认 AnYin
+        let json = r#"{"left_finger":"Da","hui":{"hui":9,"fen":null},"right_action":"Gou","string_number":1,"compound":null,"ornaments":[],"duration":1.0}"#;
+        let note: GuqinNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.note_type, NoteType::AnYin);
     }
 }

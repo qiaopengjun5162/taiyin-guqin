@@ -6,19 +6,27 @@ import {
   DEFAULT_KEYBOARD,
   createEmptyState,
   isComplete,
+  type NoteType,
 } from "@/lib/types";
 import { JianzipuPreview } from "./jianzipu-preview";
 
-type Section = "leftFinger" | "hui" | "fen" | "rightAction" | "stringNumber";
+type Section =
+  | "toneType"
+  | "leftFinger"
+  | "hui"
+  | "fen"
+  | "rightAction"
+  | "stringNumber";
 
 /**
  * 减字键盘主组件。
  *
- * 分四组按钮，依次点击拼装一个完整减字：
- *   1. 左手手指（大/名/中/食/跪）
- *   2. 徽位 + 分（一~十徽 + 三分/六分/八分）
- *   3. 右手指法（挑/勾/抹/剔...）
- *   4. 弦序（一~七）
+ * 流程：先选音色（散/泛/按），再按顺序拼装：
+ *
+ *   ┌───────┐
+ *   │ 左手  │ 徽位  │   散音省略左手和徽位
+ *   │ 右手  │ 弦序  │
+ *   └───────┘
  *
  * 顶部实时显示拼装中的减字。点击"重置"清除所有选择。
  */
@@ -55,29 +63,43 @@ export function JianzipuKeyboard() {
 
       {/* ── 按键区 ── */}
       <div className="w-full space-y-4">
-        {/* 左手手指 */}
+        {/* 音色 */}
         <SectionGroup
-          label="左手"
-          items={DEFAULT_KEYBOARD.leftFingers}
-          active={state.leftFinger}
-          onSelect={(v) => handleSelect("leftFinger", v)}
+          label="音色"
+          items={DEFAULT_KEYBOARD.toneTypes}
+          active={state.toneType}
+          onSelect={(v) => handleSelect("toneType", v as NoteType)}
         />
 
-        {/* 徽位 */}
-        <SectionGroup
-          label="徽位"
-          items={DEFAULT_KEYBOARD.huiPositions}
-          active={state.hui}
-          onSelect={(v) => handleSelect("hui", v)}
-        />
+        {/* 左手手指（散音时隐藏） */}
+        {state.toneType !== "散" && (
+          <SectionGroup
+            label="左手"
+            items={DEFAULT_KEYBOARD.leftFingers}
+            active={state.leftFinger}
+            onSelect={(v) => handleSelect("leftFinger", v)}
+          />
+        )}
+
+        {/* 徽位（散音时隐藏） */}
+        {state.toneType !== "散" && (
+          <SectionGroup
+            label="徽位"
+            items={DEFAULT_KEYBOARD.huiPositions}
+            active={state.hui}
+            onSelect={(v) => handleSelect("hui", v)}
+          />
+        )}
 
         {/* 分 */}
-        <SectionGroup
-          label="分"
-          items={DEFAULT_KEYBOARD.fenOptions}
-          active={state.fen}
-          onSelect={(v) => handleSelect("fen", v)}
-        />
+        {state.toneType !== "散" && (
+          <SectionGroup
+            label="分"
+            items={DEFAULT_KEYBOARD.fenOptions}
+            active={state.fen}
+            onSelect={(v) => handleSelect("fen", v)}
+          />
+        )}
 
         {/* 右手指法 */}
         <SectionGroup
