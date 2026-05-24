@@ -60,6 +60,6 @@ jobs:
       - name: Check pnpm version
         run: pnpm --version
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
       - name: Build
         run: pnpm --filter web build
