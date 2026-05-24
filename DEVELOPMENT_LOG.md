@@ -51,7 +51,12 @@
 - https://github.com/neuralfirings/guqincomposer
 - https://www.npmjs.com/package/jianzipu
 
-### CI 修复
+### CI 修复 (2次)
+
+1. lockfile 路径修正、workspace 配置迁移
+2. 添加根 .npmrc + `pnpm install --no-frozen-lockfile` + pnpm version 检查
+   - 问题：CI 中 pnpm 拒绝执行 sharp/unrs-resolver 的 postinstall 脚本
+   - 尝试：`onlyBuiltDependencies` 在 pnpm-workspace.yaml + .npmrc + CI 中显式配置
 
 - CI workflow lockfile 路径修正（根目录 `pnpm-lock.yaml`）
 - 删除 `apps/web/.npmrc`（配置已迁移到根 `pnpm-workspace.yaml`）
