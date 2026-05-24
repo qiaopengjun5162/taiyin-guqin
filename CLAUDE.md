@@ -1,5 +1,8 @@
 # 太音 (Taiyin) · CLAUDE.md
 
+- **GitHub**: https://github.com/qiaopengjun5162/taiyin-guqin
+- **用户**: qiaopengjun5162 (活跃于 Rust/Solana/Web3 生态)
+
 ## 项目概览
 
 古琴减字谱数字化工具与传习平台。核心壁垒是手机端减字谱拼装输入法 + AI 简谱转减字。

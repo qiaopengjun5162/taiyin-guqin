@@ -23,6 +23,12 @@
 - 散音用 `left_finger = None + hui = None` 表达
 - 传统减字谱不记节奏，但传习平台需要，所以 `duration` 为必填
 
+### GitHub 仓库
+
+- 仓库：`qiaopengjun5162/taiyin-guqin`
+- 已推送 main 分支
+- Git workflow: 直接推送 main（单人开发阶段），后续视协作情况考虑 PR 流程
+
 ### 下一步
 
 - 减字键盘前端组件（CSS 拼装渲染）
