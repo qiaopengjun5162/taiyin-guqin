@@ -35,6 +35,22 @@
 - README.en.md — 英文项目文档
 - CONTRIBUTING.md — 贡献指南
 
+### 竞品调研 (2026-05-24)
+
+调研了现有减字谱电子化开源项目：
+
+1. **alephpi/jianzipu** — Python 生成 OpenType 字体方案，用 GSUB 特性拼装减字
+2. **neuralfirings/guqincomposer** — NLTabs 作曲系统，LilyPond 渲染
+3. **JianZiPu.otf** — OFL 开源减字字体
+
+关键发现：**没有手机端交互输入方案**。我们的 CSS 拼装键盘 + Rust WASM 方向是蓝海。
+现有项目的语法树结构与我们的 GuqinNote 数据模型高度匹配，验证了设计正确性。
+
+参考链接：
+- https://github.com/alephpi/jianzipu
+- https://github.com/neuralfirings/guqincomposer
+- https://www.npmjs.com/package/jianzipu
+
 ### 下一步
 
 - 减字键盘前端组件（CSS 拼装渲染）
