@@ -63,6 +63,22 @@
 - web job 移除 `working-directory`，`pnpm install` 在 workspace 根运行
 - 使用 `pnpm --filter web build` 构建前端
 
+### 数据模型完善 (2026-05-24)
+
+根据《琴学入门》和《琴学备要》等传统文献修正数据模型：
+
+1. **NoteType 枚举**：新增散/泛/按三种音色类型，GuqinNote 增加 note_type 字段
+2. **CompoundAction 枚举**：完整补充 18 种复合右手指法（历/蠲/轮/半轮/背锁/短锁/长锁/全扶/拨/剌/泼剌/撮/双弹/打圆/索铃/滚/拂/如一）
+3. **左手指法偏旁修正**：名→夕、食→亻，采用传统减字偏旁写法
+4. **预览布局修正**：左上=指法、右上=徽位、左下=右手、右下=弦序
+
+### 后续修复与 CI 通过
+
+1. justfile 修复：补充 cargo/pnpm 变量定义，{{cargo}}/{{pnpm}} 引用恢复正常
+2. CI pnpm 修复：`--ignore-scripts` 跳过 sharp/unrs-resolver postinstall，CI 最终通过
+3. Node.js 20 废弃警告：添加 FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 环境变量
+
+
 ### 下一步
 
 - 减字键盘前端组件（CSS 拼装渲染）

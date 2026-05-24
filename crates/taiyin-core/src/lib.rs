@@ -149,6 +149,9 @@ impl Default for NoteType {
 ///
 /// 古琴右手指法极为丰富，基本八法（擘托抹挑勾剔打摘）
 /// 可组合出多种复合指法，用于快速连奏、双音、滚拂等效果。
+///
+/// 每个指法都配有传统"手势"名称（如"游鱼摆尾"=泼剌、"飞龙拿云"=撮），
+/// 用于教学传承。手势名称暂不纳入数据模型，属于教学元信息。
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub enum CompoundAction {
     /// 历：食指连挑两弦或三弦（节奏较快）
@@ -160,21 +163,51 @@ pub enum CompoundAction {
     /// 轮：同一弦上急速摘剔挑，连续出三声
     #[serde(rename = "轮")]
     Lun,
+    /// 半轮：与轮动作相同，但只用中指和无名指（摘剔）
+    #[serde(rename = "半轮")]
+    BanLun,
+    /// 背锁：同一弦上剔、抹、挑依次弹出，共三声
+    #[serde(rename = "背锁")]
+    BeiSuo,
+    /// 短锁：同一弦上先抹勾，再接背锁，共五声
+    #[serde(rename = "短锁")]
+    DuanSuo,
+    /// 长锁：同一弦上先抹挑抹勾，再接背锁
+    #[serde(rename = "长锁")]
+    ChangSuo,
+    /// 全扶：食中名三指各入一弦，同时弹奏出一声
+    #[serde(rename = "全扶")]
+    QuanFu,
     /// 拨：食中名三指相并微屈，同时斜向左方快速拨入两根弦
     #[serde(rename = "拨")]
     Bo,
     /// 剌：与"拨"方向相反，向外弹出两根弦
     #[serde(rename = "剌")]
     La,
+    /// 泼剌：先拨后剌的连作，是滚拂之外的另一种扫弦方式
+    #[serde(rename = "泼剌")]
+    PoLa,
     /// 撮：双音弹法。小撮（隔一或两根弦）和大撮（隔三或四根弦）
     #[serde(rename = "撮")]
     Cuo,
+    /// 双弹：同一弦上依次迅速弹出两音，通常是抹勾
+    #[serde(rename = "双弹")]
+    ShuangTan,
+    /// 打圆：涉及两根弦发出七个音的复合指法
+    #[serde(rename = "打圆")]
+    DaYuan,
+    /// 索铃：左手依次轻滑过数弦，右手同时轻挑，双手动作严格平行
+    #[serde(rename = "索铃")]
+    SuoLing,
     /// 滚：名指自内向外，连续摘四至七声，连成一片
     #[serde(rename = "滚")]
     Gun,
     /// 拂：食指自外向内，连续抹四至七声，连成一片
     #[serde(rename = "拂")]
     Fu,
+    /// 如一：两根琴弦同时发声（和弦性质）
+    #[serde(rename = "如一")]
+    RuYi,
 }
 
 // ──────────────────────────────────────────────
