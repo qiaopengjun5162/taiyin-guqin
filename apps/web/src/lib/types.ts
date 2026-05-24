@@ -46,7 +46,8 @@ export const DEFAULT_KEYBOARD: KeyboardConfig = {
   leftFingers: ["大", "夕", "中", "亻", "跪"],
   huiPositions: ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"],
   fenOptions: ["三分", "六分", "八分"],
-  rightActions: ["挑", "勾", "抹", "剔", "托", "擘", "打", "摘"],
+  // 传统减字偏旁写法：乇=托 尸=劈/擘 木=抹 乚=挑 勹=勾 剔 丁=打 倽=摘
+  rightActions: ["乇", "尸", "木", "乚", "勹", "剔", "丁", "倽"],
   stringNumbers: ["一", "二", "三", "四", "五", "六", "七"],
 };
 
