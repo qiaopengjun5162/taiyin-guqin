@@ -1,0 +1,8 @@
+node_modules
+target
+.next
+*.wasm
+*.local
+.DS_Store
+.env
+.env.local

@@ -1,0 +1,5 @@
+[files]
+extend-exclude = ["target/*", "node_modules/*", ".next/*"]
+
+[default.extend-identifiers]
+taiyin = "taiyin"
