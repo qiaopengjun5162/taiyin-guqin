@@ -24,7 +24,13 @@ export function JianzipuPreview({ state }: { state: JianziState }) {
         <span className="absolute bottom-1 right-1 text-lg font-bold text-amber-950 dark:text-amber-200">
           {state.stringNumber ?? ""}
         </span>
-        {/* 分标记（小号，右上角徽位旁边） */}
+        {/* 节奏模式标记 */}
+        {state.rhythmMode && (
+          <span className="absolute -bottom-3 left-1 text-xs font-mono text-amber-500 dark:text-amber-500">
+            {state.rhythmMode}
+          </span>
+        )}
+        {/* 分标记（小号，左上角徽位旁边） */}
         {state.fen && (
           <span className="absolute top-0 left-6 text-xs text-amber-700 dark:text-amber-400">
             {state.fen}

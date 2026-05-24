@@ -145,6 +145,41 @@ impl Default for NoteType {
     }
 }
 
+/// 节奏模式——决定 `duration` 字段的解释方式。
+///
+/// 古琴减字谱传统上不标记精确节奏，其节奏信息通过指法本身、
+/// 文字提示（入拍/入慢/跌宕）以及句读划分来传达。
+/// 本文持"传习平台"立场，对初学者提供节拍引导，
+/// 同时保留传统琴曲的自由律动。
+///
+/// | 模式 | 传统标记 | 解释 |
+/// |------|---------|------|
+/// | `Strict` | 入拍/入调 | 严格节拍，duration = 精确时值 |
+/// | `Free` | 散板/入乱 | 自由节奏，duration 仅指示相对长短 |
+/// | `Drop` | 跌宕 | 变换拍子，duration 近似但可浮动 |
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub enum RhythmMode {
+    /// 节拍模式。适用入拍、入调段落。
+    /// duration 以四分音符=1.0 精确解释。
+    #[serde(rename = "板")]
+    Strict,
+    /// 散板/自由节奏。适用散起、入乱段落。
+    /// duration 仅表示音符之间的相对长度关系（长/短），
+    /// 演奏者按自然呼吸和气口处理。
+    #[serde(rename = "散")]
+    Free,
+    /// 跌宕/变换拍子。适用跌宕、入慢段落。
+    /// duration 近似但允许弹性伸缩，在快慢交替中保持气韵流畅。
+    #[serde(rename = "宕")]
+    Drop,
+}
+
+impl Default for RhythmMode {
+    fn default() -> Self {
+        Self::Strict
+    }
+}
+
 /// 复合右手指法——右手八法的组合与变体。
 ///
 /// 古琴右手指法极为丰富，基本八法（擘托抹挑勾剔打摘）
@@ -228,7 +263,15 @@ pub enum CompoundAction {
 /// │ 弦序   │  ← string_number
 /// └───────┘
 ///      ↑ ornaments 在音符四角标记
+///      ↑ rhythm_mode 决定 duration 解释方式（板/散/宕）
 /// ```
+///
+/// # 节奏模式
+///
+/// 传统减字谱不记精确节奏，而是通过文字标记（入拍/入慢/跌宕）、
+/// 指法本身（轮、打圆等）和句读（小息/大息）传递节奏信息。
+/// 初学传习场景下 `duration` 可作精确节拍引导；
+/// 传统琴曲场景下 `rhythm_mode = Free/Drop` 保留自由律动。
 ///
 /// # 示例
 ///
@@ -255,8 +298,13 @@ pub struct GuqinNote {
     pub compound: Option<CompoundAction>,
     /// 装饰音列表（吟猱绰注等）。按出现顺序存储。
     pub ornaments: Vec<Ornament>,
+    /// 节奏模式——解释 `duration` 的方式。
+    /// `Strict`(板) = 精确节拍，`Free`(散) = 自由节奏，`Drop`(宕) = 跌宕。
+    #[serde(default)]
+    pub rhythm_mode: RhythmMode,
     /// 时值。以四分音符为 1.0，八分音符为 0.5。
-    /// 由曲谱的 `beat_numerator` / `beat_denominator` 解释实际含义。
+    /// 严格节拍下由曲谱的 `beat_numerator` / `beat_denominator` 解释实际含义；
+    /// 散板/跌宕下仅表示相对长短。
     pub duration: f32,
 }
 
@@ -310,6 +358,7 @@ impl GuqinNote {
             string_number,
             compound: None,
             ornaments: Vec::new(),
+            rhythm_mode: RhythmMode::default(),
             duration: 1.0,
         }
     }
@@ -331,6 +380,7 @@ impl GuqinNote {
             string_number,
             compound: None,
             ornaments: Vec::new(),
+            rhythm_mode: RhythmMode::default(),
             duration: 1.0,
         }
     }
@@ -352,6 +402,7 @@ impl GuqinNote {
             string_number,
             compound: None,
             ornaments: Vec::new(),
+            rhythm_mode: RhythmMode::default(),
             duration: 1.0,
         }
     }
@@ -364,6 +415,12 @@ impl GuqinNote {
     /// 设置复合指法并返回自身（链式调用）。
     pub fn with_compound(mut self, action: CompoundAction) -> Self {
         self.compound = Some(action);
+        self
+    }
+
+    /// 设置节奏模式并返回自身（链式调用）。
+    pub fn with_rhythm_mode(mut self, mode: RhythmMode) -> Self {
+        self.rhythm_mode = mode;
         self
     }
 
@@ -539,5 +596,53 @@ mod tests {
         let json = r#"{"left_finger":"Da","hui":{"hui":9,"fen":null},"right_action":"Gou","string_number":1,"compound":null,"ornaments":[],"duration":1.0}"#;
         let note: GuqinNote = serde_json::from_str(json).unwrap();
         assert_eq!(note.note_type, NoteType::AnYin);
+    }
+
+    #[test]
+    fn test_rhythm_mode_default() {
+        let note = GuqinNote::open_string(RightAction::Tiao, 5);
+        assert_eq!(note.rhythm_mode, RhythmMode::Strict);
+    }
+
+    #[test]
+    fn test_rhythm_mode_builder() {
+        let note = GuqinNote::pressed(
+            LeftFinger::Da,
+            HuiPosition { hui: 9, fen: None },
+            RightAction::Gou,
+            1,
+        )
+        .with_rhythm_mode(RhythmMode::Free);
+
+        assert_eq!(note.rhythm_mode, RhythmMode::Free);
+    }
+
+    #[test]
+    fn test_rhythm_mode_serialization() {
+        // 序列化
+        let note = GuqinNote::open_string(RightAction::Gou, 3)
+            .with_rhythm_mode(RhythmMode::Drop);
+        let json = serde_json::to_value(&note).unwrap();
+        assert_eq!(json.get("rhythm_mode").unwrap(), "宕");
+
+        // 反序列化
+        let back: GuqinNote = serde_json::from_value(json).unwrap();
+        assert_eq!(back.rhythm_mode, RhythmMode::Drop);
+
+        // 各模式 JSON 标签
+        let strict_json = serde_json::to_value(RhythmMode::Strict).unwrap();
+        assert_eq!(strict_json, "板");
+        let free_json = serde_json::to_value(RhythmMode::Free).unwrap();
+        assert_eq!(free_json, "散");
+        let drop_json = serde_json::to_value(RhythmMode::Drop).unwrap();
+        assert_eq!(drop_json, "宕");
+    }
+
+    #[test]
+    fn test_backward_compat_no_rhythm_mode() {
+        // 旧版 JSON 没有 rhythm_mode 字段，deserialize 时应默认 Strict
+        let json = r#"{"note_type":"散","left_finger":null,"hui":null,"right_action":"Tiao","string_number":5,"compound":null,"ornaments":[],"duration":1.0}"#;
+        let note: GuqinNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.rhythm_mode, RhythmMode::Strict);
     }
 }

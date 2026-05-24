@@ -7,11 +7,13 @@ import {
   createEmptyState,
   isComplete,
   type NoteType,
+  type RhythmMode,
 } from "@/lib/types";
 import { JianzipuPreview } from "./jianzipu-preview";
 
 type Section =
   | "toneType"
+  | "rhythmMode"
   | "leftFinger"
   | "hui"
   | "fen"
@@ -69,6 +71,14 @@ export function JianzipuKeyboard() {
           items={DEFAULT_KEYBOARD.toneTypes}
           active={state.toneType}
           onSelect={(v) => handleSelect("toneType", v as NoteType)}
+        />
+
+        {/* 节奏 */}
+        <SectionGroup
+          label="节奏"
+          items={DEFAULT_KEYBOARD.rhythmModes}
+          active={state.rhythmMode}
+          onSelect={(v) => handleSelect("rhythmMode", v as RhythmMode)}
         />
 
         {/* 左手手指（散音时隐藏） */}
