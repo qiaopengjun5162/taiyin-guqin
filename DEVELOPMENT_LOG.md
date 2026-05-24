@@ -51,6 +51,13 @@
 - https://github.com/neuralfirings/guqincomposer
 - https://www.npmjs.com/package/jianzipu
 
+### CI 修复
+
+- CI workflow lockfile 路径修正（根目录 `pnpm-lock.yaml`）
+- 删除 `apps/web/.npmrc`（配置已迁移到根 `pnpm-workspace.yaml`）
+- web job 移除 `working-directory`，`pnpm install` 在 workspace 根运行
+- 使用 `pnpm --filter web build` 构建前端
+
 ### 下一步
 
 - 减字键盘前端组件（CSS 拼装渲染）
