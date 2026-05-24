@@ -29,6 +29,12 @@
 - 已推送 main 分支
 - Git workflow: 直接推送 main（单人开发阶段），后续视协作情况考虑 PR 流程
 
+### 文档
+
+- README.md — 中文项目文档
+- README.en.md — 英文项目文档
+- CONTRIBUTING.md — 贡献指南
+
 ### 下一步
 
 - 减字键盘前端组件（CSS 拼装渲染）
