@@ -1,9 +1,9 @@
 "use client";
 
 import type { JianziState } from "@/lib/types";
-import { SVG_PATHS, FONT_UPEM } from "@/lib/svg-paths";
+import { SVG_PATHS } from "@/lib/svg-paths";
 
-// ── JianziState → SVG_PATHS key 映射 ─────────────────
+// ── mapped into svg path keys ──────────────────
 
 const HUI_MAP: Record<string, string> = {
   "一": "hui_1", "二": "hui_2", "三": "hui_3", "四": "hui_4", "五": "hui_5",
@@ -13,18 +13,16 @@ const HUI_MAP: Record<string, string> = {
 
 const FEN_MAP: Record<string, string> = {
   "半": "fen_ban",
+  "三分": "fen_3",
+  "六分": "fen_6",
+  "八分": "fen_8",
 };
 
 const LEFT_FINGER_MAP: Record<string, string | null> = {
-  "大": "lh_da",
-  "夕": "lh_ming",
-  "名": "lh_ming",
-  "中": "lh_zhong",
-  "亻": null,  // 无 SVG path → 降级为 <text>
-  "跪": "lh_gui",
+  "大": "lh_da", "夕": "lh_ming", "名": "lh_ming",
+  "中": "lh_zhong", "亻": null, "跪": "lh_gui",
 };
 
-// 右手动作：keyboard 偏旁或 GSUB 全形 → SVG path key
 const RIGHT_ACTION_MAP: Record<string, string | null> = {
   "勾": "rh_gou", "勹": "rh_gou",
   "挑": "rh_tiao", "乚": "rh_tiao",
@@ -41,53 +39,36 @@ const STRING_MAP: Record<string, string> = {
   "五": "str_5", "六": "str_6", "七": "str_7",
 };
 
-// ── 部件渲染 ─────────────────────────────────────
+// ── glyph rendering helper ────────────────────
 
-interface PartProps {
-  pathKey: string;
-  cx: number;      // 目标居中 x（viewBox 坐标）
-  cy: number;      // 目标居中 y（viewBox 坐标）
-  maxW: number;    // 最大允许宽度
-  maxH: number;    // 最大允许高度
-  padding?: number; // 缩放内边距系数 (0-1)
+interface BBox {
+  xMin: number; yMin: number; xMax: number; yMax: number;
 }
 
-/** 在 viewBox 内渲染一个 SVG path 积木，居中于 (cx,cy)，缩放适配 maxW×maxH */
-function GlyphPart({ pathKey, cx, cy, maxW, maxH, padding = 0.85 }: PartProps) {
-  const entry = SVG_PATHS[pathKey];
-  if (!entry?.bbox) return null;
-
-  const { xMin, yMin, xMax, yMax } = entry.bbox;
-  const glyphW = xMax - xMin;
-  const glyphH = yMax - yMin;
-  if (glyphW <= 0 || glyphH <= 0) return null;
-
-  const gcX = (xMin + xMax) / 2;
-  const gcY = (yMin + yMax) / 2;
-  const scale = Math.min(maxW / glyphW, maxH / glyphH) * padding;
-
+/** put a glyph into a viewBox that maps font-coord y-up -> svg y-down */
+function GlyphSVG({ d, bbox }: { d: string; bbox: BBox }) {
+  const w = bbox.xMax - bbox.xMin;
+  const h = bbox.yMax - bbox.yMin;
+  if (w <= 0 || h <= 0) return null;
   return (
-    <path
-      d={entry.d}
-      transform={`translate(${cx}, ${cy}) scale(${scale}, ${-scale}) translate(${-gcX}, ${-gcY})`}
-    />
+    <svg
+      viewBox={`${bbox.xMin} 0 ${w} ${h}`}
+      preserveAspectRatio="xMidYMid meet"
+      className="w-full h-full"
+    >
+      <g transform={`scale(1, -1) translate(0, ${-bbox.yMax})`}>
+        <path d={d} fill="#1c1b1a" />
+      </g>
+    </svg>
   );
 }
 
-// ── 主组件 ──────────────────────────────────────
+// ── main component ─────────────────────────────
 
 /**
- * SVG 四象限减字块。
+ * SVG 四象限减字块（CSS 绝对定位版）。
  *
- * 完全绕过字体 GSUB，用积木式 SVG path 手动装配减字布局：
- *
- *   ┌─────────────────────┐
- *   │   顶帽（音色标记）     │  y: 0-12%
- *   ├──────────┬──────────┤
- *   │ 左手指法  │ 徽位/分   │  y: 12-40%
- *   ├──────────┴──────────┤
- *   │   右手外壳 + 弦序内核  │  y: 40-100%
- *   └─────────────────────┘
+ * 完全绕过字体 GSUB，用积木式 SVG path 手动装配减字布局。
  *
  * 降级条件（由 JianziBlock 父组件判定）：
  *   toneType === "泛" || ["打", "摘"].includes(rightAction)
@@ -101,15 +82,11 @@ export function SvgJianziBlock({
   fontSize?: string;
   compact?: boolean;
 }) {
-  const vbW = FONT_UPEM;        // 1000
-  const vbH = Math.round(FONT_UPEM * 1.4); // 1400
-
   const toneType = compact ? null : state.toneType;
   const leftFinger = toneType !== "散" ? state.leftFinger : null;
   const hui = toneType !== "散" ? state.hui : null;
   const fen = toneType !== "散" ? state.fen : null;
 
-  // SVG path key 查找
   const topKey = toneType === "泛" ? "top_fan" : toneType === "散" ? "top_san" : null;
   const lhKey = leftFinger ? LEFT_FINGER_MAP[leftFinger] ?? null : null;
   const huiKey = hui ? HUI_MAP[hui] : null;
@@ -117,70 +94,111 @@ export function SvgJianziBlock({
   const actionKey = state.rightAction ? RIGHT_ACTION_MAP[state.rightAction] ?? null : null;
   const strKey = state.stringNumber ? STRING_MAP[state.stringNumber] : null;
 
-  // 降级为 <text> 的字符（左手 亻→食、按音帽）
-  const textFinger = leftFinger && !lhKey ? (leftFinger === "亻" ? "食" : leftFinger) : null;
+  const topEntry = topKey ? SVG_PATHS[topKey] : null;
+  const lhEntry = lhKey ? SVG_PATHS[lhKey] : null;
+  const huiEntry = huiKey ? SVG_PATHS[huiKey] : null;
+  const fenEntry = fenKey ? SVG_PATHS[fenKey] : null;
+  const actionEntry = actionKey ? SVG_PATHS[actionKey] : null;
+  const strEntry = strKey ? SVG_PATHS[strKey] : null;
 
-  // 没有任何内容可渲染
-  if (!topKey && !lhKey && !huiKey && !actionKey && !strKey && !textFinger) return null;
+  // 左手指法 亻 无 svg path -> 用系统楷体回退
+  const textFinger: string | null =
+    leftFinger && !lhEntry ? (leftFinger === "亻" ? "食" : leftFinger) : null;
 
-  const numeric = Math.round(parseFloat(fontSize) * 0.48);
+  const hasAnything = topEntry || lhEntry || huiEntry || fenEntry || actionEntry || strEntry || textFinger;
+  if (!hasAnything) return null;
+
+  // fontSize may contain "px" like "36px" or "24px"
+  const numPx = parseFloat(fontSize);
 
   return (
-    <svg
-      viewBox={`0 0 ${vbW} ${vbH}`}
-      width={fontSize}
-      height={`calc(${fontSize} * 1.4)`}
-      style={{ display: "block", overflow: "visible" }}
-      className="select-none"
+    <div
+      className="relative inline-flex items-center justify-center select-none"
+      style={{ width: numPx, height: numPx * 1.4 }}
     >
-      {/* ── 顶帽 ── */}
-      {topKey && (
-        <GlyphPart pathKey={topKey} cx={vbW / 2} cy={vbH * 0.08} maxW={vbW * 0.40} maxH={vbH * 0.14} />
+      {/* ── 顶帽（音色标记） ── */}
+      {topEntry?.bbox && (
+        <div
+          className="absolute left-1/2 -translate-x-1/2"
+          style={{ top: "2%", width: "44%", height: "16%" }}
+        >
+          <GlyphSVG d={topEntry.d} bbox={topEntry.bbox} />
+        </div>
       )}
 
-      {/* ── 左手指法 ── */}
-      {lhKey && (
-        <GlyphPart pathKey={lhKey} cx={vbW * 0.20} cy={vbH * 0.26} maxW={vbW * 0.30} maxH={vbH * 0.24} />
+      {/* ── 左手指法（左上象限） ── */}
+      {lhEntry?.bbox && (
+        <div
+          className="absolute"
+          style={{ top: "17%", left: "3%", width: "34%", height: "24%" }}
+        >
+          <GlyphSVG d={lhEntry.d} bbox={lhEntry.bbox} />
+        </div>
       )}
       {textFinger && (
-        <text
-          x={vbW * 0.20} y={vbH * 0.26}
-          textAnchor="middle" dominantBaseline="central"
-          fontSize={numeric * 2.5}
-          fontFamily="'TaiYinJianZiPuKaiTi', 'KaiTi', serif"
-          fill="#1c1b1a"
+        <span
+          className="absolute"
+          style={{
+            top: "28%",
+            left: "18%",
+            transform: "translate(-50%, -50%)",
+            fontSize: numPx * 0.28,
+            fontFamily: "'KaiTi', 'STKaiti', 'Noto Serif SC', serif",
+            color: "#1c1b1a",
+            lineHeight: 1,
+          }}
         >
           {textFinger}
-        </text>
+        </span>
       )}
 
-      {/* ── 徽位 ── */}
-      {huiKey && (
-        <GlyphPart pathKey={huiKey} cx={vbW * 0.78} cy={vbH * 0.25} maxW={vbW * 0.30} maxH={vbH * 0.24} />
+      {/* ── 徽位（右上象限） ── */}
+      {huiEntry?.bbox && (
+        <div
+          className="absolute"
+          style={{ top: "17%", right: "3%", width: "34%", height: "22%" }}
+        >
+          <GlyphSVG d={huiEntry.d} bbox={huiEntry.bbox} />
+        </div>
       )}
 
-      {/* ── 分位 ── */}
-      {fenKey && (
-        <GlyphPart pathKey={fenKey} cx={vbW * 0.78} cy={vbH * 0.38} maxW={vbW * 0.24} maxH={vbH * 0.12} />
+      {/* ── 分位（徽位下方） ── */}
+      {fenEntry?.bbox && (
+        <div
+          className="absolute"
+          style={{ top: "38%", right: "3%", width: "26%", height: "9%" }}
+        >
+          <GlyphSVG d={fenEntry.d} bbox={fenEntry.bbox} />
+        </div>
       )}
 
-      {/* ── 右手外壳（半包围结构） ── */}
-      {actionKey && (
-        <GlyphPart pathKey={actionKey} cx={vbW / 2} cy={vbH * 0.65} maxW={vbW * 0.70} maxH={vbH * 0.50} />
+      {/* ── 右手外壳（下半部，半包围结构） ── */}
+      {actionEntry?.bbox && (
+        <div
+          className="absolute"
+          style={{ bottom: "1%", left: "0", width: "100%", height: "56%" }}
+        >
+          <GlyphSVG d={actionEntry.d} bbox={actionEntry.bbox} />
+        </div>
       )}
 
-      {/* ── 弦序内核（嵌套在外壳内部） ── */}
-      {strKey && actionKey && (
-        <GlyphPart
-          pathKey={strKey}
-          cx={vbW / 2} cy={vbH * 0.68}
-          maxW={vbW * 0.26} maxH={vbH * 0.20}
-          padding={0.60}
-        />
+      {/* ── 弦序内核（嵌入右手壳内） ── */}
+      {strEntry?.bbox && actionEntry && (
+        <div
+          className="absolute left-1/2 -translate-x-1/2"
+          style={{ bottom: "19%", width: "28%", height: "20%" }}
+        >
+          <GlyphSVG d={strEntry.d} bbox={strEntry.bbox} />
+        </div>
       )}
-      {strKey && !actionKey && (
-        <GlyphPart pathKey={strKey} cx={vbW / 2} cy={vbH * 0.65} maxW={vbW * 0.40} maxH={vbH * 0.30} />
+      {strEntry?.bbox && !actionEntry && (
+        <div
+          className="absolute left-1/2 -translate-x-1/2"
+          style={{ bottom: "22%", width: "38%", height: "28%" }}
+        >
+          <GlyphSVG d={strEntry.d} bbox={strEntry.bbox} />
+        </div>
       )}
-    </svg>
+    </div>
   );
 }

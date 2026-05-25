@@ -54,11 +54,19 @@ export function JianzipuKeyboard({
   const [activeTab, setActiveTab] = useState<"rhythm" | "finger">("finger");
 
   function handleSelect(section: Section, value: string) {
-    // 传空字符串 = 取消选中
-    setState((prev) => ({
-      ...prev,
-      [section]: value === "" ? null : value,
-    }));
+    setState((prev) => {
+      const next = {
+        ...prev,
+        [section]: value === "" ? null : value,
+      };
+      // 古琴乐理：散音（空弦）不存在左手指法和徽分
+      if (section === "toneType" && value === "散") {
+        next.leftFinger = null;
+        next.hui = null;
+        next.fen = null;
+      }
+      return next;
+    });
   }
 
   function handleReset() {

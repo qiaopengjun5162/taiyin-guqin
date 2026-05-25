@@ -8,9 +8,10 @@ const JIANZI_FONT = '"TaiYinJianZiPuKaiTi", "KaiTi", "STKaiti", "Ma Shan Zheng",
 
 /** 降级到 SVG 渲染的触发条件（字体 GSUB 无法正确处理的情况）。 */
 function needsSvg(state: JianziState): boolean {
+  const ra = state.rightAction ?? "";
   return (
     state.toneType === "泛" ||
-    ["打", "摘"].includes(state.rightAction ?? "")
+    ["打", "摘", "丁", "倽"].includes(ra)
   );
 }
 

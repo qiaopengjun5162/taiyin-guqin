@@ -178,7 +178,7 @@ export function parseJianziText(text: string): JianziState | null {
     result.toneType = "按";
   }
 
-  remaining = remaining.slice(idx);
+  remaining = remaining.slice(idx).trim();
 
   // 散音：只需要右手指法 + 弦序
   if (result.toneType === "散") {

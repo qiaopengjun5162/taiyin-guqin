@@ -39,6 +39,9 @@ TARGET_GLYPHS = {
     "hui_13": "sm_13",
     # 分数
     "fen_ban": "sm_ban",
+    "fen_3": "sm_3.ban",
+    "fen_6": "sm_6.ban",
+    "fen_8": "sm_8.ban",
     # 右手外壳 —— 半包围结构（弦序内核嵌入内部）
     "rh_gou": "lg_gou",
     "rh_tiao": "lg_tiao",
