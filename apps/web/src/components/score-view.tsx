@@ -34,7 +34,7 @@ export function ScoreView({
     >
       {notes.map((note, index) => {
         const prev = index > 0 ? notes[index - 1] : null;
-        const sameTone = prev?.jianzi.toneType === note.jianzi.toneType && note.jianzi.toneType === "散";
+        const sameTone = prev?.jianzi.toneType === note.jianzi.toneType && note.jianzi.toneType !== null;
         return (
           <NoteColumnView
             key={note.id}
