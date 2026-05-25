@@ -67,7 +67,7 @@ function NoteColumnView({
   const { jianzi } = note;
 
   return (
-    <div className="flex flex-col items-center w-[72px] select-none">
+    <div className="group flex flex-col items-center w-[72px] select-none">
       {/* 序号 */}
       <span className="text-[8px] text-stone-400/40 mb-0.5 leading-none">
         {index + 1}
@@ -86,9 +86,14 @@ function NoteColumnView({
       {onRemove && (
         <button
           onClick={() => onRemove(note.id)}
-          className="mt-0.5 text-[8px] text-stone-400/30 hover:text-amber-600/50 transition-colors leading-none"
+          className="mt-1 w-5 h-5 flex items-center justify-center rounded-full
+                     text-stone-400/30 hover:text-amber-600/70 hover:bg-amber-50
+                     transition-all duration-200
+                     opacity-0 group-hover:opacity-100
+                     text-xs leading-none"
+          title="删除此音"
         >
-          删除
+          ×
         </button>
       )}
     </div>
