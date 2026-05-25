@@ -68,6 +68,22 @@ just docker-up
 - shadcn/ui 组件放 `src/components/ui/`
 - Tailwind CSS 4 使用 `@theme inline` 定义主题变量
 
+## 减字渲染架构（关键）
+
+- **纯字体 GSUB 连字方案**: 忘机减字谱楷体是 OpenType GSUB 连字引擎，26 个 lookup + 227 个 GPOS lookup。输入完整字符串（如"散勾五"），字体自动完成传统半包围嵌套排版。
+- **组件**: `JianziBlock` (`src/components/jianzi-block.tsx`) 是唯一渲染入口，接收 `JianziState + fontSize + compact`，通过 `jianziToText()` 序列化为字符串后写入 `<span>`，CSS 开启 `font-variant-ligatures: common-ligatures` 和 `font-feature-settings: "liga" on, "clig" on`。
+- **`jianziToText` 翻译层** (`src/lib/types.ts`): 键盘偏旁（勹/木/乚/乇/丁/尸/倽）需映射为字体 GSUB 可识别的全字符（勾/抹/挑/托/打/擘/摘），否则字体 cmap 找不到对应字形。
+- **音色后缀**: 泛音的音色标记 "泛" 放在字符串末尾（非前缀），因字体 GSUB 上下文匹配依赖后缀位置。
+- **连续同音省略**: `ScoreView` 在 map 循环中对比前后 `toneType`，相同时传 `compact={true}` 给 `JianziBlock`，隐藏音色标记。
+- **状态保留**: 提交后保留 `toneType/leftFinger/hui/fen`（模态属性），仅清空 `rightAction/stringNumber`。
+
+## 忘机减字谱楷体（TaiYinJianZiPuKaiTi）
+
+- 原始字体 `WangJiJianZiPuKaiTi1.1.ttf` (1.2MB) —— 含 DRM 广告 glyph（名为 `placeholder`，面积 580 万像素，映射到 10 万+ Unicode 码位）
+- 清理后字体 `TaiYinJianZiPuKaiTi.ttf` —— 所有 name table 条目已改名，placeholder glyph 清空，码位重映射到 .notdef
+- GSUB: 26 lookups（ContextSubst/ChainContextSubst/LigatureSubst/SingleSubst），GPOS: 227 lookups
+- 字体本质是 GSUB 连字引擎，不支持拆开独立渲染
+
 ## 代理设置
 
 外部访问（如安装 pnpm 依赖时）使用代理：

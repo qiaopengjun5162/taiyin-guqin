@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* ── 太音减字谱楷体（基于忘机减字谱楷体修改，去除推广弹窗） ── */
+@font-face {
+  font-family: "TaiYinJianZiPuKaiTi";
+  src: url("/fonts/TaiYinJianZiPuKaiTi.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ── 太音主题调色板 ── */
 :root {
   --ink: #1c1b1a;
@@ -19,6 +28,7 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-serif: "Noto Serif SC", "Songti SC", "SimSun", "STSong", serif;
+  --font-calligraphy: "Ma Shan Zheng", "KaiTi", "STKaiti", serif;
 }
 
 /* ── 墨色渐变背景 + 暗弦纹 ── */
@@ -83,7 +93,25 @@ body {
   }
 }
 
-/* ── 谱字浮现动效 ── */
+/* ── 楷书字体工具类（品牌印章使用） ── */
+.font-calligraphy {
+  font-family: var(--font-calligraphy), "KaiTi", "STKaiti", serif;
+}
+
+/* ── 墨迹晕染（SVG 滤镜模拟宣纸墨渗） ── */
+.ink-bleed {
+  filter: url(#inkbleed);
+}
+
+/* ── 减字谱字符微调：对特定指法做字形压缩，还原古琴书写感 ── */
+.jianzi-char {
+  /* 抹（木）在减字谱中撇捺内敛，压缩宽度 */
+  &.char-mu {
+    transform: scaleX(0.78);
+    display: inline-block;
+  }
+}
+
 @keyframes stamp {
   0% {
     opacity: 0;
@@ -100,4 +128,29 @@ body {
 
 .animate-stamp {
   animation: stamp 0.25s ease-out;
+}
+
+/* ── 打印/导出 PDF 样式 ── */
+@media print {
+  body {
+    background: #f8f3eb !important;
+    color: #1c1b1a !important;
+  }
+  /* 隐藏不需要打印的元素 */
+  .no-print {
+    display: none !important;
+  }
+  /* 乐谱区全宽展示 */
+  #score-area {
+    max-width: 100% !important;
+    margin-top: 0 !important;
+    padding: 0;
+  }
+  #score-area .bg-\[\#f8f3eb\] {
+    background: transparent !important;
+  }
+  /* 删除按钮在打印时不显示 */
+  #score-area button {
+    display: none !important;
+  }
 }
