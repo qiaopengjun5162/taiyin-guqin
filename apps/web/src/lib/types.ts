@@ -142,9 +142,9 @@ export function jianziToText(jianzi: JianziState): string {
     text += "泛 ";
   }
 
-  if (jianzi.toneType !== "散" && jianzi.leftFinger) text += jianzi.leftFinger;
-  if (jianzi.toneType !== "散" && jianzi.hui) text += jianzi.hui;
-  if (jianzi.toneType !== "散" && jianzi.fen) text += jianzi.fen;
+  if (jianzi.leftFinger) text += jianzi.leftFinger;
+  if (jianzi.hui) text += jianzi.hui;
+  if (jianzi.fen) text += jianzi.fen;
   if (jianzi.rightAction) text += RIGHT_ACTION_GLYPH[jianzi.rightAction] ?? jianzi.rightAction;
   if (jianzi.stringNumber) text += jianzi.stringNumber;
   return text;

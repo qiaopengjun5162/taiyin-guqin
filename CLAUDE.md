@@ -73,9 +73,53 @@ just docker-up
 - **纯字体 GSUB 连字方案**: 忘机减字谱楷体是 OpenType GSUB 连字引擎，26 个 lookup + 227 个 GPOS lookup。输入完整字符串（如"散勾五"），字体自动完成传统半包围嵌套排版。
 - **组件**: `JianziBlock` (`src/components/jianzi-block.tsx`) 是唯一渲染入口，接收 `JianziState + fontSize + compact`，通过 `jianziToText()` 序列化为字符串后写入 `<span>`，CSS 开启 `font-variant-ligatures: common-ligatures` 和 `font-feature-settings: "liga" on, "clig" on`。
 - **`jianziToText` 翻译层** (`src/lib/types.ts`): 键盘偏旁（勹/木/乚/乇/丁/尸/倽）需映射为字体 GSUB 可识别的全字符（勾/抹/挑/托/打/擘/摘），否则字体 cmap 找不到对应字形。
-- **音色后缀**: 泛音的音色标记 "泛" 放在字符串末尾（非前缀），因字体 GSUB 上下文匹配依赖后缀位置。
+- **泛音空格阻断**: 泛音在 "泛" 后加空格（"泛 名十勾三"）断开 GSUB 上下文链，防止字体把音色标记和后续指法吞入同一条连字规则。
 - **连续同音省略**: `ScoreView` 在 map 循环中对比前后 `toneType`，相同时传 `compact={true}` 给 `JianziBlock`，隐藏音色标记。
 - **状态保留**: 提交后保留 `toneType/leftFinger/hui/fen`（模态属性），仅清空 `rightAction/stringNumber`。
+
+## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
+
+### 架构
+
+```
+输入数据（如"散勾五"）
+        │
+        ▼
+第一层 FontJianziBlock ─── GSUB 字体连字（80% 常用字：散/勾/挑/抹/按音等）
+        │
+        └── 触发降级条件 ──→ 第二层 SvgJianziBlock
+                              (泛音名十勾三 | 打/摘 | 多选分等生僻组合)
+```
+
+### 降级触发条件
+
+```typescript
+const needsSvg =
+  state.toneType === "泛" ||
+  ["打", "摘"].includes(state.rightAction ?? "");
+```
+
+### SVG 积木库命名规范
+
+| 层级 | 命名模式 | 示例 |
+|------|----------|------|
+| 帽子层 | `top_*.svg` | `top_san.svg` (艹), `top_fan.svg` (⺍) |
+| 左手指法 | `lh_*.svg` | `lh_da.svg` (大), `lh_xi.svg` (夕/名), `lh_zhong.svg` (中), `lh_shi.svg` (亻/食), `lh_gui.svg` (跪) |
+| 徽位 | `hui_*.svg` | `hui_1.svg` ~ `hui_13.svg` |
+| 分位 | `fen_*.svg` | `fen_1.svg` ~ `fen_9.svg` |
+| 右手外壳 | `rh_*.svg` | `rh_gou.svg` (勹), `rh_mo.svg` (木), `rh_tiao.svg` (乚), `rh_tuo.svg` (乇), `rh_da.svg` (丁), `rh_zhai.svg` (倽), `rh_ti.svg` (剔) |
+| 弦序内核 | `str_*.svg` | `str_1.svg` ~ `str_7.svg` |
+
+### 素材提取
+
+1. 用 fonttools 从 `TaiYinJianZiPuKaiTi.ttf` 提取各 glyph 的 SVG path
+2. 输出为 `apps/web/src/lib/svg-paths.ts`（`<path d="..." />` 字符串字典）
+3. 右手外壳需是中空的半包围结构，弦序内核通过 CSS `absolute` 嵌入
+
+### 架构注意事项
+
+- **指法语义时代分流**（管平湖 1957）：相同符号在不同时代谱式中语义可能相反。例如 "女" 在《广陵散》（早期谱）中作"按"（左手），在《自远堂》（晚期谱）中作"如"（右手双弹）。`JianziState` 未来需预留 `era: 'Early' | 'Late'` 模态字段，用于指法解析分流。
+- **二期 SVG 骨架应提取古体字形**："打"提取为"丁"形，"摘"提取为"倽"/"啇"形（参考陈拙《指法》），不取现代印刷体。一期维持晚期减字谱规范。
 
 ## 忘机减字谱楷体（TaiYinJianZiPuKaiTi）
 
