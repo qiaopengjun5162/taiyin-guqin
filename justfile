@@ -62,7 +62,7 @@ docker-down:
 # ── 完整流程 ──────────────────────────────────
 
 # 全量检查和测试（提交前运行）
-ci: fmt-check clippy test
+ci: fmt-check clippy test test-web
 
 # ── 杂项 ──────────────────────────────────────
 

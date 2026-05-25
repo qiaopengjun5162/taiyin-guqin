@@ -88,14 +88,11 @@ export function JianzipuKeyboard({
       jianzi: state,
     };
     onAppend?.(note);
-    // 保留音色、左手、徽位（模态属性），清空右手和弦序（每个音不同）
+    // 提交后只保留音色和节奏模式语境，清空左右手和徽分
     setState((prev) => ({
       ...createEmptyState(),
       toneType: prev.toneType,
       rhythmMode: prev.rhythmMode,
-      leftFinger: prev.leftFinger,
-      hui: prev.hui,
-      fen: prev.fen,
     }));
   }
 

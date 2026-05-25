@@ -6,6 +6,11 @@ import {
   parseJianziText,
   getRhythmLineCount,
 } from "../types";
+import type { JianziState } from "../types";
+
+function make(overrides: Partial<JianziState> = {}): JianziState {
+  return { ...createEmptyState(), ...overrides };
+}
 
 describe("createEmptyState", () => {
   it("returns all-null state", () => {
@@ -28,37 +33,27 @@ describe("isComplete", () => {
   });
 
   it("散音 needs rightAction + stringNumber", () => {
-    const s = { ...createEmptyState(), toneType: "散", rightAction: "勹", stringNumber: "五" };
-    expect(isComplete(s)).toBe(true);
-    expect(isComplete({ ...createEmptyState(), toneType: "散", rightAction: "勹" })).toBe(false);
-    expect(isComplete({ ...createEmptyState(), toneType: "散", stringNumber: "五" })).toBe(false);
+    expect(isComplete(make({ toneType: "散", rightAction: "勹", stringNumber: "五" }))).toBe(true);
+    expect(isComplete(make({ toneType: "散", rightAction: "勹" }))).toBe(false);
+    expect(isComplete(make({ toneType: "散", stringNumber: "五" }))).toBe(false);
   });
 
   it("泛音 needs leftFinger + hui + rightAction + stringNumber", () => {
-    const s = {
-      ...createEmptyState(),
-      toneType: "泛", leftFinger: "大", hui: "十", rightAction: "勹", stringNumber: "五",
-    };
-    expect(isComplete(s)).toBe(true);
-    expect(isComplete({ ...createEmptyState(), toneType: "泛", hui: "十", rightAction: "勹", stringNumber: "五" })).toBe(false);
-    expect(isComplete({ ...createEmptyState(), toneType: "泛", leftFinger: "大", rightAction: "勹", stringNumber: "五" })).toBe(false);
-    expect(isComplete({ ...createEmptyState(), toneType: "泛", leftFinger: "大", hui: "十", stringNumber: "五" })).toBe(false);
-    expect(isComplete({ ...createEmptyState(), toneType: "泛", leftFinger: "大", hui: "十", rightAction: "勹" })).toBe(false);
+    expect(isComplete(make({ toneType: "泛", leftFinger: "大", hui: "十", rightAction: "勹", stringNumber: "五" }))).toBe(true);
+    expect(isComplete(make({ toneType: "泛", hui: "十", rightAction: "勹", stringNumber: "五" }))).toBe(false);
+    expect(isComplete(make({ toneType: "泛", leftFinger: "大", rightAction: "勹", stringNumber: "五" }))).toBe(false);
+    expect(isComplete(make({ toneType: "泛", leftFinger: "大", hui: "十", stringNumber: "五" }))).toBe(false);
+    expect(isComplete(make({ toneType: "泛", leftFinger: "大", hui: "十", rightAction: "勹" }))).toBe(false);
   });
 
   it("按音 needs leftFinger + hui + rightAction + stringNumber", () => {
-    const s = {
-      ...createEmptyState(),
-      toneType: "按", leftFinger: "大", hui: "九", rightAction: "木", stringNumber: "四",
-    };
-    expect(isComplete(s)).toBe(true);
+    expect(isComplete(make({ toneType: "按", leftFinger: "大", hui: "九", rightAction: "木", stringNumber: "四" }))).toBe(true);
   });
 });
 
 describe("jianziToText", () => {
   it("散音 prefix and GSUB-compatible glyph names", () => {
-    const s = { ...createEmptyState(), toneType: "散", rightAction: "勹", stringNumber: "五" };
-    expect(jianziToText(s)).toBe("散勾五");
+    expect(jianziToText(make({ toneType: "散", rightAction: "勹", stringNumber: "五" }))).toBe("散勾五");
   });
 
   it("maps all right action abbreviations to GSUB names", () => {
@@ -67,33 +62,20 @@ describe("jianziToText", () => {
       ["丁", "打"], ["尸", "擘"], ["倽", "摘"],
     ];
     for (const [short, full] of cases) {
-      const s = { ...createEmptyState(), toneType: "散", rightAction: short, stringNumber: "一" };
-      expect(jianziToText(s)).toBe(`散${full}一`);
+      expect(jianziToText(make({ toneType: "散", rightAction: short, stringNumber: "一" }))).toBe(`散${full}一`);
     }
   });
 
   it("泛音 with space separator", () => {
-    const s = {
-      ...createEmptyState(), toneType: "泛",
-      leftFinger: "大", hui: "十", rightAction: "勹", stringNumber: "三",
-    };
-    expect(jianziToText(s)).toBe("泛 大十勾三");
+    expect(jianziToText(make({ toneType: "泛", leftFinger: "大", hui: "十", rightAction: "勹", stringNumber: "三" }))).toBe("泛 大十勾三");
   });
 
   it("按音 no prefix", () => {
-    const s = {
-      ...createEmptyState(), toneType: "按",
-      leftFinger: "名", hui: "九", rightAction: "木", stringNumber: "四",
-    };
-    expect(jianziToText(s)).toBe("名九抹四");
+    expect(jianziToText(make({ toneType: "按", leftFinger: "名", hui: "九", rightAction: "木", stringNumber: "四" }))).toBe("名九抹四");
   });
 
   it("includes fen when present", () => {
-    const s = {
-      ...createEmptyState(), toneType: "按",
-      leftFinger: "大", hui: "七", fen: "半", rightAction: "勹", stringNumber: "二",
-    };
-    expect(jianziToText(s)).toBe("大七半勾二");
+    expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "七", fen: "半", rightAction: "勹", stringNumber: "二" }))).toBe("大七半勾二");
   });
 
   it("returns empty string for incomplete state", () => {
@@ -101,8 +83,7 @@ describe("jianziToText", () => {
   });
 
   it("handles 剔 right action", () => {
-    const s = { ...createEmptyState(), toneType: "散", rightAction: "剔", stringNumber: "七" };
-    expect(jianziToText(s)).toBe("散剔七");
+    expect(jianziToText(make({ toneType: "散", rightAction: "剔", stringNumber: "七" }))).toBe("散剔七");
   });
 });
 

@@ -123,7 +123,7 @@ pub enum Tuning {
 /// 音色类型——决定左手的触弦方式。
 ///
 /// 古琴三种基本音色各有其独特的触弦技巧和音色特征。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub enum NoteType {
     /// 散音（空弦）。左手不按弦，弹奏空弦得声。
     /// 音色松沉旷远，是古琴最基本的音色。
@@ -135,14 +135,9 @@ pub enum NoteType {
     FanYin,
     /// 按音（走手音）。左手按弦得声，是最具表现力的音色。
     /// 按音弹法在减字谱中一般不另行注明，为默认音色。
+    #[default]
     #[serde(rename = "按")]
     AnYin,
-}
-
-impl Default for NoteType {
-    fn default() -> Self {
-        Self::AnYin
-    }
 }
 
 /// 节奏模式——决定 `duration` 字段的解释方式。
@@ -157,10 +152,11 @@ impl Default for NoteType {
 /// | `Strict` | 入拍/入调 | 严格节拍，duration = 精确时值 |
 /// | `Free` | 散板/入乱 | 自由节奏，duration 仅指示相对长短 |
 /// | `Drop` | 跌宕 | 变换拍子，duration 近似但可浮动 |
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub enum RhythmMode {
     /// 节拍模式。适用入拍、入调段落。
     /// duration 以四分音符=1.0 精确解释。
+    #[default]
     #[serde(rename = "板")]
     Strict,
     /// 散板/自由节奏。适用散起、入乱段落。
@@ -172,12 +168,6 @@ pub enum RhythmMode {
     /// duration 近似但允许弹性伸缩，在快慢交替中保持气韵流畅。
     #[serde(rename = "宕")]
     Drop,
-}
-
-impl Default for RhythmMode {
-    fn default() -> Self {
-        Self::Strict
-    }
 }
 
 /// 复合右手指法——右手八法的组合与变体。
