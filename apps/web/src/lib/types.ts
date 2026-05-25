@@ -127,15 +127,26 @@ const RIGHT_ACTION_GLYPH: Record<string, string> = {
 
 /** 将减字状态序列化为忘机减字谱字体可渲染的文本 */
 export function jianziToText(jianzi: JianziState): string {
+  // 散音："散"作为左侧前缀，不参与主体连字组
+  if (jianzi.toneType === "散") {
+    let s = "散";
+    if (jianzi.rightAction) s += RIGHT_ACTION_GLYPH[jianzi.rightAction] ?? jianzi.rightAction;
+    if (jianzi.stringNumber) s += jianzi.stringNumber;
+    return s;
+  }
+
   let text = "";
-  // 音色标记放在末尾 —— 部分字体 GSUB 对泛音连字的上下文匹配依赖后缀位置
+
+  // 泛音：加空格阻断字体 GSUB 上下文劫持，使"泛"和后续指法独立渲染
+  if (jianzi.toneType === "泛") {
+    text += "泛 ";
+  }
+
   if (jianzi.toneType !== "散" && jianzi.leftFinger) text += jianzi.leftFinger;
   if (jianzi.toneType !== "散" && jianzi.hui) text += jianzi.hui;
   if (jianzi.toneType !== "散" && jianzi.fen) text += jianzi.fen;
   if (jianzi.rightAction) text += RIGHT_ACTION_GLYPH[jianzi.rightAction] ?? jianzi.rightAction;
   if (jianzi.stringNumber) text += jianzi.stringNumber;
-  if (jianzi.toneType === "散") text += "散";
-  if (jianzi.toneType === "泛") text += "泛";
   return text;
 }
 
