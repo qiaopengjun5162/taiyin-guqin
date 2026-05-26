@@ -106,6 +106,24 @@ export default function Home() {
     }
   }
 
+  /** 删除选中的曲谱 */
+  async function handleDeleteScore(id: string, title: string) {
+    if (!confirm(`确认删除「${title}」？`)) return;
+    try {
+      await api.deleteScore(id);
+      setSavedScores((prev) => prev.filter((s) => s.id !== id));
+      if (currentScoreId === id) {
+        setScore([]);
+        setCurrentScoreId(null);
+        setScoreTitle("未命名曲谱");
+      }
+    } catch {
+      alert("删除失败。");
+    }
+    // 刷新列表
+    try { setSavedScores(await api.listScores()); } catch {}
+  }
+
   /** 加载选中的曲谱 */
   async function handleLoadScore(id: string) {
     try {
@@ -194,16 +212,23 @@ export default function Home() {
               )}
               <div className="space-y-1 max-h-60 overflow-y-auto">
                 {savedScores.map((s) => (
-                  <button
+                  <div
                     key={s.id}
+                    className="group flex items-center gap-1 px-3 py-2 text-[11px] tracking-wider rounded border border-amber-700/10 hover:border-amber-600/30 hover:bg-amber-900/10 transition-all cursor-pointer"
                     onClick={() => handleLoadScore(s.id)}
-                    className="w-full text-left px-3 py-2 text-[11px] tracking-wider rounded border border-amber-700/10 text-stone-400 hover:text-stone-200 hover:border-amber-600/30 hover:bg-amber-900/10 transition-all"
                   >
-                    <span className="text-amber-100/70">{s.title}</span>
-                    <span className="ml-2 text-[9px] text-stone-500">
+                    <span className="flex-1 text-amber-100/70 truncate">{s.title}</span>
+                    <span className="text-[9px] text-stone-500 shrink-0">
                       {new Date(s.updated_at).toLocaleString("zh-CN")}
                     </span>
-                  </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteScore(s.id, s.title); }}
+                      className="ml-1 size-4 flex items-center justify-center rounded text-stone-500 hover:text-red-400 hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all"
+                      title="删除"
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
               </div>
               <button
