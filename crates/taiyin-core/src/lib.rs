@@ -614,8 +614,7 @@ mod tests {
     #[test]
     fn test_rhythm_mode_serialization() {
         // 序列化
-        let note = GuqinNote::open_string(RightAction::Gou, 3)
-            .with_rhythm_mode(RhythmMode::Drop);
+        let note = GuqinNote::open_string(RightAction::Gou, 3).with_rhythm_mode(RhythmMode::Drop);
         let json = serde_json::to_value(&note).unwrap();
         assert_eq!(json.get("rhythm_mode").unwrap(), "宕");
 

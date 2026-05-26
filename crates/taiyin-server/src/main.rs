@@ -4,7 +4,7 @@
 //!
 //! 负责社区曲谱管理、AI 简谱翻译转发、积分记账等业务逻辑。
 
-use taiyin_server::app;
+use taiyin_server::{AppState, app, db};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -13,7 +13,12 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let app = app();
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://taiyin:taiyin_dev@localhost:5432/taiyin".into());
+
+    let pool = db::init_pool(&database_url).await?;
+
+    let app = app(AppState { pool });
 
     let addr = "0.0.0.0:3001";
     tracing::info!("taiyin-server listening on {addr}");

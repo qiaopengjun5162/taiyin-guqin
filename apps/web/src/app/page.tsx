@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
+import * as api from "@/lib/api";
 
 /**
  * 数据流：
@@ -25,8 +26,27 @@ import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
  */
 export default function Home() {
   const [score, setScore] = useState<NoteColumn[]>([]);
-  // 点击乐谱流音符后，键盘自动加载该音符数据供修改
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  // 持久化状态
+  const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
+  const [scoreTitle, setScoreTitle] = useState("未命名曲谱");
+  const [savedScores, setSavedScores] = useState<api.ScoreListItem[]>([]);
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // 点击对话框外部关闭
+  useEffect(() => {
+    if (!showLoadDialog) return;
+    function onClick(e: MouseEvent) {
+      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
+        setShowLoadDialog(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [showLoadDialog]);
 
   /** 点击乐谱流音符 → 键盘回填数据 + 滚动到键盘区 */
   function handleEdit(index: number) {
@@ -34,11 +54,6 @@ export default function Home() {
     document.getElementById("keyboard-area")?.scrollIntoView({ behavior: "smooth" });
   }
 
-  /**
-   * 键盘确认回调。
-   * editingIndex !== null 时替换对应音符而非追加，复用同一 onAppend 回调。
-   * 提交后清除编辑状态（键盘重置为初始态）。
-   */
   function handleAppend(note: NoteColumn) {
     setScore((prev) => {
       if (editingIndex !== null) {
@@ -51,7 +66,6 @@ export default function Home() {
     setEditingIndex(null);
   }
 
-  /** 删除音符时，若恰好是当前编辑项则退出编辑模式 */
   function handleRemove(id: string) {
     setScore((prev) => {
       const removedIdx = prev.findIndex((n) => n.id === id);
@@ -60,6 +74,50 @@ export default function Home() {
       }
       return prev.filter((n) => n.id !== id);
     });
+  }
+
+  /** 保存曲谱到后端 */
+  async function handleSave() {
+    if (score.length === 0) return;
+    setSaveStatus("saving");
+    try {
+      if (currentScoreId) {
+        await api.updateScore(currentScoreId, { title: scoreTitle, notes: score });
+      } else {
+        const created = await api.createScore(scoreTitle, score);
+        setCurrentScoreId(created.id);
+      }
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    }
+  }
+
+  /** 打开加载对话框（拉取后端列表） */
+  async function openLoadDialog() {
+    try {
+      const list = await api.listScores();
+      setSavedScores(list);
+      setShowLoadDialog(true);
+    } catch {
+      alert("无法连接到服务器，请确认后端已启动。");
+    }
+  }
+
+  /** 加载选中的曲谱 */
+  async function handleLoadScore(id: string) {
+    try {
+      const scoreData = await api.getScore(id);
+      setScore(scoreData.notes);
+      setCurrentScoreId(scoreData.id);
+      setScoreTitle(scoreData.title);
+      setShowLoadDialog(false);
+      setEditingIndex(null);
+    } catch {
+      alert("加载失败。");
+    }
   }
 
   return (
@@ -92,15 +150,70 @@ export default function Home() {
         <ScoreView notes={score} onRemove={handleRemove} onEdit={handleEdit} editingIndex={editingIndex} />
       </div>
 
-      {/* ── 导出按钮（有内容时显示） ── */}
-      {score.length > 0 && (
-        <div className="no-print mt-3 w-full max-w-md flex justify-end">
+      {/* ── 工具栏：标题 + 保存 / 加载 / 导出 ── */}
+      <div className="no-print mt-3 w-full max-w-md flex items-center gap-2">
+        <input
+          type="text"
+          value={scoreTitle}
+          onChange={(e) => setScoreTitle(e.target.value)}
+          className="flex-1 min-w-0 px-2 py-1.5 text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 placeholder-amber-700/40 outline-none focus:border-amber-600/50 transition-colors"
+          placeholder="曲谱名称"
+        />
+        <button
+          onClick={handleSave}
+          disabled={score.length === 0 || saveStatus === "saving"}
+          className="px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+        >
+          {saveStatus === "saving" ? "保存中…" : saveStatus === "saved" ? "已保存" : saveStatus === "error" ? "保存失败" : "保存"}
+        </button>
+        <button
+          onClick={openLoadDialog}
+          className="px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
+        >
+          加载
+        </button>
+        {score.length > 0 && (
           <button
             onClick={() => window.print()}
             className="px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
           >
-            导出 PDF
+            PDF
           </button>
+        )}
+      </div>
+
+      {/* ── 加载对话框 ── */}
+      {showLoadDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div ref={dialogRef} className="w-full max-w-sm mx-4 rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+            <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+            <div className="p-5">
+              <p className="text-[11px] tracking-wider text-amber-100/60 mb-3">已保存的曲谱</p>
+              {savedScores.length === 0 && (
+                <p className="text-[10px] tracking-wider text-stone-500">暂无保存的曲谱</p>
+              )}
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {savedScores.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => handleLoadScore(s.id)}
+                    className="w-full text-left px-3 py-2 text-[11px] tracking-wider rounded border border-amber-700/10 text-stone-400 hover:text-stone-200 hover:border-amber-600/30 hover:bg-amber-900/10 transition-all"
+                  >
+                    <span className="text-amber-100/70">{s.title}</span>
+                    <span className="ml-2 text-[9px] text-stone-500">
+                      {new Date(s.updated_at).toLocaleString("zh-CN")}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowLoadDialog(false)}
+                className="mt-3 w-full px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 transition-all"
+              >
+                取消
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

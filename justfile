@@ -87,6 +87,11 @@ ci: fmt-check clippy test test-web
 
 # ── 杂项 ──────────────────────────────────────
 
+# 设置 git hooks（首次克隆仓库后运行一次）
+setup-hooks:
+    git config core.hooksPath .githooks
+    @echo "✓ git hooks 已安装（.githooks/）"
+
 # 显示本帮助
 default:
     @just --list

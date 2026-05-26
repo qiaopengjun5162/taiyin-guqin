@@ -122,13 +122,56 @@ ScoreView（展示）              JianzipuKeyboard（编辑）
 - 键盘所有 `useState` 使用 init function（`useState(() => ...)`），不是直接初始值。原因：依靠父组件 `key` 属性变化触发 remount 来重新初始化。
 - `defaultNote` 为 `undefined` 时键盘表现正常（追加模式），不依赖 `useEffect` 做数据同步。
 
-## 测试策略
+## 后端数据持久化（v0.2.0）
 
-- 所有新代码必须有对应测试文件。
-- 数据逻辑（type utils、parser）用纯函数测试，无需 React 渲染环境。
+- **数据库**: PostgreSQL 17，默认连接 `postgres://taiyin:taiyin_dev@localhost:5432/taiyin`
+- **ORM**: `sqlx` 0.8（异步、JSONB 支持）
+- **迁移**: `sqlx::migrate::Migrator` 在服务器启动时自动运行 `crates/taiyin-server/migrations/`
+
+### 数据模型
+
+```sql
+CREATE TABLE scores (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL DEFAULT '未命名曲谱',
+    notes JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+`notes` 列以 JSONB 存储前端 `NoteColumn[]` 格式。
+
+### API 端点
+
+| 方法 | 路由 | 说明 |
+|------|------|------|
+| POST | `/api/v1/scores` | 创建曲谱（body: `{title?, notes}`） |
+| GET | `/api/v1/scores` | 列表（不含 notes） |
+| GET | `/api/v1/scores/{id}` | 获取单个（含完整 notes） |
+| PUT | `/api/v1/scores/{id}` | 更新（body: `{title?, notes?}`） |
+| DELETE | `/api/v1/scores/{id}` | 删除 |
+
+### taiyin-server 模块结构
+
+```
+src/
+├── main.rs          # 入口：初始化 DB pool + 启动 Axum
+├── lib.rs           # crate 根：导出 AppState + app()
+├── db.rs            # AppState + init_pool（自动迁移）
+├── error.rs         # AppError（thiserror）→ IntoResponse
+├── models.rs        # Score / CreateScoreRequest / UpdateScoreRequest
+└── routes.rs        # API 路由 + handler 函数
+```
+
+### 测试策略
+
+- 数据逻辑用纯函数测试，无需 React 渲染环境。
 - 组件用 `@testing-library/react` 测试渲染和交互。
-- 测试文件位置：`src/components/__tests__/` 和 `src/lib/__tests__/`。
-- `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数，避免 TypeScript 字符串字面量拓宽。
+- 后端集成测试需要运行中的 PostgreSQL。
+- 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
+- `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
+- 当前测试总数：Rust 17 + 前端 54 = **71**。
 
 ## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
 

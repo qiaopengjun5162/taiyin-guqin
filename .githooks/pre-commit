@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# 太音 · pre-commit hook
+# 提交前自动运行 just ci（fmt + clippy + Rust 测试 + 前端测试）
+exec just ci
