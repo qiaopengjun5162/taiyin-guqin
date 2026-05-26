@@ -15,14 +15,18 @@ const SERIF_FONT =
 export function ScoreView({
   notes,
   onRemove,
+  onEdit,
+  editingIndex,
 }: {
   notes: NoteColumn[];
   onRemove?: (id: string) => void;
+  onEdit?: (index: number) => void;
+  editingIndex?: number | null;
 }) {
   if (notes.length === 0) {
     return (
       <div className="flex items-center justify-center h-20 text-xs tracking-widest text-stone-400/50 select-none rounded border border-dashed border-stone-400/20">
-        在下方拼装减字后点"确认"，乐谱流会出现在这里
+        在下方拼装减字后点「确认」，乐谱流会出现在这里
       </div>
     );
   }
@@ -42,6 +46,8 @@ export function ScoreView({
             index={index}
             compact={sameTone}
             onRemove={onRemove}
+            onEdit={onEdit}
+            isEditing={editingIndex === index}
           />
         );
       })}
@@ -58,16 +64,27 @@ function NoteColumnView({
   index,
   compact,
   onRemove,
+  onEdit,
+  isEditing,
 }: {
   note: NoteColumn;
   index: number;
   compact?: boolean;
   onRemove?: (id: string) => void;
+  onEdit?: (index: number) => void;
+  isEditing?: boolean;
 }) {
   const { jianzi } = note;
 
   return (
-    <div className="group flex flex-col items-center w-[72px] select-none">
+    <div
+      className={`group flex flex-col items-center w-[72px] select-none cursor-pointer rounded pt-1 transition-all duration-150 hover:bg-amber-50/50 ${
+        isEditing
+          ? "ring-1 ring-amber-500/40 bg-amber-50 shadow-sm shadow-amber-500/10"
+          : ""
+      }`}
+      onClick={() => onEdit?.(index)}
+    >
       {/* 序号 */}
       <span className="text-[8px] text-stone-400/40 mb-0.5 leading-none">
         {index + 1}
@@ -82,10 +99,16 @@ function NoteColumnView({
       {/* ── 节奏线区域 ── */}
       <RhythmView duration={note.duration} />
 
-      {/* ── 删除按钮 ── */}
+      {/*
+       * stopPropagation 防止点击删除时触发外层 div 的 onClick（即进入编辑模式）。
+       * 删除和编辑是互斥操作，用户期望点 × 只删除不编辑。
+       */}
       {onRemove && (
         <button
-          onClick={() => onRemove(note.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(note.id);
+          }}
           className="mt-1 w-5 h-5 flex items-center justify-center rounded-full
                      text-stone-400/30 hover:text-amber-600/70 hover:bg-amber-50
                      transition-all duration-200

@@ -45,7 +45,11 @@ interface BBox {
   xMin: number; yMin: number; xMax: number; yMax: number;
 }
 
-/** put a glyph into a viewBox that maps font-coord y-up -> svg y-down */
+/*
+ * 将字体坐标系中的 glyph path（y 轴向上）映射到 SVG 坐标系（y 轴向下）。
+ * 字体提取的 SVG path 使用 font coordinate space（原点在左下），
+ * 而 SVG viewBox 的原点在左上，因此需要 y 翻转 + 平移。
+ */
 function GlyphSVG({ d, bbox }: { d: string; bbox: BBox }) {
   const w = bbox.xMax - bbox.xMin;
   const h = bbox.yMax - bbox.yMin;

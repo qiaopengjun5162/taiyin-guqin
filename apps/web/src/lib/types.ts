@@ -150,10 +150,6 @@ export function jianziToText(jianzi: JianziState): string {
   return text;
 }
 
-/** 已知的左手手指字符集 */
-const LEFT_FINGERS = new Set(["大", "名", "中", "食", "跪"]);
-/** 已知的右手壳字符集 */
-const RIGHT_ACTIONS = new Set(["乇", "尸", "木", "乚", "勹", "剔", "丁", "倽", "勾", "挑", "抹", "劈", "托", "打", "摘"]);
 /** 已知的徽数字集 */
 const HUI_CHARS = new Set(["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]);
 /** 弦序字符集 */

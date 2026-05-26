@@ -12,6 +12,7 @@ import {
   DEFAULT_DURATIONS,
   createEmptyState,
   isComplete,
+  jianziToText,
   parseJianziText,
   type NoteType,
   type RhythmMode,
@@ -38,19 +39,37 @@ type Section =
  */
 export function JianzipuKeyboard({
   onAppend,
+  defaultNote,
 }: {
   onAppend?: (note: NoteColumn) => void;
+  defaultNote?: NoteColumn;
 }) {
-  const [state, setState] = useState<JianziState>(() => ({
-    ...createEmptyState(),
-    toneType: "散",
-  }));
-  const [jianpuNumber, setJianpuNumber] = useState<JianpuNumber | null>(null);
-  const [jianpuOctave, setJianpuOctave] = useState<JianpuOctave>("");
-  const [jianpuDot, setJianpuDot] = useState(false);
-  const [duration, setDuration] = useState<Duration>("四分");
+  /*
+   * 编辑模式：父组件通过 key 变化触发 remount，useState 的 init function 在此刻执行，
+   * 用 defaultNote 回填所有字段。追加模式下 defaultNote 为 undefined，使用默认初值。
+   * 所有字段各自的 useState 独立初始化，便于后续部分重置（如确认后只清左右手、保留音色）。
+   */
+  const [state, setState] = useState<JianziState>(() => {
+    if (defaultNote) return { ...defaultNote.jianzi };
+    return { ...createEmptyState(), toneType: "散" };
+  });
+  const [jianpuNumber, setJianpuNumber] = useState<JianpuNumber | null>(
+    () => defaultNote?.jianpuNumber ?? null,
+  );
+  const [jianpuOctave, setJianpuOctave] = useState<JianpuOctave>(
+    () => defaultNote?.jianpuOctave ?? "",
+  );
+  const [jianpuDot, setJianpuDot] = useState(
+    () => defaultNote?.jianpuDot ?? false,
+  );
+  const [duration, setDuration] = useState<Duration>(
+    () => defaultNote?.duration ?? "四分",
+  );
   const [inputMode, setInputMode] = useState<"point" | "pinyin">("point");
-  const [pinyinText, setPinyinText] = useState("");
+  const [pinyinText, setPinyinText] = useState(() => {
+    if (defaultNote) return jianziToText(defaultNote.jianzi);
+    return "";
+  });
   const [activeTab, setActiveTab] = useState<"rhythm" | "finger">("finger");
 
   function handleSelect(section: Section, value: string) {
@@ -70,17 +89,24 @@ export function JianzipuKeyboard({
   }
 
   function handleReset() {
-    setState({ ...createEmptyState(), toneType: "散" });
-    setJianpuNumber(null);
-    setJianpuOctave("");
-    setJianpuDot(false);
-    setDuration("四分");
+    setState(
+      defaultNote
+        ? { ...defaultNote.jianzi }
+        : { ...createEmptyState(), toneType: "散" },
+    );
+    setJianpuNumber(defaultNote?.jianpuNumber ?? null);
+    setJianpuOctave(defaultNote?.jianpuOctave ?? "");
+    setJianpuDot(defaultNote?.jianpuDot ?? false);
+    setDuration(defaultNote?.duration ?? "四分");
+    setActiveTab("finger");
+    setPinyinText(defaultNote ? jianziToText(defaultNote.jianzi) : "");
   }
 
   function handleConfirm() {
     if (!isComplete(state)) return;
     const note: NoteColumn = {
-      id: crypto.randomUUID(),
+      // 编辑模式保留原始 ID 避免 key 变化导致 React 卸载/重挂
+      id: defaultNote?.id ?? crypto.randomUUID(),
       jianpuNumber,
       jianpuOctave,
       jianpuDot,
@@ -135,15 +161,15 @@ export function JianzipuKeyboard({
             onChange={setPinyinText}
             onSubmit={(text) => {
               if (!text.trim()) return;
-              // 尝试直接解析汉字文本（如"大九勾四"）
               const parsed = /[一-鿿]/.test(text) ? parseJianziText(text) : null;
               const jianzi = parsed ?? createEmptyState();
+              // 编辑模式下保留原有简谱/时值数据
               const note: NoteColumn = {
-                id: crypto.randomUUID(),
-                jianpuNumber: null,
-                jianpuOctave: "",
-                jianpuDot: false,
-                duration: "四分",
+                id: defaultNote?.id ?? crypto.randomUUID(),
+                jianpuNumber: defaultNote?.jianpuNumber ?? null,
+                jianpuOctave: defaultNote?.jianpuOctave ?? "",
+                jianpuDot: defaultNote?.jianpuDot ?? false,
+                duration: defaultNote?.duration ?? "四分",
                 jianzi,
               };
               onAppend?.(note);
@@ -298,7 +324,7 @@ export function JianzipuKeyboard({
               disabled={!isComplete(state)}
               className="flex-1 px-4 py-2.5 text-sm rounded bg-stone-800 text-amber-50 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-stone-700 active:scale-[0.98] transition-all duration-200"
             >
-              确认
+              {defaultNote ? "更新" : "确认"}
             </button>
           </div>
           {/* 缺失字段提示 */}

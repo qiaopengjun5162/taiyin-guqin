@@ -35,6 +35,15 @@ fmt:
 fmt-check:
     {{cargo}} fmt --all -- --check
 
+# ── Rust WASM ────────────────────────────────────
+
+# 构建 taiyin-core WASM 包并部署到前端
+build-wasm:
+    cd crates/taiyin-core && wasm-pack build --target web
+    rm -rf apps/web/wasm apps/web/public/wasm
+    cp -r crates/taiyin-core/pkg apps/web/wasm
+    cp -r crates/taiyin-core/pkg apps/web/public/wasm
+
 # ── 前端 ──────────────────────────────────────
 
 # 启动前端开发服务器
@@ -44,6 +53,18 @@ dev:
 # 构建前端
 build-web:
     {{pnpm}} --filter web build
+
+# 前端类型检查
+ts-check:
+    cd apps/web && npx tsc --noEmit
+
+# 前端测试
+test-web:
+    {{pnpm}} --filter web test
+
+# 前端 lint
+lint-web:
+    cd apps/web && npx eslint src/ --ext .ts,.tsx
 
 # ── Docker ────────────────────────────────────
 
