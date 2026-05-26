@@ -1,6 +1,17 @@
 import type { NoteColumn } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const DEFAULT_TIMEOUT = 10_000;
+
+async function fetchWithTimeout(url: string, options?: RequestInit, timeout = DEFAULT_TIMEOUT) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface ScoreListItem {
   id: string;
@@ -17,7 +28,7 @@ export async function createScore(
   title: string,
   notes: NoteColumn[],
 ): Promise<Score> {
-  const res = await fetch(`${API_BASE}/api/v1/scores`, {
+  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title, notes }),
@@ -27,13 +38,13 @@ export async function createScore(
 }
 
 export async function listScores(): Promise<ScoreListItem[]> {
-  const res = await fetch(`${API_BASE}/api/v1/scores`);
+  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`);
   if (!res.ok) throw new Error("listScores failed");
   return res.json();
 }
 
 export async function getScore(id: string): Promise<Score> {
-  const res = await fetch(`${API_BASE}/api/v1/scores/${id}`);
+  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`);
   if (!res.ok) throw new Error("getScore failed");
   return res.json();
 }
@@ -42,7 +53,7 @@ export async function updateScore(
   id: string,
   data: { title?: string; notes?: NoteColumn[] },
 ): Promise<Score> {
-  const res = await fetch(`${API_BASE}/api/v1/scores/${id}`, {
+  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -52,7 +63,7 @@ export async function updateScore(
 }
 
 export async function deleteScore(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/v1/scores/${id}`, {
+  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("deleteScore failed");

@@ -1,30 +1,13 @@
+mod common;
+
 use axum::{body::Body, http::Request};
 use serde_json::{Value, json};
-use sqlx::postgres::PgPoolOptions;
 use taiyin_server::{AppState, app};
 use tower::util::ServiceExt;
 
-async fn test_pool() -> sqlx::PgPool {
-    let url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://taiyin:taiyin_dev@localhost:5432/taiyin".into());
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&url)
-        .await
-        .expect("connect to postgres (run `just docker-up` first)");
-    let migrator = sqlx::migrate::Migrator::new(std::path::Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/migrations"
-    )))
-    .await
-    .expect("load migrations");
-    migrator.run(&pool).await.expect("run migrations");
-    pool
-}
-
 #[tokio::test]
 async fn test_create_and_list_scores() {
-    let pool = test_pool().await;
+    let pool = common::test_pool().await;
     sqlx::query("DELETE FROM scores")
         .execute(&pool)
         .await
@@ -72,7 +55,7 @@ async fn test_create_and_list_scores() {
 
 #[tokio::test]
 async fn test_create_get_update_delete() {
-    let pool = test_pool().await;
+    let pool = common::test_pool().await;
     sqlx::query("DELETE FROM scores")
         .execute(&pool)
         .await

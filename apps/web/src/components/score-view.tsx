@@ -78,6 +78,7 @@ function NoteColumnView({
 
   return (
     <div
+      data-note-column
       className={`group flex flex-col items-center w-[72px] select-none cursor-pointer rounded pt-1 transition-all duration-150 hover:bg-amber-50/50 ${
         isEditing
           ? "ring-1 ring-amber-500/40 bg-amber-50 shadow-sm shadow-amber-500/10"

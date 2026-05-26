@@ -46,14 +46,11 @@ async fn create_score(
 }
 
 async fn list_scores(State(state): State<AppState>) -> AppResult<Json<Vec<ScoreListItem>>> {
-    let scores = sqlx::query_as::<_, Score>(
-        "SELECT id, title, notes, created_at, updated_at FROM scores ORDER BY updated_at DESC",
+    let scores = sqlx::query_as::<_, ScoreListItem>(
+        "SELECT id, title, created_at, updated_at FROM scores ORDER BY updated_at DESC",
     )
     .fetch_all(&state.pool)
-    .await?
-    .into_iter()
-    .map(ScoreListItem::from)
-    .collect();
+    .await?;
 
     Ok(Json(scores))
 }
