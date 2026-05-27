@@ -30,6 +30,10 @@ taiyin-guqin/
 │   └── web/               # Next.js 前端
 │       ├── src/lib/taiyin-wasm.ts  #  ← WASM 动态加载封装
 │       └── wasm/          #  ← WASM 产物部署目录
+├── scripts/               # 字体/字形提取工具脚本
+│   ├── extract-svg-paths.py       # 从 TaiYinJianZiPuKaiTi.ttf 提取 SVG path
+│   ├── extract-ancient-paths.py   # 从齊伋體提取古体字形 SVG path
+│   └── merge-ancient-paths.py     # 将古体 path 合并到 svg-paths.ts
 ├── justfile               # 构建命令
 ├── docker-compose.yml     # 本地基础服务
 └── CLAUDE.md              # 本文件
@@ -200,14 +204,24 @@ src/
 
 ### 素材提取
 
-1. 用 fonttools 从 `TaiYinJianZiPuKaiTi.ttf` 提取各 glyph 的 SVG path
-2. 输出为 `apps/web/src/lib/svg-paths.ts`（`<path d="..." />` 字符串字典）
-3. 右手外壳需是中空的半包围结构，弦序内核通过 CSS `absolute` 嵌入
+`svg-paths.ts` 中的 SVG path 来自两个来源：
+
+1. **TaiYinJianZiPuKaiTi**（当前字体）→ 右手指法外壳（半包围结构）+ 复合连字
+   - 脚本：`scripts/extract-svg-paths.py`
+   - 内部 glyph 命名映射：`rh_da → lg_da`、`rh_gou → lg_gou` 等
+
+2. **齊伋體**（明代木刻版风格, SIL OFL 1.1）→ 标准 CJK 字符（左手指法/弦序/徽位/分位/散字头）
+   - 脚本：`scripts/extract-ancient-paths.py` → 输出 `svg-paths.qiji.ts`
+   - `scripts/merge-ancient-paths.py` → 合并到 `svg-paths.ts`
+   - 替换条目见 `REPLACE_KEYS`（22 个标准字符）
+
+输出为 `apps/web/src/lib/svg-paths.ts`（`<path d="..." />` 字符串字典）。
+右手外壳需是中空的半包围结构，弦序内核通过 CSS `absolute` 嵌入。
 
 ### 架构注意事项
 
 - **指法语义时代分流**（管平湖 1957）：相同符号在不同时代谱式中语义可能相反。例如 "女" 在《广陵散》（早期谱）中作"按"（左手），在《自远堂》（晚期谱）中作"如"（右手双弹）。`JianziState` 未来需预留 `era: 'Early' | 'Late'` 模态字段，用于指法解析分流。
-- **二期 SVG 骨架应提取古体字形**："打"提取为"丁"形，"摘"提取为"倽"/"啇"形（参考陈拙《指法》），不取现代印刷体。一期维持晚期减字谱规范。
+- **古体字形已整合**：22 个标准 CJK 字符的 SVG path 已替换为來自齊伋體（明代木刻版风格）的古体字形。右手指法外壳（半包围结构）保持当前字体路径不变，因其结构不适合用标准 CJK 字符替换。
 
 ## 忘机减字谱楷体（TaiYinJianZiPuKaiTi）
 

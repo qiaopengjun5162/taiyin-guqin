@@ -80,6 +80,20 @@ docker-up:
 docker-down:
     docker compose down -v
 
+# ── SVG 字形提取 ──────────────────────────────
+
+# 从 TaiYinJianZiPuKaiTi 提取所有 SVG path（基准版本）
+extract-svg-paths:
+    python3 scripts/extract-svg-paths.py
+
+# 从齊伋體提取古体字形 SVG path
+extract-ancient-paths:
+    python3 scripts/extract-ancient-paths.py
+
+# 将古体字形合并到 svg-paths.ts 中（替换 22 个标准 CJK 字符）
+merge-ancient-paths:
+    python3 scripts/merge-ancient-paths.py
+
 # ── 完整流程 ──────────────────────────────────
 
 # 全量检查和测试（提交前运行）
