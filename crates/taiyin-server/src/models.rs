@@ -14,6 +14,15 @@ pub struct Score {
     pub updated_at: DateTime<Utc>,
 }
 
+/// 列表项——不包含 notes 全文以节省带宽。
+#[derive(Debug, Serialize, FromRow)]
+pub struct ScoreListItem {
+    pub id: Uuid,
+    pub title: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 /// 创建曲谱请求。
 #[derive(Debug, Deserialize)]
 pub struct CreateScoreRequest {
@@ -26,24 +35,4 @@ pub struct CreateScoreRequest {
 pub struct UpdateScoreRequest {
     pub title: Option<String>,
     pub notes: Option<serde_json::Value>,
-}
-
-/// 列表项——不包含 notes 全文以节省带宽。
-#[derive(Debug, Serialize)]
-pub struct ScoreListItem {
-    pub id: Uuid,
-    pub title: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl From<Score> for ScoreListItem {
-    fn from(s: Score) -> Self {
-        Self {
-            id: s.id,
-            title: s.title,
-            created_at: s.created_at,
-            updated_at: s.updated_at,
-        }
-    }
 }

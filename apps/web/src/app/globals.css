@@ -132,25 +132,52 @@ body {
 
 /* ── 打印/导出 PDF 样式 ── */
 @media print {
+  @page {
+    margin: 15mm 12mm;
+  }
+
   body {
     background: #f8f3eb !important;
     color: #1c1b1a !important;
   }
-  /* 隐藏不需要打印的元素 */
+
   .no-print {
     display: none !important;
   }
-  /* 乐谱区全宽展示 */
+
   #score-area {
     max-width: 100% !important;
-    margin-top: 0 !important;
+    margin: 0 !important;
     padding: 0;
+    display: flex;
+    justify-content: center;
   }
+
   #score-area .bg-\[\#f8f3eb\] {
     background: transparent !important;
   }
-  /* 删除按钮在打印时不显示 */
+
+  #score-area [data-note-column] {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
   #score-area button {
     display: none !important;
+  }
+
+  .jianzi-text {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body::after {
+    content: "太音智能 · 减字谱排版";
+    position: fixed;
+    bottom: 10mm;
+    right: 12mm;
+    font-size: 8pt;
+    color: #999;
+    font-family: "Noto Serif SC", serif;
   }
 }

@@ -5,5 +5,8 @@
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
     "lint": "pnpm --filter web lint"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }

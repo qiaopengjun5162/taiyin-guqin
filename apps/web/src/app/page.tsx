@@ -1,9 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
+import { SaveLoadToolbar } from "@/components/save-load-toolbar";
+import { LoadDialog } from "@/components/load-dialog";
+import { ExportFooter } from "@/components/export-footer";
+import { useExportImage } from "@/lib/use-export-image";
 import * as api from "@/lib/api";
 
 /**
@@ -34,19 +38,11 @@ export default function Home() {
   const [savedScores, setSavedScores] = useState<api.ScoreListItem[]>([]);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  // 点击对话框外部关闭
-  useEffect(() => {
-    if (!showLoadDialog) return;
-    function onClick(e: MouseEvent) {
-      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
-        setShowLoadDialog(false);
-      }
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [showLoadDialog]);
+  const exportRef = useRef<HTMLDivElement>(null);
+  const { exportPng, isExporting } = useExportImage({
+    containerRef: exportRef,
+    title: scoreTitle,
+  });
 
   /** 点击乐谱流音符 → 键盘回填数据 + 滚动到键盘区 */
   function handleEdit(index: number) {
@@ -163,84 +159,32 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── 乐谱流 ── */}
-      <div id="score-area" className="mt-8 w-full max-w-md">
+      {/* ── 乐谱流（导出截图目标） ── */}
+      <div id="score-area" ref={exportRef} className="mt-8 w-full max-w-md">
         <ScoreView notes={score} onRemove={handleRemove} onEdit={handleEdit} editingIndex={editingIndex} />
+        {score.length > 0 && <ExportFooter title={scoreTitle} />}
       </div>
 
       {/* ── 工具栏：标题 + 保存 / 加载 / 导出 ── */}
-      <div className="no-print mt-3 w-full max-w-md flex items-center gap-2">
-        <input
-          type="text"
-          value={scoreTitle}
-          onChange={(e) => setScoreTitle(e.target.value)}
-          className="flex-1 min-w-0 px-2 py-1.5 text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 placeholder-amber-700/40 outline-none focus:border-amber-600/50 transition-colors"
-          placeholder="曲谱名称"
-        />
-        <button
-          onClick={handleSave}
-          disabled={score.length === 0 || saveStatus === "saving"}
-          className="px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
-        >
-          {saveStatus === "saving" ? "保存中…" : saveStatus === "saved" ? "已保存" : saveStatus === "error" ? "保存失败" : "保存"}
-        </button>
-        <button
-          onClick={openLoadDialog}
-          className="px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
-        >
-          加载
-        </button>
-        {score.length > 0 && (
-          <button
-            onClick={() => window.print()}
-            className="px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
-          >
-            PDF
-          </button>
-        )}
-      </div>
+      <SaveLoadToolbar
+        title={scoreTitle}
+        onTitleChange={setScoreTitle}
+        onSave={handleSave}
+        onLoad={openLoadDialog}
+        onExport={exportPng}
+        hasNotes={score.length > 0}
+        saveStatus={saveStatus}
+        isExporting={isExporting}
+      />
 
       {/* ── 加载对话框 ── */}
-      {showLoadDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div ref={dialogRef} className="w-full max-w-sm mx-4 rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
-            <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
-            <div className="p-5">
-              <p className="text-[11px] tracking-wider text-amber-100/60 mb-3">已保存的曲谱</p>
-              {savedScores.length === 0 && (
-                <p className="text-[10px] tracking-wider text-stone-500">暂无保存的曲谱</p>
-              )}
-              <div className="space-y-1 max-h-60 overflow-y-auto">
-                {savedScores.map((s) => (
-                  <div
-                    key={s.id}
-                    className="group flex items-center gap-1 px-3 py-2 text-[11px] tracking-wider rounded border border-amber-700/10 hover:border-amber-600/30 hover:bg-amber-900/10 transition-all cursor-pointer"
-                    onClick={() => handleLoadScore(s.id)}
-                  >
-                    <span className="flex-1 text-amber-100/70 truncate">{s.title}</span>
-                    <span className="text-[9px] text-stone-500 shrink-0">
-                      {new Date(s.updated_at).toLocaleString("zh-CN")}
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteScore(s.id, s.title); }}
-                      className="ml-1 size-4 flex items-center justify-center rounded text-stone-500 hover:text-red-400 hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all"
-                      title="删除"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={() => setShowLoadDialog(false)}
-                className="mt-3 w-full px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 transition-all"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LoadDialog
+        open={showLoadDialog}
+        onClose={() => setShowLoadDialog(false)}
+        scores={savedScores}
+        onLoad={handleLoadScore}
+        onDelete={handleDeleteScore}
+      />
 
       {/* ── 主卡片 —— 宣纸质感 ── */}
       <div
