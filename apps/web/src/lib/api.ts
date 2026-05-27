@@ -13,6 +13,15 @@ async function fetchWithTimeout(url: string, options?: RequestInit, timeout = DE
   }
 }
 
+async function parseErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.json();
+    return (body as { error?: string }).error ?? res.statusText;
+  } catch {
+    return res.statusText;
+  }
+}
+
 export interface ScoreListItem {
   id: string;
   title: string;
@@ -33,19 +42,19 @@ export async function createScore(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title, notes }),
   });
-  if (!res.ok) throw new Error("createScore failed");
+  if (!res.ok) throw new Error(await parseErrorMessage(res));
   return res.json();
 }
 
 export async function listScores(): Promise<ScoreListItem[]> {
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`);
-  if (!res.ok) throw new Error("listScores failed");
+  if (!res.ok) throw new Error(await parseErrorMessage(res));
   return res.json();
 }
 
 export async function getScore(id: string): Promise<Score> {
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`);
-  if (!res.ok) throw new Error("getScore failed");
+  if (!res.ok) throw new Error(await parseErrorMessage(res));
   return res.json();
 }
 
@@ -58,7 +67,7 @@ export async function updateScore(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("updateScore failed");
+  if (!res.ok) throw new Error(await parseErrorMessage(res));
   return res.json();
 }
 
@@ -66,5 +75,5 @@ export async function deleteScore(id: string): Promise<void> {
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
     method: "DELETE",
   });
-  if (!res.ok) throw new Error("deleteScore failed");
+  if (!res.ok) throw new Error(await parseErrorMessage(res));
 }

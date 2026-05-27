@@ -57,9 +57,19 @@ just ci
 
 ## API 设计规范
 
-- POST `/api/v1/score` - 提交曲谱 JSON
-- GET `/api/v1/score/{id}` - 获取曲谱
-- POST `/api/v1/translate` - 简谱转减字（AI 翻译）
+| 方法 | 路由 | 说明 |
+|------|------|------|
+| POST | `/api/v1/scores` | 创建曲谱 |
+| GET | `/api/v1/scores` | 列表（不含 notes） |
+| GET | `/api/v1/scores/{id}` | 获取单个（含完整 notes） |
+| PUT | `/api/v1/scores/{id}` | 更新 |
+| DELETE | `/api/v1/scores/{id}` | 删除 |
+
+### 安全中间件
+
+- `RequestBodyLimitLayer`: 5MB 请求体限制
+- `tower_governor`: 速率限制 2 req/s + burst 60（仅生产环境 main.rs，测试不受限）
+- `CorsLayer::permissive()`: 开发阶段全开（生产需收紧）
 
 ## Rust 代码规范
 
@@ -175,7 +185,7 @@ src/
 - 后端集成测试需要运行中的 PostgreSQL。
 - 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
 - `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
-- 当前测试总数：Rust 17 + 前端 54 = **71**。
+- 当前测试总数：Rust 17 + 前端 54 = **71**（均 100% 通过）。
 
 ## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
 

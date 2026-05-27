@@ -11,12 +11,28 @@
 //! const score = createScore("仙翁操", "传习");
 //! ```
 
+use serde::{Serialize, de::DeserializeOwned};
 use wasm_bindgen::prelude::*;
 
 use crate::{GuqinNote, GuqinScore};
 
 fn json_error(e: &impl std::fmt::Display) -> String {
-    format!("{{\"error\":\"{}\"}}", e.to_string().replace('"', "\\\""))
+    serde_json::json!({"error": e.to_string()}).to_string()
+}
+
+fn deserialize_str<T: DeserializeOwned>(s: &str) -> Result<T, String> {
+    serde_json::from_str(&format!("\"{}\"", s)).map_err(|e| json_error(&e))
+}
+
+fn build_hui(hui: u8, fen: Option<u8>) -> crate::HuiPosition {
+    crate::HuiPosition {
+        hui,
+        fen: fen.filter(|&f| f > 0),
+    }
+}
+
+fn ser_result<T: Serialize>(val: &T) -> String {
+    serde_json::to_string(val).unwrap_or_default()
 }
 
 /// 解析并验证一个减字音符的 JSON。
@@ -44,12 +60,11 @@ pub fn parse_score(json: &str) -> String {
 /// right_action 使用 JSON 字符串格式，如 "挑"、"勾"、"抹"。
 #[wasm_bindgen]
 pub fn create_open_string_note(right_action: &str, string_number: u8) -> String {
-    let action: crate::RightAction = match serde_json::from_str(&format!("\"{}\"", right_action)) {
+    let action = match deserialize_str::<crate::RightAction>(right_action) {
         Ok(a) => a,
-        Err(e) => return json_error(&e),
+        Err(e) => return e,
     };
-    let note = GuqinNote::open_string(action, string_number);
-    serde_json::to_string(&note).unwrap_or_default()
+    ser_result(&GuqinNote::open_string(action, string_number))
 }
 
 /// 创建一个按音。
@@ -62,24 +77,20 @@ pub fn create_pressed_note(
     right_action: &str,
     string_number: u8,
 ) -> String {
-    let finger: crate::LeftFinger = match serde_json::from_str(&format!("\"{}\"", left_finger)) {
+    let finger = match deserialize_str::<crate::LeftFinger>(left_finger) {
         Ok(f) => f,
-        Err(e) => return json_error(&e),
+        Err(e) => return e,
     };
-    let action: crate::RightAction = match serde_json::from_str(&format!("\"{}\"", right_action)) {
+    let action = match deserialize_str::<crate::RightAction>(right_action) {
         Ok(a) => a,
-        Err(e) => return json_error(&e),
+        Err(e) => return e,
     };
-    let note = GuqinNote::pressed(
+    ser_result(&GuqinNote::pressed(
         finger,
-        crate::HuiPosition {
-            hui,
-            fen: fen.filter(|&f| f > 0),
-        },
+        build_hui(hui, fen),
         action,
         string_number,
-    );
-    serde_json::to_string(&note).unwrap_or_default()
+    ))
 }
 
 /// 创建一个泛音。
@@ -91,29 +102,24 @@ pub fn create_fan_yin_note(
     right_action: &str,
     string_number: u8,
 ) -> String {
-    let finger: crate::LeftFinger = match serde_json::from_str(&format!("\"{}\"", left_finger)) {
+    let finger = match deserialize_str::<crate::LeftFinger>(left_finger) {
         Ok(f) => f,
-        Err(e) => return json_error(&e),
+        Err(e) => return e,
     };
-    let action: crate::RightAction = match serde_json::from_str(&format!("\"{}\"", right_action)) {
+    let action = match deserialize_str::<crate::RightAction>(right_action) {
         Ok(a) => a,
-        Err(e) => return json_error(&e),
+        Err(e) => return e,
     };
-    let note = GuqinNote::fan_yin(
+    ser_result(&GuqinNote::fan_yin(
         finger,
-        crate::HuiPosition {
-            hui,
-            fen: fen.filter(|&f| f > 0),
-        },
+        build_hui(hui, fen),
         action,
         string_number,
-    );
-    serde_json::to_string(&note).unwrap_or_default()
+    ))
 }
 
 /// 创建一个空曲谱。
 #[wasm_bindgen]
 pub fn create_score(title: &str, author: &str) -> String {
-    let score = GuqinScore::new(title, author);
-    serde_json::to_string(&score).unwrap_or_default()
+    ser_result(&GuqinScore::new(title, author))
 }

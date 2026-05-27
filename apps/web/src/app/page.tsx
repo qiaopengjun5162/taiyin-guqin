@@ -107,17 +107,16 @@ export default function Home() {
     if (!confirm(`确认删除「${title}」？`)) return;
     try {
       await api.deleteScore(id);
-      setSavedScores((prev) => prev.filter((s) => s.id !== id));
-      if (currentScoreId === id) {
-        setScore([]);
-        setCurrentScoreId(null);
-        setScoreTitle("未命名曲谱");
-      }
     } catch {
       alert("删除失败。");
+      return;
     }
-    // 刷新列表
-    try { setSavedScores(await api.listScores()); } catch {}
+    setSavedScores((prev) => prev.filter((s) => s.id !== id));
+    if (currentScoreId === id) {
+      setScore([]);
+      setCurrentScoreId(null);
+      setScoreTitle("未命名曲谱");
+    }
   }
 
   /** 加载选中的曲谱 */

@@ -133,3 +133,59 @@
 - **WO2022142107A1** (2022) — 陈根方《一种古琴减字谱的可编辑文本记谱方法》
 
 注意：专利检索仅初步完成，后续需系统排查 FTO（Freedom to Operate）。
+
+## 2026-05-27
+
+### 古体字形替换（齊伋體·明刻本风格）
+
+**目标**：将 SVG 降级渲染的古琴减字谱字形替换为明代木刻版风格的古体路径，提升书法和历史感。
+
+**技术方案**：
+- 从 LingDong-/qiji-font v0.0.4（齊伋體，SIL OFL 1.1）提取标准 CJK 字符的 SVG path
+- 替换 `svg-paths.ts` 中 22 个条目（左手指法/弦序/徽位/分位/散字头）
+- 保留 8 个右手指法外壳（半包围结构）原路径不变
+
+**新增文件**：
+- `scripts/extract-ancient-paths.py` — 从齊伋體 TrueType 提取 SVG path，输出 `svg-paths.qiji.ts`
+- `scripts/merge-ancient-paths.py` — 将古体 path 合并到 `svg-paths.ts`（只替换 REPLACE_KEYS 中的 22 个条目）
+- `apps/web/src/lib/svg-paths.qiji.ts` — 齊伋體完整提取结果（29 entries），作为可复现的记录
+
+**遇到问题**：
+1. **Qiji font 下载 404**：GitHub release tag 是 `0.0.4` 而非 `v0.0.4`。纠正 URL 后修复。
+2. **merge-ancient-paths.py regex bug 1**：entry 正则 `r'"([^"]+)"\s*:\s*\{'` 丢失 `\s*` 前缀，TS 文件的缩进空格 + 引号导致不匹配。添加 `\s*` 修复。
+3. **merge-ancient-paths.py regex bug 2**：bbox 正则 `xMin:\s*(-?\d+)` — 文件实际为 `"xMin": 100`（带引号），加引号后修复。
+4. **右手指法外壳不可替换**：字体中的 rh_da/rh_zhai 等是半包围结构（bbox 宽 700+），用于嵌套弦序内核；标准 CJK 字符（bbox ~400-600）是居中紧凑字形，直接替换会丢失嵌套结构。
+
+**验证**：
+- Playwright 截图确认古体字形渲染效果
+- 对比页面 `/tmp/ancient-compare.png`：新旧字形替换效果
+- App 截图 `/tmp/ancient-app.png`：实机渲染泛音组合音符
+
+**PR**：PR #1 → squash merged to main
+
+### 文档更新
+
+- CLAUDE.md：目录结构添加 `scripts/`，素材提取章节更新为双来源说明，"二期 TODO"改为"已完成"
+- justfile：新增 `extract-svg-paths` / `extract-ancient-paths` / `merge-ancient-paths` 三个 recipe
+
+### 安全加固与代码重构 (2026-05-27)
+
+全面安全审计 + 代码重构，修复 6 个问题。
+
+**安全修复 (4 项)**:
+1. wasm.rs json_error — 字符串拼接 → serde_json::json!，防止特殊字符生成非法 JSON
+2. error.rs NotFound — 不再回显 UUID，返回通用 "Not found"
+3. routes.rs 请求体限制 — RequestBodyLimitLayer(5MB) + title 长度校验(200字) + Validation 错误变体
+4. api.ts 错误处理 — parseErrorMessage() 解析后端 {error} 响应，不再丢弃错误详情
+
+**重构 (3 项)**:
+5. routes.rs — 提取 fetch_score() + validate_title()，消除 get/update 重复查询
+6. wasm.rs — 提取 deserialize_str/build_hui/ser_result，消除 42 行重复
+7. page.tsx handleDeleteScore — 删除后用本地 state 更新，不发起多余 listScores()
+
+**新增依赖**: tower-http(limit feature), tower_governor(速率限制: 2 req/s, burst 60, 仅 main.rs)
+
+**依赖漏洞**: rsa 0.9.10(中危, 暂无修复), postcss <8.5.10(中危, via next)
+
+**验证**: Rust 17/17 + 前端 54/54 测试通过, clippy 零警告, TS 零错误
+
