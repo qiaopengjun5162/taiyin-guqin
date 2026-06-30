@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
@@ -8,6 +8,7 @@ import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog } from "@/components/load-dialog";
 import { ExportFooter } from "@/components/export-footer";
 import { useExportImage } from "@/lib/use-export-image";
+import { useScoreHistory } from "@/lib/use-score-history";
 import * as api from "@/lib/api";
 
 /**
@@ -29,12 +30,23 @@ import * as api from "@/lib/api";
  * 删除时若恰好删除编辑中的音符，即时退出编辑模式。
  */
 export default function Home() {
-  const [score, setScore] = useState<NoteColumn[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  const {
+    score,
+    title: scoreTitle,
+    setScore,
+    setTitle: setScoreTitle,
+    commitScore,
+    commitTitle: commitScoreTitle,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useScoreHistory([], "未命名曲谱");
 
   // 持久化状态
   const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
-  const [scoreTitle, setScoreTitle] = useState("未命名曲谱");
   const [savedScores, setSavedScores] = useState<api.ScoreListItem[]>([]);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -44,6 +56,33 @@ export default function Home() {
     title: scoreTitle,
   });
 
+  /** 全局撤销/重做快捷键 */
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const isMod = e.ctrlKey || e.metaKey;
+      if (!isMod) return;
+
+      const target = e.target as HTMLElement;
+      const isTextInput =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable;
+
+      if (e.key === "z" && !e.shiftKey) {
+        if (isTextInput) return;
+        e.preventDefault();
+        undo();
+      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
+        if (isTextInput) return;
+        e.preventDefault();
+        redo();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
+
   /** 点击乐谱流音符 → 键盘回填数据 + 滚动到键盘区 */
   function handleEdit(index: number) {
     setEditingIndex(index);
@@ -51,7 +90,7 @@ export default function Home() {
   }
 
   function handleAppend(note: NoteColumn) {
-    setScore((prev) => {
+    commitScore((prev) => {
       if (editingIndex !== null) {
         const next = [...prev];
         next[editingIndex] = note;
@@ -63,13 +102,11 @@ export default function Home() {
   }
 
   function handleRemove(id: string) {
-    setScore((prev) => {
-      const removedIdx = prev.findIndex((n) => n.id === id);
-      if (removedIdx >= 0 && editingIndex === removedIdx) {
-        setEditingIndex(null);
-      }
-      return prev.filter((n) => n.id !== id);
-    });
+    const removedIdx = score.findIndex((n) => n.id === id);
+    commitScore((prev) => prev.filter((n) => n.id !== id));
+    if (removedIdx >= 0 && editingIndex === removedIdx) {
+      setEditingIndex(null);
+    }
   }
 
   /** 保存曲谱到后端 */
@@ -110,8 +147,8 @@ export default function Home() {
       setSavedScores((prev) => prev.filter((s) => s.id !== id));
       if (currentScoreId === id) {
         setScore([]);
-        setCurrentScoreId(null);
         setScoreTitle("未命名曲谱");
+        setCurrentScoreId(null);
       }
     } catch {
       alert("删除失败。");
@@ -124,9 +161,9 @@ export default function Home() {
   async function handleLoadScore(id: string) {
     try {
       const scoreData = await api.getScore(id);
-      setScore(scoreData.notes);
+      commitScore(() => scoreData.notes);
+      commitScoreTitle(scoreData.title);
       setCurrentScoreId(scoreData.id);
-      setScoreTitle(scoreData.title);
       setShowLoadDialog(false);
       setEditingIndex(null);
     } catch {
@@ -169,12 +206,17 @@ export default function Home() {
       <SaveLoadToolbar
         title={scoreTitle}
         onTitleChange={setScoreTitle}
+        onTitleBlur={() => commitScoreTitle(scoreTitle)}
         onSave={handleSave}
         onLoad={openLoadDialog}
         onExport={exportPng}
         hasNotes={score.length > 0}
         saveStatus={saveStatus}
         isExporting={isExporting}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
       />
 
       {/* ── 加载对话框 ── */}
