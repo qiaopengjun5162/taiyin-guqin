@@ -1,5 +1,31 @@
 # 开发日志 (Development Log)
 
+## 2026-06-30
+
+### 撤销/重做 + 编辑器快捷键
+
+- 新增 `useScoreHistory` hook（`apps/web/src/lib/use-score-history.ts`），三段式历史栈（past/present/future），最大深度 50，同时记录 score 和 title。
+- 在 `page.tsx` 中替换原 `useState(score)` / `useState(title)`，所有写入操作通过 `commitScore` / `commitTitle` 进入历史。
+- 添加全局键盘监听：Ctrl/Cmd+Z 撤销，Ctrl/Cmd+Shift+Z 与 Ctrl/Cmd+Y 重做；在 input/textarea/contenteditable 内不拦截。
+- 在 `SaveLoadToolbar` 添加撤销/重做按钮，禁用态与快捷键提示。
+- 新增 15 个前端测试：7 个 `use-score-history` 测试 + 8 个 `save-load-toolbar` 测试。
+- 当前测试总数：Rust 17 + 前端 69 = 86。
+
+### 陈长林与古琴计算机研究资料补充
+
+通过网络检索补充了陈长林在古琴减字谱计算机化方面的关键资料：
+
+- **陈长林**（1932–），中科院计算所研究员、闽派琴人，是把计算机技术引入古琴减字谱研究的先驱。
+- **1982 年** 设计 **"音记编码"法**，编制 **"古琴谱电脑处理系统"（QPS）**，实现减字谱的键盘输入、显示与排版。
+- **1989 年** 在《计算机学报》发表 **《电脑在古琴音乐研究中的初步应用》**，第 525–533 页。
+- **1998–2002 年** 开发 **MIDI 古琴** 与 **古琴谱电脑模拟奏乐**，把研究从乐谱图像延伸到音响合成。
+- 后续研究者（喻辉 1993、张维城/苏文钰 2003、周昌乐/丁晓君 2007–2008、王德埙 2007 等）均在其基础上继续推进。
+
+参考链接：
+- [科学与艺术丨第一台电子计算机和古琴的故事](https://www.sohu.com/a/328053163_657694)
+- [古琴减字谱的编码与编辑方法 - 万方](https://d.wanfangdata.com.cn/periodical/zgyyx200802018)
+- [七弦连文理琴韵通古今 - 故宫 PDF](https://www.dpm.org.cn/Uploads/File/2019/08/29/u5d677028d6872.pdf)
+
 ## 2026-05-24
 
 ### 项目初始化
