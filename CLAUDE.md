@@ -99,6 +99,15 @@ just ci
 - **SVG 降级条件**: `needsSvg()` 返回 true 时使用 `SvgJianziBlock`。触发条件为 `toneType === "泛"` 或 `rightAction in ["打", "摘", "丁", "倽"]`。验证方法：读取 `jianzi-block.tsx` 的 `needsSvg` 函数。
 - **GlyphSVG 坐标系**: `svg-jianzi-block.tsx` 的 `GlyphSVG` 组件必须做 `scale(1, -1)` y 翻转，因为字体提取的 path 使用 font coordinate space（y 向上），而 SVG viewBox 原点在左上（y 向下）。
 
+## 撤销/重做
+
+- **历史栈**: `useScoreHistory` 维护三段式状态（past / present / future），最大深度 50。
+- **快照内容**: 每次 `commitScore` / `commitTitle` 同时记录当前 `score` 和 `title`；撤销/重做时两者一并恢复。
+- **提交点**: 仅在用户完成有意义操作时写入历史——追加/替换音符、删除音符、加载曲谱、标题输入失焦。直接 `setScore`/`setTitle` 不写入历史。
+- **去重**: 若新快照与当前 present 完全相同（含 JSON 序列化比较），不写入历史。
+- **快捷键**: 全局监听 `Ctrl+Z` / `Cmd+Z` 撤销，`Ctrl+Shift+Z` / `Cmd+Shift+Z` / `Ctrl+Y` / `Cmd+Y` 重做；在文本输入框内不拦截。
+- **验证方法**: `use-score-history.test.ts` 覆盖撤销/重做/深度限制/标题历史；`save-load-toolbar.test.tsx` 覆盖按钮禁用态与点击回调。
+
 ## 乐谱流数据流
 
 数据流拓扑：
@@ -175,7 +184,7 @@ src/
 - 后端集成测试需要运行中的 PostgreSQL。
 - 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
 - `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
-- 当前测试总数：Rust 17 + 前端 54 = **71**。
+- 当前测试总数：Rust 17 + 前端 69 = **86**。
 
 ## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
 

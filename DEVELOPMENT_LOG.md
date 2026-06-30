@@ -1,5 +1,16 @@
 # 开发日志 (Development Log)
 
+## 2026-06-30
+
+### 撤销/重做 + 编辑器快捷键
+
+- 新增 `useScoreHistory` hook（`apps/web/src/lib/use-score-history.ts`），三段式历史栈（past/present/future），最大深度 50，同时记录 score 和 title。
+- 在 `page.tsx` 中替换原 `useState(score)` / `useState(title)`，所有写入操作通过 `commitScore` / `commitTitle` 进入历史。
+- 添加全局键盘监听：Ctrl/Cmd+Z 撤销，Ctrl/Cmd+Shift+Z 与 Ctrl/Cmd+Y 重做；在 input/textarea/contenteditable 内不拦截。
+- 在 `SaveLoadToolbar` 添加撤销/重做按钮，禁用态与快捷键提示。
+- 新增 15 个前端测试：7 个 `use-score-history` 测试 + 8 个 `save-load-toolbar` 测试。
+- 当前测试总数：Rust 17 + 前端 69 = 86。
+
 ## 2026-05-24
 
 ### 项目初始化
