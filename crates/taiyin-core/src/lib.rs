@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+pub mod jianpu;
+
 // ──────────────────────────────────────────────
 // 基础类型
 // ──────────────────────────────────────────────
