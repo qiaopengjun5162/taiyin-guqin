@@ -123,3 +123,17 @@ pub fn create_fan_yin_note(
 pub fn create_score(title: &str, author: &str) -> String {
     ser_result(&GuqinScore::new(title, author))
 }
+
+/// 将简谱音符翻译为候选减字。
+///
+/// 输入 JSON: `{"number": 5, "octave": 0}`
+/// 输出 JSON: `{"candidates": [{"score": 150, "note": {...}}]}`
+#[wasm_bindgen]
+pub fn translate_jianpu_to_jianzi(input_json: &str) -> String {
+    let note: crate::jianpu::JianpuNote = match serde_json::from_str(input_json) {
+        Ok(n) => n,
+        Err(e) => return json_error(&e),
+    };
+    let candidates = crate::jianpu::translate_jianpu(note);
+    serde_json::json!({ "candidates": candidates }).to_string()
+}
