@@ -7,6 +7,7 @@ import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog } from "@/components/load-dialog";
 import { ExportFooter } from "@/components/export-footer";
+import { JianpuTranslator } from "@/components/jianpu-translator";
 import { useExportImage } from "@/lib/use-export-image";
 import { useScoreHistory } from "@/lib/use-score-history";
 import * as api from "@/lib/api";
@@ -250,6 +251,19 @@ export default function Home() {
               </button>
             </div>
           )}
+
+          {/* 简谱转减字入口 */}
+          {editingIndex === null && (
+            <div className="mb-4 p-3 rounded border border-amber-700/20 bg-amber-900/10">
+              <p className="mb-2 text-[10px] tracking-wider text-amber-600/60">简谱转减字</p>
+              <JianpuTranslator
+                onSelect={(note) => {
+                  commitScore((prev) => [...prev, note]);
+                }}
+              />
+            </div>
+          )}
+
           {/*
            * key 随 editingIndex 变化强制键盘组件完全重建，确保 useState 初始值携带新数据。
            * defaultNote 为 undefined 时键盘表现正常（追加模式）。
