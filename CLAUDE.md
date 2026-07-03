@@ -108,6 +108,17 @@ just ci
 - **快捷键**: 全局监听 `Ctrl+Z` / `Cmd+Z` 撤销，`Ctrl+Shift+Z` / `Cmd+Shift+Z` / `Ctrl+Y` / `Cmd+Y` 重做；在文本输入框内不拦截。
 - **验证方法**: `use-score-history.test.ts` 覆盖撤销/重做/深度限制/标题历史；`save-load-toolbar.test.tsx` 覆盖按钮禁用态与点击回调。
 
+## 简谱转减字
+
+- **规则映射**: 正调下基于音高表将简谱数字映射到候选 `GuqinNote`，支持散音、泛音。按音候选与多调式后续扩展。
+- **音高表**: `crates/taiyin-core/src/jianpu.rs` 中 `ZHENG_DIAO_PITCHES` 维护七弦散音 + 九个常用泛音徽位的音高；索引 0 为散音，索引 1..=9 对应 `ZHENG_DIAO_HARMONIC_HUI`。
+- **候选排序**: 散音（score=150）优先于泛音；泛音按徽位越低分越高（`130 - hui * 2`）。
+- **WASM 接口**: `translate_jianpu_to_jianzi` 接收 `{"number", "octave"}` JSON 字符串，返回 `{"candidates": [...]}` JSON 字符串，符合现有 JSON 桥接策略。
+- **前端入口**: `JianpuTranslator` 组件位于键盘卡片内（仅在非编辑模式显示），用户选择候选后直接追加到乐谱流。
+- **类型映射**: WASM 返回 Rust 枚举名（如 `Tiao`、`SanYin`、`Da`），`JianpuTranslator` 负责映射为键盘状态使用的显示字符（乚/散/大）。
+- **非目标**: 多调式、按音生成、上下文优化、LLM 选择。
+- **验证方法**: Rust 测试覆盖音高表与候选排序；前端测试覆盖选择回填与字符映射。
+
 ## 乐谱流数据流
 
 数据流拓扑：
@@ -184,7 +195,7 @@ src/
 - 后端集成测试需要运行中的 PostgreSQL。
 - 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
 - `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
-- 当前测试总数：Rust 17 + 前端 69 = **86**。
+- 当前测试总数：Rust 22 + 前端 71 = **93**。
 
 ## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
 

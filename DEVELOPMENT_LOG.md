@@ -1,5 +1,29 @@
 # 开发日志 (Development Log)
 
+## 2026-07-03
+
+### 简谱转减字规则映射（AI 第一阶段 · MVP）
+
+- 新增 `crates/taiyin-core/src/jianpu.rs`：
+  - `JianpuNote` / `Pitch` 类型
+  - 正调音高表 `ZHENG_DIAO_PITCHES`（七弦散音 + 九个常用泛音徽位）
+  - `translate_jianpu()` 候选生成：散音优先，泛音按徽位评分排序
+- `wasm.rs` 暴露 `translate_jianpu_to_jianzi`，保持 JSON 字符串桥接策略。
+- 前端新增 `JianpuTranslator` 组件（`apps/web/src/components/jianpu-translator.tsx`）：
+  - 简谱数字 + 八度选择
+  - 调用 WASM 获取候选列表
+  - 将 Rust 枚举名映射为键盘显示字符后渲染候选卡片
+  - 点击候选追加到乐谱流
+- 在 `page.tsx` 键盘卡片内集成 `JianpuTranslator`（仅在非编辑模式显示）。
+- 新增 5 个 Rust 测试 + 2 个前端测试。
+- 当前测试总数：Rust 22 + 前端 71 = 93。
+
+### 非目标（后续扩展）
+
+- 多调式支持（慢角、蕤宾等）
+- 按音候选生成
+- 上下文感知与 LLM 选择
+
 ## 2026-06-30
 
 ### 撤销/重做 + 编辑器快捷键
