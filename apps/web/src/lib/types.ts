@@ -84,8 +84,8 @@ export function createEmptyState(): JianziState {
 // 乐谱流类型
 // ──────────────────────────────────────────────
 
-/** 简谱数字 */
-export type JianpuNumber = "1" | "2" | "3" | "4" | "5" | "6" | "7";
+/** 简谱数字（0 为休止符） */
+export type JianpuNumber = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7";
 
 /** 时值 */
 export type Duration = "全" | "二分" | "四分" | "八分" | "十六分";

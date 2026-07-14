@@ -22,6 +22,7 @@
 import type { Duration } from "./types";
 
 export interface ParsedJianpuNote {
+  kind: "note";
   /** 简谱数字 1-7。 */
   number: number;
   /** 八度偏移：0 = 中央组，+1 = 高八度，-1 = 低八度。 */
@@ -33,6 +34,15 @@ export interface ParsedJianpuNote {
   /** 原始字符串片段，用于 UI 回显。 */
   raw: string;
 }
+
+export interface ParsedJianpuRest {
+  kind: "rest";
+  duration: Duration;
+  dotted: boolean;
+  raw: string;
+}
+
+export type ParsedJianpuItem = ParsedJianpuNote | ParsedJianpuRest;
 
 /**
  * 以三十二分音符为单位的整数拍数 → (Duration, dotted)。
@@ -57,28 +67,24 @@ const UNITS_OF: Record<string, number> = Object.fromEntries(
 const QUARTER_UNITS = 8;
 
 /**
- * 解析简谱字符串为音符序列。
+ * 解析简谱字符串为音符/休止符序列。
  *
  * 返回数组中每个元素对应一个「位置」：
  * - `ParsedJianpuNote` 表示有效音符
- * - `null` 表示休止占位
+ * - `ParsedJianpuRest` 表示休止符（`0`，可带减时线/附点/延音线）
  */
-export function parseJianpuString(input: string): (ParsedJianpuNote | null)[] {
+export function parseJianpuString(input: string): ParsedJianpuItem[] {
   const trimmed = input.trim();
   if (!trimmed) return [];
 
-  const out: (ParsedJianpuNote | null)[] = [];
+  const out: ParsedJianpuItem[] = [];
   for (const token of tokenize(trimmed)) {
     if (token === "-") {
-      extendLastNote(out);
+      extendLastItem(out);
       continue;
     }
-    if (token === "0") {
-      out.push(null);
-      continue;
-    }
-    const note = parseNoteToken(token);
-    if (note) out.push(note);
+    const item = parseRestToken(token) ?? parseNoteToken(token);
+    if (item) out.push(item);
   }
   return out;
 }
@@ -115,14 +121,11 @@ function parseNoteToken(token: string): ParsedJianpuNote | undefined {
   const octaveMarker = match[2];
   const octave = octaveMarker === "·" || octaveMarker === "'" ? 1 : octaveMarker === "," ? -1 : 0;
 
-  const reduction = match[3].length;
-  let units = QUARTER_UNITS >> reduction;
-  if (match[4] === ".") units += units / 2;
-
-  const mapped = BEAT_MAP[units];
+  const mapped = durationFromModifiers(match[3].length, match[4] === ".");
   if (!mapped) return undefined;
 
   return {
+    kind: "note",
     number,
     octave,
     duration: mapped[0],
@@ -131,8 +134,32 @@ function parseNoteToken(token: string): ParsedJianpuNote | undefined {
   };
 }
 
-/** 延音线：给前一个音符加一拍；无法映射时忽略该延音线。 */
-function extendLastNote(out: (ParsedJianpuNote | null)[]): void {
+function parseRestToken(token: string): ParsedJianpuRest | undefined {
+  const match = token.match(/^0(_{0,2})(\.?)$/);
+  if (!match) return undefined;
+
+  const mapped = durationFromModifiers(match[1].length, match[2] === ".");
+  if (!mapped) return undefined;
+
+  return {
+    kind: "rest",
+    duration: mapped[0],
+    dotted: mapped[1],
+    raw: token,
+  };
+}
+
+function durationFromModifiers(
+  reduction: number,
+  dotted: boolean,
+): [Duration, boolean] | undefined {
+  let units = QUARTER_UNITS >> reduction;
+  if (dotted) units += units / 2;
+  return BEAT_MAP[units];
+}
+
+/** 延音线：给前一个音符/休止符加一拍；无法映射时忽略该延音线。 */
+function extendLastItem(out: ParsedJianpuItem[]): void {
   const last = out[out.length - 1];
   if (!last) return;
 

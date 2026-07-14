@@ -137,4 +137,26 @@ describe("JianpuTranslator sequence mode", () => {
     expect(selected[2].duration).toBe("四分");
     expect(selected[2].jianpuDot).toBe(true);
   });
+
+  it("inserts a rest column for 0 when confirming", async () => {
+    const onSelect = vi.fn();
+    const { getByText, container } = render(<JianpuTranslator onSelect={onSelect} />);
+
+    fireEvent.click(getByText("序列"));
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "5 0 6" } });
+    fireEvent.click(getByText("翻译"));
+
+    await waitFor(() => {
+      expect(getByText("散挑一")).toBeInTheDocument();
+    });
+
+    fireEvent.click(getByText("确认全部"));
+    const selected = onSelect.mock.calls[0][0];
+    expect(selected).toHaveLength(3);
+    expect(selected[1].jianpuNumber).toBe("0");
+    expect(selected[1].duration).toBe("四分");
+    expect(selected[1].jianzi.toneType).toBeNull();
+    expect(selected[1].jianzi.rightAction).toBeNull();
+  });
 });

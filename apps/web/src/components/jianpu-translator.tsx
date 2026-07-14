@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { JianpuNumber, JianpuOctave, NoteColumn } from "@/lib/types";
 import { jianziToText, createEmptyState } from "@/lib/types";
 import { translateJianpuToJianzi, translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
-import { parseJianpuString, type ParsedJianpuNote } from "@/lib/jianpu-parser";
+import { parseJianpuString, type ParsedJianpuNote, type ParsedJianpuItem } from "@/lib/jianpu-parser";
 
 interface WasmCandidateNote {
   note_type: string;
@@ -89,21 +89,16 @@ function buildJianziState(candidate: WasmCandidate) {
 
 function candidateToNoteColumn(
   candidate: WasmCandidate,
-  parsedNote: ParsedJianpuNote | null,
+  parsedNote: ParsedJianpuNote,
 ): NoteColumn {
   const jianzi = buildJianziState(candidate);
   return {
     id: crypto.randomUUID(),
-    jianpuNumber: parsedNote ? (String(parsedNote.number) as JianpuNumber) : null,
-    jianpuOctave: parsedNote
-      ? parsedNote.octave === 1
-        ? "·"
-        : parsedNote.octave === -1
-          ? ","
-          : ""
-      : "",
-    jianpuDot: parsedNote?.dotted ?? false,
-    duration: parsedNote?.duration ?? "四分",
+    jianpuNumber: String(parsedNote.number) as JianpuNumber,
+    jianpuOctave:
+      parsedNote.octave === 1 ? "·" : parsedNote.octave === -1 ? "," : "",
+    jianpuDot: parsedNote.dotted,
+    duration: parsedNote.duration,
     jianzi,
   };
 }
@@ -133,6 +128,7 @@ function SingleNoteMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => voi
 
   function handleSelect(candidate: WasmCandidate) {
     const parsed: ParsedJianpuNote = {
+      kind: "note",
       number: parseInt(number || "1", 10),
       octave: octave === "·" ? 1 : octave === "," ? -1 : 0,
       duration: "四分",
@@ -192,14 +188,14 @@ function SingleNoteMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => voi
 
 function SequenceMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void }) {
   const [input, setInput] = useState("");
-  const [notes, setNotes] = useState<(ParsedJianpuNote | null)[]>([]);
+  const [notes, setNotes] = useState<ParsedJianpuItem[]>([]);
   const [candidatesPerNote, setCandidatesPerNote] = useState<WasmCandidate[][]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
 
   async function handleTranslate() {
     const parsed = parseJianpuString(input);
-    const playable = parsed.filter((n): n is ParsedJianpuNote => n !== null);
+    const playable = parsed.filter((n): n is ParsedJianpuNote => n.kind === "note");
     if (playable.length === 0) {
       setNotes(parsed);
       setCandidatesPerNote([]);
@@ -219,11 +215,11 @@ function SequenceMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void 
     }
 
     const result = parsedResult.candidates_per_note ?? [];
-    // 将可演奏音符的候选与占位符对齐：占位符位置用空数组填充。
+    // 将可演奏音符的候选与休止符对齐：休止符位置用空数组填充。
     const aligned: WasmCandidate[][] = [];
     let resultIdx = 0;
     for (const n of parsed) {
-      if (n === null) {
+      if (n.kind === "rest") {
         aligned.push([]);
       } else {
         aligned.push(result[resultIdx] ?? []);
@@ -240,11 +236,23 @@ function SequenceMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void 
   function handleConfirm() {
     const columns: NoteColumn[] = [];
     for (let i = 0; i < notes.length; i++) {
+      const item = notes[i];
+      if (item.kind === "rest") {
+        columns.push({
+          id: crypto.randomUUID(),
+          jianpuNumber: "0",
+          jianpuOctave: "",
+          jianpuDot: item.dotted,
+          duration: item.duration,
+          jianzi: createEmptyState(),
+        });
+        continue;
+      }
       const candidates = candidatesPerNote[i];
       const idx = selectedIndex[i] ?? 0;
       const candidate = candidates[idx];
       if (!candidate) continue;
-      columns.push(candidateToNoteColumn(candidate, notes[i]));
+      columns.push(candidateToNoteColumn(candidate, item));
     }
     if (columns.length === 0) return;
     onSelect(columns);
@@ -304,13 +312,13 @@ function SequenceMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void 
       </div>
       {notes.length > 0 && (
         <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
-          {notes.map((note, noteIdx) => (
+          {notes.map((item, noteIdx) => (
             <div
-              key={`${noteIdx}-${note?.raw ?? "rest"}`}
+              key={`${noteIdx}-${item.raw}`}
               className="flex items-center gap-2 px-2 py-1 rounded border border-amber-700/10 bg-amber-900/5"
             >
               <span className="w-8 shrink-0 text-center text-xs text-amber-100/60">
-                {note?.raw ?? "—"}
+                {item.raw}
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {candidatesPerNote[noteIdx]?.map((c, candIdx) => (
