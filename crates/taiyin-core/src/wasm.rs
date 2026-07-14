@@ -137,3 +137,17 @@ pub fn translate_jianpu_to_jianzi(input_json: &str) -> String {
     let candidates = crate::jianpu::translate_jianpu(note);
     serde_json::json!({ "candidates": candidates }).to_string()
 }
+
+/// 将一串简谱音符批量翻译为候选减字。
+///
+/// 输入 JSON: `[{"number": 5, "octave": 0}, {"number": 6, "octave": 0}]`
+/// 输出 JSON: `{"candidates_per_note": [[...], [...]]}`
+#[wasm_bindgen]
+pub fn translate_jianpu_sequence_to_jianzi(input_json: &str) -> String {
+    let notes: Vec<crate::jianpu::JianpuNote> = match serde_json::from_str(input_json) {
+        Ok(n) => n,
+        Err(e) => return json_error(&e),
+    };
+    let result = crate::jianpu::translate_jianpu_sequence(&notes);
+    serde_json::json!({ "candidates_per_note": result }).to_string()
+}
