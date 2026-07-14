@@ -36,7 +36,7 @@ export function formatScoreAsText(
   let acc = 0.0;
 
   for (const [index, note] of notes.entries()) {
-    const beats = durationToBeats(note.duration);
+    const beats = durationToBeats(note.duration, note.jianpuDot);
     if (acc > 0 && acc + beats > beatsPerBar) {
       jianpuLine.push("|");
       jianziLine.push("|");

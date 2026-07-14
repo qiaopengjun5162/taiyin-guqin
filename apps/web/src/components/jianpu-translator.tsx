@@ -102,8 +102,8 @@ function candidateToNoteColumn(
           ? ","
           : ""
       : "",
-    jianpuDot: false,
-    duration: "四分",
+    jianpuDot: parsedNote?.dotted ?? false,
+    duration: parsedNote?.duration ?? "四分",
     jianzi,
   };
 }
@@ -135,6 +135,8 @@ function SingleNoteMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => voi
     const parsed: ParsedJianpuNote = {
       number: parseInt(number || "1", 10),
       octave: octave === "·" ? 1 : octave === "," ? -1 : 0,
+      duration: "四分",
+      dotted: false,
       raw: `${number}${octave}`,
     };
     onSelect([candidateToNoteColumn(candidate, parsed)]);

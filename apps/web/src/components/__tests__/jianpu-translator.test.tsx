@@ -114,4 +114,27 @@ describe("JianpuTranslator sequence mode", () => {
     expect(selected[2].jianzi.leftFinger).toBe("大");
     expect(selected[2].jianzi.hui).toBe("四");
   });
+
+  it("carries parsed durations into confirmed notes", async () => {
+    const onSelect = vi.fn();
+    const { getByText, container } = render(<JianpuTranslator onSelect={onSelect} />);
+
+    fireEvent.click(getByText("序列"));
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "5 - 6_ 1." } });
+    fireEvent.click(getByText("翻译"));
+
+    await waitFor(() => {
+      expect(getByText("散挑一")).toBeInTheDocument();
+    });
+
+    fireEvent.click(getByText("确认全部"));
+    const selected = onSelect.mock.calls[0][0];
+    expect(selected).toHaveLength(3);
+    expect(selected[0].duration).toBe("二分");
+    expect(selected[0].jianpuDot).toBe(false);
+    expect(selected[1].duration).toBe("八分");
+    expect(selected[2].duration).toBe("四分");
+    expect(selected[2].jianpuDot).toBe(true);
+  });
 });

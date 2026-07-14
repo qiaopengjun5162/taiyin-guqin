@@ -175,4 +175,10 @@ describe("durationToBeats", () => {
     expect(durationToBeats("八分")).toBe(0.5);
     expect(durationToBeats("十六分")).toBe(0.25);
   });
+
+  it("applies 1.5x for dotted durations", () => {
+    expect(durationToBeats("二分", true)).toBe(3);
+    expect(durationToBeats("四分", true)).toBe(1.5);
+    expect(durationToBeats("八分", true)).toBe(0.75);
+  });
 });

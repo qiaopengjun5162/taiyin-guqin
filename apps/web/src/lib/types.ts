@@ -253,18 +253,25 @@ export function getRhythmLineCount(duration: Duration): number {
   }
 }
 
-/** 将时值转换为以四分音符为 1 拍的拍数。 */
-export function durationToBeats(duration: Duration): number {
+/** 将时值转换为以四分音符为 1 拍的拍数；dotted 为附点（×1.5）。 */
+export function durationToBeats(duration: Duration, dotted = false): number {
+  let beats: number;
   switch (duration) {
     case "全":
-      return 4;
+      beats = 4;
+      break;
     case "二分":
-      return 2;
+      beats = 2;
+      break;
     case "四分":
-      return 1;
+      beats = 1;
+      break;
     case "八分":
-      return 0.5;
+      beats = 0.5;
+      break;
     case "十六分":
-      return 0.25;
+      beats = 0.25;
+      break;
   }
+  return dotted ? beats * 1.5 : beats;
 }

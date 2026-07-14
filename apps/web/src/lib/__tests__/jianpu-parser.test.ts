@@ -5,21 +5,21 @@ import { describe, it, expect } from "vitest";
 import { parseJianpuString } from "../jianpu-parser";
 
 describe("parseJianpuString", () => {
-  it("parses plain numbers", () => {
+  it("parses plain numbers as quarter notes", () => {
     const result = parseJianpuString("5 6 1 2");
     expect(result).toHaveLength(4);
-    expect(result[0]).toEqual({ number: 5, octave: 0, raw: "5" });
-    expect(result[1]).toEqual({ number: 6, octave: 0, raw: "6" });
-    expect(result[2]).toEqual({ number: 1, octave: 0, raw: "1" });
-    expect(result[3]).toEqual({ number: 2, octave: 0, raw: "2" });
+    expect(result[0]).toEqual({ number: 5, octave: 0, duration: "四分", dotted: false, raw: "5" });
+    expect(result[1]).toEqual({ number: 6, octave: 0, duration: "四分", dotted: false, raw: "6" });
+    expect(result[2]).toEqual({ number: 1, octave: 0, duration: "四分", dotted: false, raw: "1" });
+    expect(result[3]).toEqual({ number: 2, octave: 0, duration: "四分", dotted: false, raw: "2" });
   });
 
   it("parses octave markers", () => {
     const result = parseJianpuString("5· 6' 3,");
     expect(result).toHaveLength(3);
-    expect(result[0]).toEqual({ number: 5, octave: 1, raw: "5·" });
-    expect(result[1]).toEqual({ number: 6, octave: 1, raw: "6'" });
-    expect(result[2]).toEqual({ number: 3, octave: -1, raw: "3," });
+    expect(result[0]).toEqual({ number: 5, octave: 1, duration: "四分", dotted: false, raw: "5·" });
+    expect(result[1]).toEqual({ number: 6, octave: 1, duration: "四分", dotted: false, raw: "6'" });
+    expect(result[2]).toEqual({ number: 3, octave: -1, duration: "四分", dotted: false, raw: "3," });
   });
 
   it("treats bar lines and spaces as separators", () => {
@@ -28,14 +28,12 @@ describe("parseJianpuString", () => {
     expect(result.map((n) => n?.number)).toEqual([5, 6, 1, 2, 3, 5]);
   });
 
-  it("returns null for rests and holds", () => {
-    const result = parseJianpuString("5 6 - 0 3");
-    expect(result).toHaveLength(5);
+  it("returns null for rests", () => {
+    const result = parseJianpuString("5 0 3");
+    expect(result).toHaveLength(3);
     expect(result[0]?.number).toBe(5);
-    expect(result[1]?.number).toBe(6);
-    expect(result[2]).toBeNull();
-    expect(result[3]).toBeNull();
-    expect(result[4]?.number).toBe(3);
+    expect(result[1]).toBeNull();
+    expect(result[2]?.number).toBe(3);
   });
 
   it("ignores invalid tokens", () => {
@@ -48,5 +46,71 @@ describe("parseJianpuString", () => {
   it("returns empty array for empty input", () => {
     expect(parseJianpuString("")).toEqual([]);
     expect(parseJianpuString("   ")).toEqual([]);
+  });
+
+  it("merges dashes into the previous note duration", () => {
+    // 5 - → 二分（2 拍）；5 - - - → 全（4 拍）
+    const result = parseJianpuString("5 - 6 - - -");
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ number: 5, octave: 0, duration: "二分", dotted: false, raw: "5-" });
+    expect(result[1]).toEqual({ number: 6, octave: 0, duration: "全", dotted: false, raw: "6---" });
+  });
+
+  it("maps three beats to dotted half note", () => {
+    const result = parseJianpuString("5 - -");
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ number: 5, octave: 0, duration: "二分", dotted: true, raw: "5--" });
+  });
+
+  it("extends across bar lines", () => {
+    const result = parseJianpuString("5 | -");
+    expect(result).toHaveLength(1);
+    expect(result[0]?.duration).toBe("二分");
+  });
+
+  it("ignores dashes that exceed whole note", () => {
+    const result = parseJianpuString("5 - - - -");
+    expect(result).toHaveLength(1);
+    expect(result[0]?.duration).toBe("全");
+    expect(result[0]?.raw).toBe("5---");
+  });
+
+  it("ignores dashes with no preceding note", () => {
+    const result = parseJianpuString("- 5");
+    expect(result).toHaveLength(1);
+    expect(result[0]?.number).toBe(5);
+  });
+
+  it("parses reduction lines for eighth and sixteenth notes", () => {
+    const result = parseJianpuString("5_ 6__");
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ number: 5, octave: 0, duration: "八分", dotted: false, raw: "5_" });
+    expect(result[1]).toEqual({ number: 6, octave: 0, duration: "十六分", dotted: false, raw: "6__" });
+  });
+
+  it("parses dotted notes", () => {
+    const result = parseJianpuString("5. 6_.");
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ number: 5, octave: 0, duration: "四分", dotted: true, raw: "5." });
+    expect(result[1]).toEqual({ number: 6, octave: 0, duration: "八分", dotted: true, raw: "6_." });
+  });
+
+  it("combines octave, reduction lines and dot in one token", () => {
+    const result = parseJianpuString("5·_.");
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ number: 5, octave: 1, duration: "八分", dotted: true, raw: "5·_." });
+  });
+
+  it("rejects tokens with three reduction lines", () => {
+    const result = parseJianpuString("5___ 3");
+    expect(result).toHaveLength(1);
+    expect(result[0]?.number).toBe(3);
+  });
+
+  it("keeps the note when a dash would make duration unmappable", () => {
+    // 5. - → 2.5 拍无法映射，延音线被忽略，保留附点四分
+    const result = parseJianpuString("5. -");
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ number: 5, octave: 0, duration: "四分", dotted: true, raw: "5." });
   });
 });

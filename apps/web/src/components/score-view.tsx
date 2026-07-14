@@ -37,7 +37,7 @@ export function ScoreView({
   let acc = 0;
 
   notes.forEach((note, index) => {
-    const noteBeats = durationToBeats(note.duration);
+    const noteBeats = durationToBeats(note.duration, note.jianpuDot);
 
     // 当前音符会跨过小节边界时，先插入小节线并重置累计
     if (acc > 0 && acc + noteBeats > beatsPerBar) {

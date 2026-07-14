@@ -2,6 +2,15 @@
 
 ## 2026-07-14
 
+### 节奏时值解析
+
+- `jianpu-parser.ts` 支持时值语法：延音线 `-`（给前音符 +1 拍，可跨小节）、减时线 `_`/`__`（八分/十六分）、附点 `.`（×1.5）；`0` 保持休止占位。
+- 拍数映射以三十二分音符为单位做整数运算：三拍（`5 - -`）→ 附点二分；无法精确映射的延音线被忽略（保留音符）。
+- `ParsedJianpuNote` 新增 `duration` / `dotted` 字段；`JianpuTranslator` 批量确认时回填 `NoteColumn.duration` / `jianpuDot`。
+- `durationToBeats(duration, dotted)` 增加附点参数（×1.5），`ScoreView` 小节线与 `score-export` 文本导出均已传入 `jianpuDot`。
+- 新增测试：解析器时值用例（9 个）、`durationToBeats` 附点（1 个）、翻译器时值回填（1 个）。
+- 当前测试总数：Rust 29 + 前端 107 = **136**。
+
 ### 乐谱文本导出
 
 - 新增 `apps/web/src/lib/score-export.ts`：
@@ -67,8 +76,8 @@
 
 ### 非目标（后续扩展）
 
-- 节奏时值解析（附点、减时线）。
 - LLM 选择。
+- 休止符减字表达（`0` 目前仅占位，不进入乐谱流）。
 
 ## 2026-07-03
 
