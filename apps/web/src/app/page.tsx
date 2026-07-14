@@ -10,6 +10,8 @@ import { ExportFooter } from "@/components/export-footer";
 import { JianpuTranslator } from "@/components/jianpu-translator";
 import { useExportImage } from "@/lib/use-export-image";
 import { useScoreHistory } from "@/lib/use-score-history";
+import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
+import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
 import * as api from "@/lib/api";
 
 /**
@@ -51,6 +53,7 @@ export default function Home() {
   const [savedScores, setSavedScores] = useState<api.ScoreListItem[]>([]);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [beatsPerBar, setBeatsPerBar] = useState(4);
   const exportRef = useRef<HTMLDivElement>(null);
   const { exportPng, isExporting } = useExportImage({
     containerRef: exportRef,
@@ -172,6 +175,22 @@ export default function Home() {
     }
   }
 
+  /** 加载预置示例曲谱 */
+  function handleLoadExample(id: string) {
+    const example = findExampleScore(id);
+    if (!example) return;
+    commitScore(() => example.notes);
+    commitScoreTitle(example.title);
+    setCurrentScoreId(null);
+    setEditingIndex(null);
+  }
+
+  /** 导出纯文本对照谱 */
+  function handleExportText() {
+    const text = formatScoreAsText(score, { title: scoreTitle, beatsPerBar });
+    downloadTextFile(text, `${scoreTitle || "taiyin-score"}.txt`);
+  }
+
   return (
     <main className="flex flex-col items-center min-h-dvh py-10 px-4">
       {/* ── 品牌：朱砂印章（主视觉标识） ── */}
@@ -199,7 +218,12 @@ export default function Home() {
 
       {/* ── 乐谱流（导出截图目标） ── */}
       <div id="score-area" ref={exportRef} className="mt-8 w-full max-w-md">
-        <ScoreView notes={score} onRemove={handleRemove} onEdit={handleEdit} editingIndex={editingIndex} />
+        <ScoreView notes={score} beatsPerBar={beatsPerBar} onRemove={handleRemove} onEdit={handleEdit} editingIndex={editingIndex} />
+        {score.length === 0 && (
+          <p className="mt-4 text-center text-[11px] tracking-wider text-amber-700/40">
+            暂无音符 · 用「简谱转减字」输入，或从上方「示例」加载一首曲谱
+          </p>
+        )}
         {score.length > 0 && <ExportFooter title={scoreTitle} />}
       </div>
 
@@ -210,7 +234,10 @@ export default function Home() {
         onTitleBlur={() => commitScoreTitle(scoreTitle)}
         onSave={handleSave}
         onLoad={openLoadDialog}
-        onExport={exportPng}
+        onExportPng={exportPng}
+        onExportText={handleExportText}
+        examples={EXAMPLE_SCORES}
+        onLoadExample={handleLoadExample}
         hasNotes={score.length > 0}
         saveStatus={saveStatus}
         isExporting={isExporting}
@@ -219,6 +246,20 @@ export default function Home() {
         onUndo={undo}
         onRedo={redo}
       />
+
+      {/* ── 拍号选择 ── */}
+      <div className="no-print mt-2 w-full max-w-md flex items-center justify-end gap-2">
+        <span className="text-[10px] tracking-wider text-amber-600/50">拍号</span>
+        <select
+          value={beatsPerBar}
+          onChange={(e) => setBeatsPerBar(parseInt(e.target.value, 10))}
+          className="px-2 py-1 text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 outline-none focus:border-amber-600/50"
+        >
+          <option value={3}>3/4</option>
+          <option value={4}>4/4</option>
+          <option value={6}>6/8</option>
+        </select>
+      </div>
 
       {/* ── 加载对话框 ── */}
       <LoadDialog
@@ -257,8 +298,8 @@ export default function Home() {
             <div className="mb-4 p-3 rounded border border-amber-700/20 bg-amber-900/10">
               <p className="mb-2 text-[10px] tracking-wider text-amber-600/60">简谱转减字</p>
               <JianpuTranslator
-                onSelect={(note) => {
-                  commitScore((prev) => [...prev, note]);
+                onSelect={(notes) => {
+                  commitScore((prev) => [...prev, ...notes]);
                 }}
               />
             </div>

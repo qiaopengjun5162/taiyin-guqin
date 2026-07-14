@@ -252,3 +252,19 @@ export function getRhythmLineCount(duration: Duration): number {
       return 3;
   }
 }
+
+/** 将时值转换为以四分音符为 1 拍的拍数。 */
+export function durationToBeats(duration: Duration): number {
+  switch (duration) {
+    case "全":
+      return 4;
+    case "二分":
+      return 2;
+    case "四分":
+      return 1;
+    case "八分":
+      return 0.5;
+    case "十六分":
+      return 0.25;
+  }
+}

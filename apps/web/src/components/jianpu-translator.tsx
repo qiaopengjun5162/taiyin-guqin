@@ -3,7 +3,8 @@
 import { useState } from "react";
 import type { JianpuNumber, JianpuOctave, NoteColumn } from "@/lib/types";
 import { jianziToText, createEmptyState } from "@/lib/types";
-import { translateJianpuToJianzi } from "@/lib/taiyin-wasm";
+import { translateJianpuToJianzi, translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
+import { parseJianpuString, type ParsedJianpuNote } from "@/lib/jianpu-parser";
 
 interface WasmCandidateNote {
   note_type: string;
@@ -19,8 +20,10 @@ interface WasmCandidate {
 }
 
 interface JianpuTranslatorProps {
-  onSelect: (column: NoteColumn) => void;
+  onSelect: (columns: NoteColumn[]) => void;
 }
+
+type InputMode = "single" | "sequence";
 
 const NOTE_TYPE_MAP: Record<string, "散" | "泛" | "按"> = {
   SanYin: "散",
@@ -47,6 +50,12 @@ const RIGHT_ACTION_MAP: Record<string, string> = {
   Zhai: "倽",
 };
 
+const FEN_MAP: Record<number, string> = {
+  3: "三分",
+  6: "六分",
+  8: "八分",
+};
+
 const CHINESE_DIGITS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
 
 function toChineseNumber(n: number): string {
@@ -60,7 +69,46 @@ function toChineseNumber(n: number): string {
   return String(n);
 }
 
-export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
+function buildJianziState(candidate: WasmCandidate) {
+  const note = candidate.note;
+  const jianzi = createEmptyState();
+  jianzi.toneType = NOTE_TYPE_MAP[note.note_type] ?? null;
+  if (note.left_finger) {
+    jianzi.leftFinger = LEFT_FINGER_MAP[note.left_finger] ?? note.left_finger;
+  }
+  if (note.hui) {
+    jianzi.hui = toChineseNumber(note.hui.hui);
+    if (note.hui.fen != null) {
+      jianzi.fen = note.hui.fen === 5 ? "半" : FEN_MAP[note.hui.fen] ?? null;
+    }
+  }
+  jianzi.rightAction = RIGHT_ACTION_MAP[note.right_action] ?? note.right_action;
+  jianzi.stringNumber = toChineseNumber(note.string_number);
+  return jianzi;
+}
+
+function candidateToNoteColumn(
+  candidate: WasmCandidate,
+  parsedNote: ParsedJianpuNote | null,
+): NoteColumn {
+  const jianzi = buildJianziState(candidate);
+  return {
+    id: crypto.randomUUID(),
+    jianpuNumber: parsedNote ? (String(parsedNote.number) as JianpuNumber) : null,
+    jianpuOctave: parsedNote
+      ? parsedNote.octave === 1
+        ? "·"
+        : parsedNote.octave === -1
+          ? ","
+          : ""
+      : "",
+    jianpuDot: false,
+    duration: "四分",
+    jianzi,
+  };
+}
+
+function SingleNoteMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void }) {
   const [number, setNumber] = useState<JianpuNumber | "">("");
   const [octave, setOctave] = useState<JianpuOctave>("");
   const [candidates, setCandidates] = useState<WasmCandidate[]>([]);
@@ -83,32 +131,13 @@ export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
     setLoading(false);
   }
 
-  function buildJianziState(candidate: WasmCandidate) {
-    const note = candidate.note;
-    const jianzi = createEmptyState();
-    jianzi.toneType = NOTE_TYPE_MAP[note.note_type] ?? null;
-    if (note.left_finger) {
-      jianzi.leftFinger = LEFT_FINGER_MAP[note.left_finger] ?? note.left_finger;
-    }
-    if (note.hui) {
-      jianzi.hui = toChineseNumber(note.hui.hui);
-    }
-    jianzi.rightAction = RIGHT_ACTION_MAP[note.right_action] ?? note.right_action;
-    jianzi.stringNumber = toChineseNumber(note.string_number);
-    return jianzi;
-  }
-
   function handleSelect(candidate: WasmCandidate) {
-    const jianzi = buildJianziState(candidate);
-
-    onSelect({
-      id: crypto.randomUUID(),
-      jianpuNumber: number || null,
-      jianpuOctave: octave,
-      jianpuDot: false,
-      duration: "四分",
-      jianzi,
-    });
+    const parsed: ParsedJianpuNote = {
+      number: parseInt(number || "1", 10),
+      octave: octave === "·" ? 1 : octave === "," ? -1 : 0,
+      raw: `${number}${octave}`,
+    };
+    onSelect([candidateToNoteColumn(candidate, parsed)]);
   }
 
   return (
@@ -154,6 +183,184 @@ export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function SequenceMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void }) {
+  const [input, setInput] = useState("");
+  const [notes, setNotes] = useState<(ParsedJianpuNote | null)[]>([]);
+  const [candidatesPerNote, setCandidatesPerNote] = useState<WasmCandidate[][]>([]);
+  const [selectedIndex, setSelectedIndex] = useState<number[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function handleTranslate() {
+    const parsed = parseJianpuString(input);
+    const playable = parsed.filter((n): n is ParsedJianpuNote => n !== null);
+    if (playable.length === 0) {
+      setNotes(parsed);
+      setCandidatesPerNote([]);
+      setSelectedIndex([]);
+      return;
+    }
+
+    setLoading(true);
+    const raw = await translateJianpuSequenceToJianzi(
+      JSON.stringify(playable.map((n) => ({ number: n.number, octave: n.octave }))),
+    );
+    let parsedResult: { candidates_per_note?: WasmCandidate[][] } = {};
+    try {
+      parsedResult = JSON.parse(raw);
+    } catch {
+      parsedResult = {};
+    }
+
+    const result = parsedResult.candidates_per_note ?? [];
+    // 将可演奏音符的候选与占位符对齐：占位符位置用空数组填充。
+    const aligned: WasmCandidate[][] = [];
+    let resultIdx = 0;
+    for (const n of parsed) {
+      if (n === null) {
+        aligned.push([]);
+      } else {
+        aligned.push(result[resultIdx] ?? []);
+        resultIdx++;
+      }
+    }
+
+    setNotes(parsed);
+    setCandidatesPerNote(aligned);
+    setSelectedIndex(parsed.map(() => 0));
+    setLoading(false);
+  }
+
+  function handleConfirm() {
+    const columns: NoteColumn[] = [];
+    for (let i = 0; i < notes.length; i++) {
+      const candidates = candidatesPerNote[i];
+      const idx = selectedIndex[i] ?? 0;
+      const candidate = candidates[idx];
+      if (!candidate) continue;
+      columns.push(candidateToNoteColumn(candidate, notes[i]));
+    }
+    if (columns.length === 0) return;
+    onSelect(columns);
+    setNotes([]);
+    setCandidatesPerNote([]);
+    setSelectedIndex([]);
+  }
+
+  function handleClear() {
+    setInput("");
+    setNotes([]);
+    setCandidatesPerNote([]);
+    setSelectedIndex([]);
+  }
+
+  function selectCandidate(noteIndex: number, candidateIndex: number) {
+    setSelectedIndex((prev) => {
+      const next = [...prev];
+      next[noteIndex] = candidateIndex;
+      return next;
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <textarea
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        placeholder="例如：5 6 1 2 | 3 5 6 -"
+        rows={2}
+        className="w-full px-2 py-1 rounded border border-amber-700/20 bg-transparent text-amber-100/70 text-sm placeholder:text-amber-700/30 resize-none"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleTranslate}
+          disabled={!input.trim() || loading}
+          className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 disabled:opacity-30"
+        >
+          {loading ? "翻译中…" : "翻译"}
+        </button>
+        {notes.length > 0 && (
+          <>
+            <button
+              onClick={handleConfirm}
+              className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300"
+            >
+              确认全部
+            </button>
+            <button
+              onClick={handleClear}
+              className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300"
+            >
+              清空
+            </button>
+          </>
+        )}
+      </div>
+      {notes.length > 0 && (
+        <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+          {notes.map((note, noteIdx) => (
+            <div
+              key={`${noteIdx}-${note?.raw ?? "rest"}`}
+              className="flex items-center gap-2 px-2 py-1 rounded border border-amber-700/10 bg-amber-900/5"
+            >
+              <span className="w-8 shrink-0 text-center text-xs text-amber-100/60">
+                {note?.raw ?? "—"}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {candidatesPerNote[noteIdx]?.map((c, candIdx) => (
+                  <button
+                    key={candIdx}
+                    onClick={() => selectCandidate(noteIdx, candIdx)}
+                    className={`px-1.5 py-0.5 text-xs rounded border ${
+                      selectedIndex[noteIdx] === candIdx
+                        ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
+                        : "border-amber-700/20 text-amber-100/70 hover:bg-amber-900/20"
+                    }`}
+                    title={`评分: ${c.score}`}
+                  >
+                    {jianziToText(buildJianziState(c))}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
+  const [mode, setMode] = useState<InputMode>("single");
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1">
+        {[
+          { key: "single", label: "单音" },
+          { key: "sequence", label: "序列" },
+        ].map((m) => (
+          <button
+            key={m.key}
+            onClick={() => setMode(m.key as InputMode)}
+            className={`px-2 py-0.5 text-[10px] tracking-wider rounded border transition-colors ${
+              mode === m.key
+                ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
+                : "border-amber-700/20 text-amber-100/50 hover:text-amber-100/70"
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {mode === "single" ? (
+        <SingleNoteMode onSelect={onSelect} />
+      ) : (
+        <SequenceMode onSelect={onSelect} />
       )}
     </div>
   );

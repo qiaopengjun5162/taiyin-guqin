@@ -1,10 +1,15 @@
+import type { ExampleScore } from "@/lib/example-scores";
+
 interface SaveLoadToolbarProps {
   title: string;
   onTitleChange: (title: string) => void;
   onTitleBlur?: () => void;
   onSave: () => void;
   onLoad: () => void;
-  onExport?: () => void;
+  onExportPng?: () => void;
+  onExportText?: () => void;
+  examples?: ExampleScore[];
+  onLoadExample?: (id: string) => void;
   hasNotes: boolean;
   saveStatus: "idle" | "saving" | "saved" | "error";
   isExporting?: boolean;
@@ -20,7 +25,10 @@ export function SaveLoadToolbar({
   onTitleBlur,
   onSave,
   onLoad,
-  onExport,
+  onExportPng,
+  onExportText,
+  examples,
+  onLoadExample,
   hasNotes,
   saveStatus,
   isExporting,
@@ -76,13 +84,40 @@ export function SaveLoadToolbar({
       >
         加载
       </button>
-      {hasNotes && onExport && (
+      {examples && examples.length > 0 && onLoadExample && (
+        <select
+          value=""
+          onChange={(e) => {
+            if (e.target.value) {
+              onLoadExample(e.target.value);
+              e.target.value = "";
+            }
+          }}
+          className="px-2 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 bg-transparent text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all outline-none"
+        >
+          <option value="">示例</option>
+          {examples.map((ex) => (
+            <option key={ex.id} value={ex.id}>
+              {ex.title}
+            </option>
+          ))}
+        </select>
+      )}
+      {hasNotes && onExportPng && (
         <button
-          onClick={onExport}
+          onClick={onExportPng}
           disabled={isExporting}
           className="px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isExporting ? "导出中…" : "导出"}
+        </button>
+      )}
+      {hasNotes && onExportText && (
+        <button
+          onClick={onExportText}
+          className="px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
+        >
+          导出文本
         </button>
       )}
     </div>

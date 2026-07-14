@@ -5,6 +5,7 @@ import {
   jianziToText,
   parseJianziText,
   getRhythmLineCount,
+  durationToBeats,
 } from "../types";
 import type { JianziState } from "../types";
 
@@ -163,5 +164,15 @@ describe("getRhythmLineCount", () => {
     expect(getRhythmLineCount("四分")).toBe(1);
     expect(getRhythmLineCount("八分")).toBe(2);
     expect(getRhythmLineCount("十六分")).toBe(3);
+  });
+});
+
+describe("durationToBeats", () => {
+  it("converts durations to beats", () => {
+    expect(durationToBeats("全")).toBe(4);
+    expect(durationToBeats("二分")).toBe(2);
+    expect(durationToBeats("四分")).toBe(1);
+    expect(durationToBeats("八分")).toBe(0.5);
+    expect(durationToBeats("十六分")).toBe(0.25);
   });
 });

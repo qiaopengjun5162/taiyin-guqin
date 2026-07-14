@@ -38,6 +38,7 @@ interface WasmModule {
   ): string;
   create_score(title: string, author: string): string;
   translate_jianpu_to_jianzi(input_json: string): string;
+  translate_jianpu_sequence_to_jianzi(input_json: string): string;
 }
 
 let instance: WasmModule | null = null;
@@ -106,4 +107,9 @@ export async function createScore(title: string, author: string): Promise<string
 export async function translateJianpuToJianzi(input: string): Promise<string> {
   const wasm = await getWasm();
   return wasm.translate_jianpu_to_jianzi(input);
+}
+
+export async function translateJianpuSequenceToJianzi(input: string): Promise<string> {
+  const wasm = await getWasm();
+  return wasm.translate_jianpu_sequence_to_jianzi(input);
 }

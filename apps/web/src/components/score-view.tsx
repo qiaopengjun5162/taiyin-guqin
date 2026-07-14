@@ -1,24 +1,26 @@
 "use client";
 
 import type { NoteColumn, Duration } from "@/lib/types";
-import { getRhythmLineCount } from "@/lib/types";
+import { getRhythmLineCount, durationToBeats } from "@/lib/types";
 import { JianziBlock } from "./jianzi-block";
 
 const SERIF_FONT =
   "var(--font-serif), 'Noto Serif SC', 'Songti SC', 'SimSun', 'STSong', serif";
 
 /**
- * 乐谱流视图 —— 将复合音符列以 flex-wrap 流动排列。
+ * 乐谱流视图 —— 将复合音符列以 flex-wrap 流动排列，并按拍号插入小节线。
  *
  * 减字部分使用忘机减字谱楷体渲染，通过 OpenType 组字自动完成传统布局。
  */
 export function ScoreView({
   notes,
+  beatsPerBar = 4,
   onRemove,
   onEdit,
   editingIndex,
 }: {
   notes: NoteColumn[];
+  beatsPerBar?: number;
   onRemove?: (id: string) => void;
   onEdit?: (index: number) => void;
   editingIndex?: number | null;
@@ -31,26 +33,63 @@ export function ScoreView({
     );
   }
 
+  const elements: React.ReactNode[] = [];
+  let acc = 0;
+
+  notes.forEach((note, index) => {
+    const noteBeats = durationToBeats(note.duration);
+
+    // 当前音符会跨过小节边界时，先插入小节线并重置累计
+    if (acc > 0 && acc + noteBeats > beatsPerBar) {
+      elements.push(<BarLine key={`bar-before-${note.id}`} />);
+      acc = 0;
+    }
+
+    const prev = index > 0 ? notes[index - 1] : null;
+    const sameTone =
+      prev?.jianzi.toneType === note.jianzi.toneType &&
+      note.jianzi.toneType !== null;
+
+    elements.push(
+      <NoteColumnView
+        key={note.id}
+        note={note}
+        index={index}
+        compact={sameTone}
+        onRemove={onRemove}
+        onEdit={onEdit}
+        isEditing={editingIndex === index}
+      />,
+    );
+
+    acc += noteBeats;
+    if (acc >= beatsPerBar) {
+      // 不是最后一音时，在当前音后插小节线
+      if (index < notes.length - 1) {
+        elements.push(<BarLine key={`bar-after-${note.id}`} />);
+      }
+      acc = 0;
+    }
+  });
+
   return (
     <div
       className="flex flex-wrap gap-3 p-4 rounded bg-[#f8f3eb] min-h-20"
       style={{ fontFamily: SERIF_FONT }}
     >
-      {notes.map((note, index) => {
-        const prev = index > 0 ? notes[index - 1] : null;
-        const sameTone = prev?.jianzi.toneType === note.jianzi.toneType && note.jianzi.toneType !== null;
-        return (
-          <NoteColumnView
-            key={note.id}
-            note={note}
-            index={index}
-            compact={sameTone}
-            onRemove={onRemove}
-            onEdit={onEdit}
-            isEditing={editingIndex === index}
-          />
-        );
-      })}
+      {elements}
+    </div>
+  );
+}
+
+/** 小节线 —— 竖直分隔符。 */
+function BarLine() {
+  return (
+    <div
+      data-testid="bar-line"
+      className="flex flex-col items-center justify-center w-4 self-stretch"
+    >
+      <div className="w-px h-full bg-amber-700/30" />
     </div>
   );
 }

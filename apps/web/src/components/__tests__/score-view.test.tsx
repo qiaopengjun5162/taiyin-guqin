@@ -86,4 +86,36 @@ describe("ScoreView", () => {
       expect(container.textContent).toContain("在下方拼装减字");
     });
   });
+
+  describe("bar lines", () => {
+    it("renders a bar line after every beatsPerBar beats", () => {
+      const notes = [
+        makeNote({ id: "a" }),
+        makeNote({ id: "b" }),
+        makeNote({ id: "c" }),
+        makeNote({ id: "d" }),
+        makeNote({ id: "e" }),
+      ];
+      const { container } = render(
+        <ScoreView notes={notes} beatsPerBar={4} />,
+      );
+      const barLines = container.querySelectorAll("[data-testid='bar-line']");
+      expect(barLines).toHaveLength(1);
+    });
+
+    it("renders bar lines for mixed durations", () => {
+      const notes = [
+        makeNote({ id: "a", duration: "四分" }),
+        makeNote({ id: "b", duration: "八分" }),
+        makeNote({ id: "c", duration: "八分" }),
+        makeNote({ id: "d", duration: "四分" }),
+        makeNote({ id: "e", duration: "四分" }),
+      ];
+      const { container } = render(
+        <ScoreView notes={notes} beatsPerBar={3} />,
+      );
+      const barLines = container.querySelectorAll("[data-testid='bar-line']");
+      expect(barLines).toHaveLength(1);
+    });
+  });
 });
