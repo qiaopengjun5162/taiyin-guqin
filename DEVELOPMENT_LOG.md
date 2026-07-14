@@ -1,5 +1,75 @@
 # 开发日志 (Development Log)
 
+## 2026-07-14
+
+### 乐谱文本导出
+
+- 新增 `apps/web/src/lib/score-export.ts`：
+  - `formatScoreAsText()` 将 `NoteColumn[]` 格式化为两行纯文本对照谱（上简谱、下减字），按 `beatsPerBar` 插入 `|` 小节分隔，逻辑与 `ScoreView` 小节线一致（跨边界前插线、满小节且非末尾时插线）。
+  - `downloadTextFile()` 通过 Blob + ObjectURL 触发浏览器下载。
+- `SaveLoadToolbar` 导出按钮拆分：`onExport` 重命名为 `onExportPng`，新增 `onExportText`。
+- `page.tsx` 新增 `handleExportText`，按当前拍号导出 `.txt` 对照谱。
+- 新增测试：`score-export.test.ts`（6 个）、`save-load-toolbar.test.tsx` 文本导出按钮测试（1 个）。
+- 当前测试总数：Rust 29 + 前端 95 = **124**。
+
+## 2026-07-12
+
+### 简谱序列输入
+
+- 新增 `translate_jianpu_sequence()`（`crates/taiyin-core/src/jianpu.rs`），批量翻译多个简谱音符。
+- WASM 暴露 `translate_jianpu_sequence_to_jianzi()`（`crates/taiyin-core/src/wasm.rs`），保持 JSON 字符串桥接。
+- 新增 `apps/web/src/lib/jianpu-parser.ts`：解析简谱字符串，支持数字、高/低八度（`·`/`'`/`,`）、小节线（`|`）、延音/休止（`-`/`0`）。
+- 重构 `JianpuTranslator` 组件：
+  - 增加「单音/序列」模式切换。
+  - 序列模式下使用 `textarea` 输入整句简谱，批量生成候选。
+  - 每音展示候选按钮，默认选中 top1，可逐音切换。
+  - 点击「确认全部」将整句追加到乐谱流。
+- `page.tsx` 中 `JianpuTranslator.onSelect` 改为接收 `NoteColumn[]`，批量 `commitScore`。
+- 新增测试：`jianpu-parser.test.ts`（6 个）、序列模式组件测试（2 个）、Rust 序列翻译测试（1 个）。
+- 当前测试总数：Rust 23 + 前端 79 = **102**。
+
+### 按音候选生成
+
+- `crates/taiyin-core/src/jianpu.rs` 增加按音候选生成：
+  - 基于十三徽弦长比例计算徽位/分位音高。
+  - 枚举 1–11 徽及 3/5/6/8 分位。
+  - 按徽位、弦序、指法评分，左手手指按徽位区间自动分配。
+- `translate_jianpu` 现在返回散音、泛音、按音三类候选并统一排序。
+- 前端无需改动：`JianpuTranslator` 已支持 `fen` 映射与 `AnYin` 显示。
+- 新增 Rust 测试：按音候选存在性、按音包含徽位/手指、散泛排名高于按音、按音音高与泛音一致。
+- 更新 `apps/web/src/components/__tests__/jianpu-translator.test.tsx`：序列 mock 加入 `AnYin` 候选，验证批量确认。
+- 当前测试总数：Rust 27 + 前端 79 = **106**。
+
+### 示例曲谱
+
+- 新增 `apps/web/src/lib/example-scores.ts`：预置《沧海一声笑》《仙翁操》《泛音练习》三个短片段。
+- `SaveLoadToolbar` 增加「示例」下拉选择，支持一键加载预置曲谱。
+- `page.tsx` 集成 `handleLoadExample`：加载示例时更新 score、title，清空当前保存 ID 与编辑状态。
+- 乐谱流空状态时显示引导文字，提示用户输入或加载示例。
+- 新增测试：`example-scores.test.ts`（4 个）、`save-load-toolbar.test.tsx` 示例下拉测试（2 个）。
+- 当前测试总数：Rust 27 + 前端 85 = **112**。
+
+### 节奏可视化
+
+- `apps/web/src/lib/types.ts` 新增 `durationToBeats()`：将 `Duration` 映射为以四分音符为 1 拍的拍数。
+- `apps/web/src/components/score-view.tsx` 新增 `BarLine` 组件，按全局 `beatsPerBar` 累加拍数并插入小节分隔线。
+- `page.tsx` 新增 `beatsPerBar` 状态与拍号选择 UI（3/4、4/4、6/8），传给 `ScoreView`。
+- 新增测试：`types.test.ts` 覆盖 `durationToBeats`；`score-view.test.tsx` 覆盖 4/4 与混合时值的小节线渲染。
+- 当前测试总数：Rust 27 + 前端 88 = **115**。
+
+### 上下文感知候选推荐
+
+- `crates/taiyin-core/src/jianpu.rs` 新增 `FretPosition`、`position_from_note`、`hui_to_ratio`、`context_bonus`。
+- `translate_jianpu_sequence` 改为贪心左到右优化：为每个音符生成候选后，根据前一个已选候选的弦序与徽位位置对当前候选加减分，优先同弦/相邻弦、近距离位置，然后重新排序。
+- 单音 `translate_jianpu` 行为不变；WASM 接口不变；前端无需改动。
+- 新增 Rust 测试：连续同音下第二音优先邻近位置、第一音不受上下文影响。
+- 当前测试总数：Rust 29 + 前端 88 = **117**。
+
+### 非目标（后续扩展）
+
+- 节奏时值解析（附点、减时线）。
+- LLM 选择。
+
 ## 2026-07-03
 
 ### 简谱转减字规则映射（AI 第一阶段 · MVP）
