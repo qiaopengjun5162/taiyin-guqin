@@ -25,6 +25,14 @@ interface JianpuTranslatorProps {
 
 type InputMode = "single" | "sequence";
 
+type Tuning = "zheng" | "ruibin" | "manjiao";
+
+const TUNING_OPTIONS: { value: Tuning; label: string }[] = [
+  { value: "zheng", label: "正调" },
+  { value: "ruibin", label: "蕤宾调" },
+  { value: "manjiao", label: "慢角调" },
+];
+
 const NOTE_TYPE_MAP: Record<string, "散" | "泛" | "按"> = {
   SanYin: "散",
   FanYin: "泛",
@@ -103,7 +111,7 @@ function candidateToNoteColumn(
   };
 }
 
-function SingleNoteMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void }) {
+function SingleNoteMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns: NoteColumn[]) => void }) {
   const [number, setNumber] = useState<JianpuNumber | "">("");
   const [octave, setOctave] = useState<JianpuOctave>("");
   const [candidates, setCandidates] = useState<WasmCandidate[]>([]);
@@ -114,7 +122,7 @@ function SingleNoteMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => voi
     setLoading(true);
     const octaveValue = octave === "·" ? 1 : octave === "," ? -1 : 0;
     const raw = await translateJianpuToJianzi(
-      JSON.stringify({ number: parseInt(number, 10), octave: octaveValue }),
+      JSON.stringify({ number: parseInt(number, 10), octave: octaveValue, tuning }),
     );
     let parsed: { candidates: WasmCandidate[] } = { candidates: [] };
     try {
@@ -186,7 +194,7 @@ function SingleNoteMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => voi
   );
 }
 
-function SequenceMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void }) {
+function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns: NoteColumn[]) => void }) {
   const [input, setInput] = useState("");
   const [notes, setNotes] = useState<ParsedJianpuItem[]>([]);
   const [candidatesPerNote, setCandidatesPerNote] = useState<WasmCandidate[][]>([]);
@@ -205,7 +213,10 @@ function SequenceMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void 
 
     setLoading(true);
     const raw = await translateJianpuSequenceToJianzi(
-      JSON.stringify(playable.map((n) => ({ number: n.number, octave: n.octave }))),
+      JSON.stringify({
+        notes: playable.map((n) => ({ number: n.number, octave: n.octave })),
+        tuning,
+      }),
     );
     let parsedResult: { candidates_per_note?: WasmCandidate[][] } = {};
     try {
@@ -346,6 +357,7 @@ function SequenceMode({ onSelect }: { onSelect: (columns: NoteColumn[]) => void 
 
 export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
   const [mode, setMode] = useState<InputMode>("single");
+  const [tuning, setTuning] = useState<Tuning>("zheng");
 
   return (
     <div className="flex flex-col gap-2">
@@ -366,11 +378,22 @@ export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
             {m.label}
           </button>
         ))}
+        <select
+          value={tuning}
+          onChange={(e) => setTuning(e.target.value as Tuning)}
+          className="ml-auto px-2 py-0.5 text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 outline-none"
+        >
+          {TUNING_OPTIONS.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </select>
       </div>
       {mode === "single" ? (
-        <SingleNoteMode onSelect={onSelect} />
+        <SingleNoteMode tuning={tuning} onSelect={onSelect} />
       ) : (
-        <SequenceMode onSelect={onSelect} />
+        <SequenceMode tuning={tuning} onSelect={onSelect} />
       )}
     </div>
   );

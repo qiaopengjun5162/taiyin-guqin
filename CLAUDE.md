@@ -110,17 +110,17 @@ just ci
 
 ## 简谱转减字
 
-- **规则映射**: 正调下基于音高表将简谱数字映射到候选 `GuqinNote`，支持散音、泛音、按音候选。
+- **规则映射**: 基于音高表将简谱数字映射到候选 `GuqinNote`，支持散音、泛音、按音候选。
 - **输入模式**: 支持单音输入与序列输入。`JianpuTranslator` 提供「单音/序列」切换；序列模式可解析如 `5 6 1 2 | 3 5 6 -` 的字符串，批量生成候选。
-- **音高表**: `crates/taiyin-core/src/jianpu.rs` 中 `ZHENG_DIAO_PITCHES` 维护七弦散音 + 九个常用泛音徽位的音高；索引 0 为散音，索引 1..=9 对应 `ZHENG_DIAO_HARMONIC_HUI`。
+- **多调式**: `Tuning` 枚举支持正调（`zheng`）/蕤宾调（`ruibin`，紧五弦）/慢角调（`manjiao`，慢三弦），散音以 1=F 简谱数字表示。`pitch_table(tuning)` 由散音经级数偏移 `[0,2,3,4,7,9,10,11,12]` 推导泛音行；`test_derived_table_matches_zheng_diao_const` 保证正调推导与 `ZHENG_DIAO_PITCHES` 常量表逐格一致。NoteColumn 不记录调式。
 - **按音生成**: 基于弦长比例计算徽位/分位音高，枚举 1–11 徽及 3/5/6/8 分位，按徽位、弦序、指法评分；左手手指按徽位区间自动分配（1–4 大，5–7 食，8–10 名，11+ 跪）。
 - **候选排序**: 散音（score=150）优先于泛音（最高 130），泛音优先于按音（基础 100）；泛音按徽位越低分越高（`130 - hui * 2`），按音按低徽位、常用弦加分，跪指减分。序列模式下，还会根据前一个已选候选的弦序与徽位位置对当前候选做上下文加分，优先同弦/相邻弦、近距离位置，使演奏更连贯。
-- **WASM 接口**: `translate_jianpu_to_jianzi` 接收 `{"number", "octave"}` JSON 字符串，返回 `{"candidates": [...]}` JSON 字符串；`translate_jianpu_sequence_to_jianzi` 接收数组，返回 `{"candidates_per_note": [...]}`，符合现有 JSON 桥接策略。
+- **WASM 接口**: `translate_jianpu_to_jianzi` 接收 `{"number", "octave", "tuning"?}` JSON 字符串（tuning 默认 `zheng`），返回 `{"candidates": [...]}`；`translate_jianpu_sequence_to_jianzi` 接收 `{"notes": [...], "tuning"?}`，返回 `{"candidates_per_note": [...]}`，符合现有 JSON 桥接策略。
 - **前端入口**: `JianpuTranslator` 组件位于键盘卡片内（仅在非编辑模式显示）。序列模式下每音展示候选列表，默认选中 top1，用户可逐音切换后批量确认。
 - **时值解析**: 序列输入支持延音线 `-`（+1 拍，可跨小节）、减时线 `_`/`__`（八分/十六分）、附点 `.`（×1.5）；三拍映射为附点二分。解析器以三十二分音符为单位做整数拍数运算，无法精确映射的延音线被忽略。批量确认时回填 `NoteColumn.duration` / `jianpuDot`。`0` 解析为休止符（`ParsedJianpuRest`），确认时插入 `jianpuNumber: "0"` + 空减字的 `NoteColumn`，休止拍参与小节线计数。
 - **类型映射**: WASM 返回 Rust 枚举名（如 `Tiao`、`SanYin`、`Da`），`JianpuTranslator` 负责映射为键盘状态使用的显示字符（乚/散/大）。
-- **非目标**: 多调式、LLM 选择。
-- **验证方法**: Rust 测试覆盖音高表、单音/序列候选生成与排序、按音音高计算、上下文位置优化；前端测试覆盖单音选择回填、序列输入与批量确认、按音候选渲染。测试总数：Rust 29 + 前端 110 = **139**。
+- **非目标**: LLM 选择、曲谱级调式持久化、按音徽分调式微调。
+- **验证方法**: Rust 测试覆盖音高表、单音/序列候选生成与排序、按音音高计算、上下文位置优化；前端测试覆盖单音选择回填、序列输入与批量确认、按音候选渲染。测试总数：Rust 36 + 前端 112 = **148**。
 
 ## 示例曲谱
 
@@ -135,13 +135,13 @@ just ci
 - **时值转拍数**: `apps/web/src/lib/types.ts` 中 `durationToBeats()` 将 `Duration` 映射为以四分音符为 1 拍的拍数（全=4、二分=2、四分=1、八分=0.5、十六分=0.25），可选 `dotted` 参数应用附点 ×1.5。
 - **小节线渲染**: `ScoreView` 累加每个音符的拍数，跨小节边界时插入 `BarLine` 竖直分隔符；最后一小节末尾不画线。
 - **非目标**: 播放/节拍器、散板/宕板特殊视觉、持久化拍号到后端。
-- **验证方法**: `types.test.ts` 测试 `durationToBeats`；`score-view.test.tsx` 测试不同拍号与混合时值下的小节线位置。测试总数：Rust 29 + 前端 110 = **139**。
+- **验证方法**: `types.test.ts` 测试 `durationToBeats`；`score-view.test.tsx` 测试不同拍号与混合时值下的小节线位置。测试总数：Rust 36 + 前端 112 = **148**。
 
 ## 乐谱导出
 
 - **PNG 导出**: `useExportImage` + `SaveLoadToolbar.onExportPng`（按钮「导出」），截图 `#score-area` 区域。
 - **文本导出**: `apps/web/src/lib/score-export.ts` 的 `formatScoreAsText()` 生成两行对照谱（上简谱、下减字），小节分隔逻辑与 `ScoreView` 一致；`downloadTextFile()` 经 Blob 触发下载。入口为 `SaveLoadToolbar.onExportText`（按钮「导出文本」），`page.tsx` 按当前 `beatsPerBar` 导出 `.txt`。
-- **验证方法**: `score-export.test.ts` 覆盖标题/小节线/八度标记/下载触发；`save-load-toolbar.test.tsx` 覆盖两个导出按钮。测试总数：Rust 29 + 前端 110 = **139**。
+- **验证方法**: `score-export.test.ts` 覆盖标题/小节线/八度标记/下载触发；`save-load-toolbar.test.tsx` 覆盖两个导出按钮。测试总数：Rust 36 + 前端 112 = **148**。
 
 ## 乐谱流数据流
 
@@ -219,7 +219,7 @@ src/
 - 后端集成测试需要运行中的 PostgreSQL。
 - 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
 - `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
-- 当前测试总数：Rust 29 + 前端 110 = **139**。
+- 当前测试总数：Rust 36 + 前端 112 = **148**。
 
 ## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
 

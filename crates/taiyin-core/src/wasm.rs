@@ -127,27 +127,45 @@ pub fn create_score(title: &str, author: &str) -> String {
 /// 将简谱音符翻译为候选减字。
 ///
 /// 输入 JSON: `{"number": 5, "octave": 0}`
+#[derive(serde::Deserialize)]
+struct TranslateRequest {
+    number: u8,
+    octave: i8,
+    #[serde(default)]
+    tuning: Option<crate::jianpu::Tuning>,
+}
+
+#[derive(serde::Deserialize)]
+struct SequenceRequest {
+    notes: Vec<crate::jianpu::JianpuNote>,
+    #[serde(default)]
+    tuning: Option<crate::jianpu::Tuning>,
+}
+
 /// 输出 JSON: `{"candidates": [{"score": 150, "note": {...}}]}`
 #[wasm_bindgen]
 pub fn translate_jianpu_to_jianzi(input_json: &str) -> String {
-    let note: crate::jianpu::JianpuNote = match serde_json::from_str(input_json) {
-        Ok(n) => n,
+    let req: TranslateRequest = match serde_json::from_str(input_json) {
+        Ok(r) => r,
         Err(e) => return json_error(&e),
     };
-    let candidates = crate::jianpu::translate_jianpu(note);
+    let note = crate::jianpu::JianpuNote::new(req.number, req.octave);
+    let tuning = req.tuning.unwrap_or(crate::jianpu::Tuning::ZhengDiao);
+    let candidates = crate::jianpu::translate_jianpu(note, tuning);
     serde_json::json!({ "candidates": candidates }).to_string()
 }
 
 /// 将一串简谱音符批量翻译为候选减字。
 ///
-/// 输入 JSON: `[{"number": 5, "octave": 0}, {"number": 6, "octave": 0}]`
+/// 输入 JSON: `{"notes": [{"number": 5, "octave": 0}], "tuning": "ruibin"?}`
 /// 输出 JSON: `{"candidates_per_note": [[...], [...]]}`
 #[wasm_bindgen]
 pub fn translate_jianpu_sequence_to_jianzi(input_json: &str) -> String {
-    let notes: Vec<crate::jianpu::JianpuNote> = match serde_json::from_str(input_json) {
-        Ok(n) => n,
+    let req: SequenceRequest = match serde_json::from_str(input_json) {
+        Ok(r) => r,
         Err(e) => return json_error(&e),
     };
-    let result = crate::jianpu::translate_jianpu_sequence(&notes);
+    let tuning = req.tuning.unwrap_or(crate::jianpu::Tuning::ZhengDiao);
+    let result = crate::jianpu::translate_jianpu_sequence(&req.notes, tuning);
     serde_json::json!({ "candidates_per_note": result }).to_string()
 }

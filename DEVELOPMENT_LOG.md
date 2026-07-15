@@ -1,5 +1,18 @@
 # 开发日志 (Development Log)
 
+## 2026-07-15
+
+### 多调式候选生成
+
+- `jianpu.rs` 新增 `Tuning` 枚举（正调 `zheng` / 蕤宾调 `ruibin` / 慢角调 `manjiao`），散音音高以 1=F 简谱数字表示；蕤宾调紧五弦（3→4），慢角调慢三弦（1→7）。
+- 泛音行由散音经级数偏移 `[0,2,3,4,7,9,10,11,12]` 推导（`harmonic_row` + `transpose_diatonic`），`pitch_table(tuning)` 统一生成七弦音高表；测试验证正调推导结果与 `ZHENG_DIAO_PITCHES` 常量表逐格一致，正调行为零变化。
+- `translate_jianpu` / `translate_jianpu_sequence` 增加 `tuning` 参数。
+- WASM：单音输入增加可选 `tuning` 字段（默认正调，向后兼容）；序列输入改为 `{"notes": [...], "tuning"?}` 对象形式。
+- `JianpuTranslator` 头部增加调式选择器，单音/序列两模式共享同一调式并写入 WASM payload。
+- 新增测试：Rust 7 个（推导表一致性、两调式散音、候选差异、serde）；前端 2 个（两模式 payload 携带 tuning）。
+- 当前测试总数：Rust 36 + 前端 112 = **148**。
+- 非目标：按音徽分在不同调式下的微调、曲谱级调式持久化（NoteColumn 不记录调式）。
+
 ## 2026-07-14
 
 ### 休止符表达

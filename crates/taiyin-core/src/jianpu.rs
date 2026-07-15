@@ -1,6 +1,6 @@
 //! # 简谱转减字规则映射
 //!
-//! 正调（一弦到七弦散音为 5 6 1 2 3 5 6）下的简谱数字到古琴减字候选映射。
+//! 多调式（正调/蕤宾调/慢角调，1=F）下的简谱数字到古琴减字候选映射。
 //! 输出候选按演奏舒适性评分排序，优先散音、常用弦、低徽位泛音/按音。
 
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,83 @@ impl Pitch {
 
 /// 正调下可用泛音徽位，按从琴头到琴尾顺序。
 pub const ZHENG_DIAO_HARMONIC_HUI: [u8; 9] = [1, 3, 4, 5, 7, 9, 10, 12, 13];
+
+/// 泛音行相对散音的级数偏移（对应 `ZHENG_DIAO_HARMONIC_HUI`）。
+///
+/// 表内每行泛音音高 = 散音 + 对应级数，该关系与调式无关。
+const HARMONIC_STEP_OFFSETS: [i8; 9] = [0, 2, 3, 4, 7, 9, 10, 11, 12];
+
+/// 调式。散音音高以 1=F（三弦为宫）的简谱数字表示。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Tuning {
+    /// 正调：5 6 1 2 3 5 6
+    #[serde(rename = "zheng")]
+    ZhengDiao,
+    /// 蕤宾调（紧五弦）：5 6 1 2 4 5 6
+    #[serde(rename = "ruibin")]
+    RuiBin,
+    /// 慢角调（慢三弦）：5 6 7 2 3 5 6
+    #[serde(rename = "manjiao")]
+    ManJiao,
+}
+
+impl Tuning {
+    /// 七弦散音音高（一弦到七弦）。
+    pub fn open_strings(self) -> [Pitch; 7] {
+        match self {
+            Tuning::ZhengDiao => [
+                Pitch::new(5, 0),
+                Pitch::new(6, 0),
+                Pitch::new(1, 1),
+                Pitch::new(2, 1),
+                Pitch::new(3, 1),
+                Pitch::new(5, 1),
+                Pitch::new(6, 1),
+            ],
+            Tuning::RuiBin => [
+                Pitch::new(5, 0),
+                Pitch::new(6, 0),
+                Pitch::new(1, 1),
+                Pitch::new(2, 1),
+                Pitch::new(4, 1),
+                Pitch::new(5, 1),
+                Pitch::new(6, 1),
+            ],
+            Tuning::ManJiao => [
+                Pitch::new(5, 0),
+                Pitch::new(6, 0),
+                Pitch::new(7, 0),
+                Pitch::new(2, 1),
+                Pitch::new(3, 1),
+                Pitch::new(5, 1),
+                Pitch::new(6, 1),
+            ],
+        }
+    }
+}
+
+/// 级数转置：number 沿自然音阶移动 steps 级，超出七级进八度。
+fn transpose_diatonic(pitch: Pitch, steps: i8) -> Pitch {
+    let idx = pitch.number as i8 - 1 + steps;
+    Pitch {
+        number: (idx.rem_euclid(7) + 1) as u8,
+        octave: pitch.octave + idx.div_euclid(7),
+    }
+}
+
+/// 由散音推导整行（散音 + 九个泛音徽位）音高。
+fn harmonic_row(open: Pitch) -> [Pitch; 10] {
+    let mut row = [open; 10];
+    for (i, &steps) in HARMONIC_STEP_OFFSETS.iter().enumerate() {
+        row[i + 1] = transpose_diatonic(open, steps);
+    }
+    row
+}
+
+/// 指定调式下七弦各位置的音高表。
+pub fn pitch_table(tuning: Tuning) -> [[Pitch; 10]; 7] {
+    tuning.open_strings().map(harmonic_row)
+}
 
 /// 十三徽从岳山到按点的弦长比例。
 const HUI_RATIOS: [f64; 13] = [
@@ -211,10 +288,10 @@ fn pressed_pitch(open_pitch: Pitch, position_ratio: f64) -> Pitch {
     pitch_from_midi(midi_note(open_pitch) + semitones)
 }
 
-/// 查找正调下所有匹配目标音高的散音/泛音位置。
-fn find_matching_positions(target: Pitch) -> Vec<(usize, usize)> {
+/// 查找音高表中所有匹配目标音高的散音/泛音位置。
+fn find_matching_positions(table: &[[Pitch; 10]; 7], target: Pitch) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
-    for (string_idx, positions) in ZHENG_DIAO_PITCHES.iter().enumerate() {
+    for (string_idx, positions) in table.iter().enumerate() {
         for (pos_idx, pitch) in positions.iter().enumerate() {
             if *pitch == target {
                 out.push((string_idx, pos_idx));
@@ -286,8 +363,11 @@ fn choose_left_finger(hui: u8) -> LeftFinger {
 }
 
 /// 生成散音与泛音候选。
-fn find_open_and_harmonic_candidates(target: Pitch) -> Vec<JianziCandidate> {
-    let positions = find_matching_positions(target);
+fn find_open_and_harmonic_candidates(
+    table: &[[Pitch; 10]; 7],
+    target: Pitch,
+) -> Vec<JianziCandidate> {
+    let positions = find_matching_positions(table, target);
 
     positions
         .into_iter()
@@ -318,10 +398,10 @@ fn find_open_and_harmonic_candidates(target: Pitch) -> Vec<JianziCandidate> {
 }
 
 /// 生成按音候选。
-fn find_pressed_candidates(target: Pitch) -> Vec<JianziCandidate> {
+fn find_pressed_candidates(table: &[[Pitch; 10]; 7], target: Pitch) -> Vec<JianziCandidate> {
     let mut candidates = Vec::new();
 
-    for (string_idx, positions) in ZHENG_DIAO_PITCHES.iter().enumerate() {
+    for (string_idx, positions) in table.iter().enumerate() {
         let open_pitch = positions[0];
 
         for hui in 1..=11 {
@@ -379,10 +459,11 @@ fn build_pressed_candidate(string_idx: usize, hui: u8, fen: Option<u8>) -> Jianz
 /// 将简谱音符翻译为候选减字。
 ///
 /// 支持散音、泛音与按音候选，按演奏舒适性评分排序。
-pub fn translate_jianpu(note: JianpuNote) -> Vec<JianziCandidate> {
+pub fn translate_jianpu(note: JianpuNote, tuning: Tuning) -> Vec<JianziCandidate> {
+    let table = pitch_table(tuning);
     let target = Pitch::new(note.number, note.octave);
-    let mut candidates = find_open_and_harmonic_candidates(target);
-    candidates.extend(find_pressed_candidates(target));
+    let mut candidates = find_open_and_harmonic_candidates(&table, target);
+    candidates.extend(find_pressed_candidates(&table, target));
     candidates.sort_by_key(|c| std::cmp::Reverse(c.score));
     candidates
 }
@@ -391,8 +472,12 @@ pub fn translate_jianpu(note: JianpuNote) -> Vec<JianziCandidate> {
 ///
 /// 每个音符先生成散音/泛音/按音候选，再根据前一个已选候选的位置
 /// 对当前候选做上下文加分，使相邻音符演奏更连贯。
-pub fn translate_jianpu_sequence(notes: &[JianpuNote]) -> Vec<Vec<JianziCandidate>> {
-    let initial: Vec<Vec<JianziCandidate>> = notes.iter().map(|n| translate_jianpu(*n)).collect();
+pub fn translate_jianpu_sequence(
+    notes: &[JianpuNote],
+    tuning: Tuning,
+) -> Vec<Vec<JianziCandidate>> {
+    let initial: Vec<Vec<JianziCandidate>> =
+        notes.iter().map(|n| translate_jianpu(*n, tuning)).collect();
 
     let mut result = Vec::with_capacity(initial.len());
     let mut prev_note: Option<GuqinNote> = None;
@@ -434,7 +519,7 @@ mod tests {
 
     #[test]
     fn test_translate_jianpu_open_string() {
-        let candidates = translate_jianpu(JianpuNote::new(5, 0));
+        let candidates = translate_jianpu(JianpuNote::new(5, 0), Tuning::ZhengDiao);
         assert!(!candidates.is_empty());
         let first = &candidates[0].note;
         assert_eq!(first.string_number, 1);
@@ -445,7 +530,7 @@ mod tests {
     #[test]
     fn test_translate_jianpu_fan_yin() {
         // 二弦一徽泛音 = 6
-        let candidates = translate_jianpu(JianpuNote::new(6, 0));
+        let candidates = translate_jianpu(JianpuNote::new(6, 0), Tuning::ZhengDiao);
         let has_fan = candidates
             .iter()
             .any(|c| c.note.note_type == crate::NoteType::FanYin);
@@ -455,7 +540,7 @@ mod tests {
     #[test]
     fn test_translate_jianpu_sorts_open_first() {
         // 一弦散音 5 与一弦一徽泛音 5 同音，散音应排在最前
-        let candidates = translate_jianpu(JianpuNote::new(5, 0));
+        let candidates = translate_jianpu(JianpuNote::new(5, 0), Tuning::ZhengDiao);
         assert_eq!(candidates[0].note.note_type, crate::NoteType::SanYin);
         assert!(candidates[0].score >= candidates.get(1).map_or(0, |c| c.score));
     }
@@ -467,7 +552,7 @@ mod tests {
             JianpuNote::new(6, 0),
             JianpuNote::new(1, 1),
         ];
-        let result = translate_jianpu_sequence(&notes);
+        let result = translate_jianpu_sequence(&notes, Tuning::ZhengDiao);
         assert_eq!(result.len(), 3);
         assert!(!result[0].is_empty());
         assert!(!result[1].is_empty());
@@ -477,7 +562,7 @@ mod tests {
     #[test]
     fn test_translate_jianpu_includes_pressed() {
         // 中央组的 1 在正调散音/泛音表中不存在，只能靠按音
-        let candidates = translate_jianpu(JianpuNote::new(1, 0));
+        let candidates = translate_jianpu(JianpuNote::new(1, 0), Tuning::ZhengDiao);
         let has_anyin = candidates
             .iter()
             .any(|c| c.note.note_type == crate::NoteType::AnYin);
@@ -486,7 +571,7 @@ mod tests {
 
     #[test]
     fn test_pressed_candidate_has_hui_and_finger() {
-        let candidates = translate_jianpu(JianpuNote::new(1, 0));
+        let candidates = translate_jianpu(JianpuNote::new(1, 0), Tuning::ZhengDiao);
         let anyin = candidates
             .iter()
             .find(|c| c.note.note_type == crate::NoteType::AnYin)
@@ -498,7 +583,7 @@ mod tests {
     #[test]
     fn test_open_fan_rank_higher_than_pressed() {
         // 5 同时有散音/泛音/按音，散音应在最前，按音应在后
-        let candidates = translate_jianpu(JianpuNote::new(5, 0));
+        let candidates = translate_jianpu(JianpuNote::new(5, 0), Tuning::ZhengDiao);
         let open_score = candidates
             .iter()
             .find(|c| c.note.note_type == crate::NoteType::SanYin)
@@ -524,7 +609,7 @@ mod tests {
     fn test_context_prefers_nearby_positions() {
         // 连续两个中央组 1，第二个应优先选择与第一个接近的位置
         let notes = [JianpuNote::new(1, 0), JianpuNote::new(1, 0)];
-        let result = translate_jianpu_sequence(&notes);
+        let result = translate_jianpu_sequence(&notes, Tuning::ZhengDiao);
 
         let first_pos = position_from_note(&result[0][0].note);
         let second_top = &result[1][0];
@@ -541,8 +626,75 @@ mod tests {
     #[test]
     fn test_context_does_not_affect_first_note() {
         let notes = [JianpuNote::new(5, 0), JianpuNote::new(6, 0)];
-        let result = translate_jianpu_sequence(&notes);
+        let result = translate_jianpu_sequence(&notes, Tuning::ZhengDiao);
         // 第一音仍按单音规则排序
         assert_eq!(result[0][0].note.note_type, crate::NoteType::SanYin);
+    }
+
+    #[test]
+    fn test_derived_table_matches_zheng_diao_const() {
+        // 泛音行推导必须复现正调常量表（正调行为零变化）
+        assert_eq!(pitch_table(Tuning::ZhengDiao), ZHENG_DIAO_PITCHES);
+    }
+
+    #[test]
+    fn test_tuning_open_strings() {
+        assert_eq!(Tuning::RuiBin.open_strings()[4], Pitch::new(4, 1)); // 紧五弦 3→4
+        assert_eq!(Tuning::ManJiao.open_strings()[2], Pitch::new(7, 0)); // 慢三弦 1→7
+        assert_eq!(Tuning::ZhengDiao.open_strings()[0], Pitch::new(5, 0));
+    }
+
+    #[test]
+    fn test_ruibin_translate_open_string_five() {
+        // 蕤宾调五弦散音为 4：translate(4) 应出现五弦散音候选
+        let candidates = translate_jianpu(JianpuNote::new(4, 1), Tuning::RuiBin);
+        let open_five = candidates
+            .iter()
+            .any(|c| c.note.note_type == crate::NoteType::SanYin && c.note.string_number == 5);
+        assert!(open_five, "蕤宾调下 4 应含五弦散音候选");
+    }
+
+    #[test]
+    fn test_manjiao_translate_open_string_three() {
+        // 慢角调三弦散音为 7：translate(7) 应出现三弦散音候选
+        let candidates = translate_jianpu(JianpuNote::new(7, 0), Tuning::ManJiao);
+        let open_three = candidates
+            .iter()
+            .any(|c| c.note.note_type == crate::NoteType::SanYin && c.note.string_number == 3);
+        assert!(open_three, "慢角调下 7 应含三弦散音候选");
+    }
+
+    #[test]
+    fn test_tuning_changes_candidates() {
+        // 同一简谱数字在不同调式下候选不同：4 在正调五弦无散音，在蕤宾调有
+        let zheng = translate_jianpu(JianpuNote::new(4, 1), Tuning::ZhengDiao);
+        let zheng_open_five = zheng
+            .iter()
+            .any(|c| c.note.note_type == crate::NoteType::SanYin && c.note.string_number == 5);
+        assert!(!zheng_open_five, "正调五弦散音为 3，不应匹配 4");
+    }
+
+    #[test]
+    fn test_tuning_sequence_uses_tuning() {
+        let notes = [JianpuNote::new(4, 1)];
+        let result = translate_jianpu_sequence(&notes, Tuning::RuiBin);
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0].iter().any(|c| {
+                c.note.note_type == crate::NoteType::SanYin && c.note.string_number == 5
+            })
+        );
+    }
+
+    #[test]
+    fn test_tuning_serde() {
+        assert_eq!(
+            serde_json::from_str::<Tuning>(r#""ruibin""#).unwrap(),
+            Tuning::RuiBin
+        );
+        assert_eq!(
+            serde_json::to_string(&Tuning::ManJiao).unwrap(),
+            r#""manjiao""#
+        );
     }
 }

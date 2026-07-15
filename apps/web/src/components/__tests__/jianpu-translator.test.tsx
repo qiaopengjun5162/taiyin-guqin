@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { JianpuTranslator } from "../jianpu-translator";
+import { translateJianpuToJianzi, translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
 
 const singleCandidate = {
   score: 150,
@@ -64,7 +65,8 @@ describe("JianpuTranslator single mode", () => {
     const onSelect = vi.fn();
     const { getByText, container } = render(<JianpuTranslator onSelect={onSelect} />);
 
-    fireEvent.change(container.querySelector("select") as HTMLSelectElement, {
+    // select[0] 为调式，select[1] 为数字
+    fireEvent.change(container.querySelectorAll("select")[1] as HTMLSelectElement, {
       target: { value: "5" },
     });
     fireEvent.click(getByText("翻译"));
@@ -80,6 +82,23 @@ describe("JianpuTranslator single mode", () => {
     expect(selected[0].jianzi.rightAction).toBe("乚");
     expect(selected[0].jianzi.stringNumber).toBe("一");
     expect(selected[0].jianpuNumber).toBe("5");
+  });
+
+  it("passes selected tuning to WASM payload", async () => {
+    const { getByText, container } = render(<JianpuTranslator onSelect={vi.fn()} />);
+
+    fireEvent.change(container.querySelectorAll("select")[0] as HTMLSelectElement, {
+      target: { value: "ruibin" },
+    });
+    fireEvent.change(container.querySelectorAll("select")[1] as HTMLSelectElement, {
+      target: { value: "5" },
+    });
+    fireEvent.click(getByText("翻译"));
+
+    await waitFor(() => {
+      expect(getByText("散挑一")).toBeInTheDocument();
+    });
+    expect(vi.mocked(translateJianpuToJianzi).mock.calls.at(-1)?.[0]).toContain('"tuning":"ruibin"');
   });
 });
 
@@ -158,5 +177,24 @@ describe("JianpuTranslator sequence mode", () => {
     expect(selected[1].duration).toBe("四分");
     expect(selected[1].jianzi.toneType).toBeNull();
     expect(selected[1].jianzi.rightAction).toBeNull();
+  });
+
+  it("sends notes and tuning as object payload in sequence mode", async () => {
+    const { getByText, container } = render(<JianpuTranslator onSelect={vi.fn()} />);
+
+    fireEvent.change(container.querySelectorAll("select")[0] as HTMLSelectElement, {
+      target: { value: "manjiao" },
+    });
+    fireEvent.click(getByText("序列"));
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "5 6 1" } });
+    fireEvent.click(getByText("翻译"));
+
+    await waitFor(() => {
+      expect(getByText("散挑一")).toBeInTheDocument();
+    });
+    const payload = vi.mocked(translateJianpuSequenceToJianzi).mock.calls.at(-1)?.[0] ?? "";
+    expect(payload).toContain('"tuning":"manjiao"');
+    expect(payload).toContain('"notes":');
   });
 });
