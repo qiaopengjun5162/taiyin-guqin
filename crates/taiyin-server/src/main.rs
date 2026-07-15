@@ -5,7 +5,7 @@
 //! 负责社区曲谱管理、AI 简谱翻译转发、积分记账等业务逻辑。
 
 use std::sync::Arc;
-use taiyin_server::{AppState, app, db};
+use taiyin_server::{AppState, app, db, llm::LlmConfig};
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tracing_subscriber::EnvFilter;
 
@@ -27,7 +27,11 @@ async fn main() -> anyhow::Result<()> {
             .finish()
             .unwrap(),
     );
-    let app = app(AppState { pool }).route_layer(GovernorLayer::new(governor_conf));
+    let app = app(AppState {
+        pool,
+        llm: LlmConfig::from_env(),
+    })
+    .route_layer(GovernorLayer::new(governor_conf));
 
     let addr = "0.0.0.0:3001";
     tracing::info!("taiyin-server listening on {addr}");

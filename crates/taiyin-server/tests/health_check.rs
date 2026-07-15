@@ -7,7 +7,10 @@ use tower::util::ServiceExt;
 #[tokio::test]
 async fn health_check_returns_ok() {
     let pool = common::test_pool().await;
-    let app = app(AppState { pool });
+    let app = app(AppState {
+        pool,
+        llm: Default::default(),
+    });
     let response = app
         .oneshot(
             Request::builder()

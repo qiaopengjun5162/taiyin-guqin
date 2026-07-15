@@ -77,3 +77,27 @@ export async function deleteScore(id: string): Promise<void> {
   });
   if (!res.ok) throw new Error(await parseErrorMessage(res));
 }
+
+export interface CandidateSelection {
+  note_index: number;
+  candidate_index: number;
+  reason: string;
+}
+
+export interface SelectCandidatesResponse {
+  method: "llm" | "heuristic";
+  selections: CandidateSelection[];
+}
+
+export async function selectCandidates(
+  notes: { number: number; octave: number }[],
+  tuning: string,
+): Promise<SelectCandidatesResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/api/v1/translate/select`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes, tuning }),
+  });
+  if (!res.ok) throw new Error(await parseErrorMessage(res));
+  return res.json();
+}

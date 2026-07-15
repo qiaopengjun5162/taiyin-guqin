@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { JianpuNumber, JianpuOctave, NoteColumn } from "@/lib/types";
 import { jianziToText, createEmptyState } from "@/lib/types";
 import { translateJianpuToJianzi, translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
+import { selectCandidates } from "@/lib/api";
 import { parseJianpuString, type ParsedJianpuNote, type ParsedJianpuItem } from "@/lib/jianpu-parser";
 
 interface WasmCandidateNote {
@@ -200,6 +201,8 @@ function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns
   const [candidatesPerNote, setCandidatesPerNote] = useState<WasmCandidate[][]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiHint, setAiHint] = useState<string | null>(null);
 
   async function handleTranslate() {
     const parsed = parseJianpuString(input);
@@ -277,6 +280,36 @@ function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns
     setNotes([]);
     setCandidatesPerNote([]);
     setSelectedIndex([]);
+    setAiHint(null);
+  }
+
+  /** 调用后端 LLM 为每音优选候选；note_index 需映射回含休止符的 parsed 位置 */
+  async function handleAiSelect() {
+    const playable = notes.filter((n): n is ParsedJianpuNote => n.kind === "note");
+    if (playable.length === 0) return;
+    setAiLoading(true);
+    try {
+      const { method, selections } = await selectCandidates(
+        playable.map((n) => ({ number: n.number, octave: n.octave })),
+        tuning,
+      );
+      setSelectedIndex((prev) => {
+        const next = [...prev];
+        let playableIdx = 0;
+        for (let p = 0; p < notes.length; p++) {
+          if (notes[p].kind !== "note") continue;
+          const sel = selections.find((s) => s.note_index === playableIdx);
+          if (sel) next[p] = sel.candidate_index;
+          playableIdx++;
+        }
+        return next;
+      });
+      setAiHint(method === "llm" ? "AI 已优选" : "未配置 LLM，按启发式选择");
+    } catch {
+      setAiHint("AI 优选失败");
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   function selectCandidate(noteIndex: number, candidateIndex: number) {
@@ -313,11 +346,21 @@ function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns
               确认全部
             </button>
             <button
+              onClick={handleAiSelect}
+              disabled={aiLoading}
+              className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 disabled:opacity-30"
+            >
+              {aiLoading ? "优选中…" : "AI 优选"}
+            </button>
+            <button
               onClick={handleClear}
               className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300"
             >
               清空
             </button>
+            {aiHint && (
+              <span className="text-[10px] tracking-wider text-amber-600/50">{aiHint}</span>
+            )}
           </>
         )}
       </div>

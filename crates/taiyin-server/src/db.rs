@@ -1,10 +1,13 @@
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 
+use crate::llm::LlmConfig;
+
 /// 应用的共享状态（注入 Axum Router）。
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub llm: LlmConfig,
 }
 
 /// 初始化数据库连接池并自动运行未应用的迁移。

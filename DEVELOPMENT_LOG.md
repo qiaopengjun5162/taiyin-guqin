@@ -2,6 +2,16 @@
 
 ## 2026-07-15
 
+### LLM 候选选择
+
+- `crates/taiyin-server/src/llm.rs` 新增 LLM 择优模块：`LlmConfig`（`ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` 环境变量，默认 `claude-haiku-4-5-20251001`）、提示词构造（调式 + 简谱 + 每音候选减字文本 + 启发式分数）、输出解析（容忍代码围栏、索引越界回退 top1、缺失补齐）。
+- 新端点 `POST /api/v1/translate/select`：生成候选后交 Anthropic Messages API 择优；未配置密钥或调用失败时回退启发式 top1（响应 `method` 字段标识 `"llm"` / `"heuristic"`）。沿用全局 tower_governor 限流。
+- `AppState` 增加 `llm` 字段；`main.rs` 经 `LlmConfig::from_env()` 注入。
+- 前端 `api.selectCandidates()` + `JianpuTranslator` 序列模式「AI 优选」按钮：LLM 选择的 `note_index` 映射回含休止符的 parsed 位置后更新各音选中候选；降级时显示提示。
+- 候选减字描述约定：按音为默认音色不加前缀（与前端 `jianziToText` 一致），如「散挑一」「泛名十挑五」「大9勾三」。
+- 新增测试：Rust 9 个（describe/提示词/解析/启发式/无密钥/端点回退与非法请求）；前端 1 个（AI 优选应用选择）。
+- 当前测试总数：Rust 45 + 前端 113 = **158**。
+
 ### 多调式候选生成
 
 - `jianpu.rs` 新增 `Tuning` 枚举（正调 `zheng` / 蕤宾调 `ruibin` / 慢角调 `manjiao`），散音音高以 1=F 简谱数字表示；蕤宾调紧五弦（3→4），慢角调慢三弦（1→7）。

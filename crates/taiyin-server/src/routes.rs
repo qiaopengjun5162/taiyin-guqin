@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
+use crate::llm::{SelectRequest, SelectResponse, heuristic_selections, select_with_llm};
 use crate::models::{CreateScoreRequest, Score, ScoreListItem, UpdateScoreRequest};
 
 const MAX_TITLE_LENGTH: usize = 200;
@@ -22,6 +23,7 @@ pub fn app(state: AppState) -> Router {
             "/api/v1/scores/{id}",
             get(get_score).put(update_score).delete(delete_score),
         )
+        .route("/api/v1/translate/select", post(select_candidates))
         .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024)) // 5 MB
         .layer(CorsLayer::permissive())
         .with_state(state)
@@ -49,6 +51,27 @@ fn validate_title(title: &str) -> AppResult<()> {
 
 async fn health_check() -> &'static str {
     "🪕 taiyin ok"
+}
+
+/// AI 候选选择：生成各音候选后交 LLM 择优；未配置或失败时回退启发式 top1。
+async fn select_candidates(
+    State(state): State<AppState>,
+    Json(req): Json<SelectRequest>,
+) -> AppResult<Json<SelectResponse>> {
+    let tuning = req.tuning.unwrap_or(taiyin_core::jianpu::Tuning::ZhengDiao);
+    let candidates = taiyin_core::jianpu::translate_jianpu_sequence(&req.notes, tuning);
+
+    let (method, selections) =
+        match select_with_llm(&state.llm, &req.notes, tuning, &candidates).await {
+            Ok(Some(sels)) => ("llm", sels),
+            Ok(None) => ("heuristic", heuristic_selections(&candidates)),
+            Err(e) => {
+                tracing::warn!("llm selection failed, falling back to heuristic: {e}");
+                ("heuristic", heuristic_selections(&candidates))
+            }
+        };
+
+    Ok(Json(SelectResponse { method, selections }))
 }
 
 async fn create_score(

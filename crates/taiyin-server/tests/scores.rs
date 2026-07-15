@@ -13,7 +13,10 @@ async fn test_create_and_list_scores() {
         .await
         .unwrap();
 
-    let state = AppState { pool: pool.clone() };
+    let state = AppState {
+        pool: pool.clone(),
+        llm: Default::default(),
+    };
     let notes = json!([{"id": "1", "toneType": "散", "rightAction": "勾", "stringNumber": "五"}]);
     let body_str = serde_json::to_string(&json!({"title": "练习曲", "notes": notes})).unwrap();
 
@@ -60,7 +63,10 @@ async fn test_create_get_update_delete() {
         .execute(&pool)
         .await
         .unwrap();
-    let state = AppState { pool: pool.clone() };
+    let state = AppState {
+        pool: pool.clone(),
+        llm: Default::default(),
+    };
 
     // 创建
     let body_str = serde_json::to_string(&json!({

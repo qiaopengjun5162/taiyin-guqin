@@ -37,6 +37,16 @@ vi.mock("@/lib/taiyin-wasm", () => ({
               string_number: 5,
             },
           },
+          {
+            score: 135,
+            note: {
+              note_type: "SanYin",
+              left_finger: null,
+              hui: null,
+              right_action: "Tiao",
+              string_number: 2,
+            },
+          },
         ],
         [
           {
@@ -53,6 +63,13 @@ vi.mock("@/lib/taiyin-wasm", () => ({
       ],
     }),
   ),
+}));
+
+vi.mock("@/lib/api", () => ({
+  selectCandidates: vi.fn(async () => ({
+    method: "llm",
+    selections: [{ note_index: 1, candidate_index: 1, reason: "把位连贯" }],
+  })),
 }));
 
 describe("JianpuTranslator single mode", () => {
@@ -196,5 +213,31 @@ describe("JianpuTranslator sequence mode", () => {
     const payload = vi.mocked(translateJianpuSequenceToJianzi).mock.calls.at(-1)?.[0] ?? "";
     expect(payload).toContain('"tuning":"manjiao"');
     expect(payload).toContain('"notes":');
+  });
+
+  it("applies LLM selections when clicking AI 优选", async () => {
+    const onSelect = vi.fn();
+    const { getByText, container } = render(<JianpuTranslator onSelect={onSelect} />);
+
+    fireEvent.click(getByText("序列"));
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "5 6 1" } });
+    fireEvent.click(getByText("翻译"));
+
+    await waitFor(() => {
+      expect(getByText("散挑一")).toBeInTheDocument();
+    });
+
+    fireEvent.click(getByText("AI 优选"));
+
+    await waitFor(() => {
+      expect(getByText("AI 已优选")).toBeInTheDocument();
+    });
+
+    // LLM 为第二音选择了 candidate_index 1（散挑二）
+    fireEvent.click(getByText("确认全部"));
+    const selected = onSelect.mock.calls[0][0];
+    expect(selected[1].jianzi.toneType).toBe("散");
+    expect(selected[1].jianzi.stringNumber).toBe("二");
   });
 });

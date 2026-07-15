@@ -59,7 +59,7 @@ just ci
 
 - POST `/api/v1/score` - 提交曲谱 JSON
 - GET `/api/v1/score/{id}` - 获取曲谱
-- POST `/api/v1/translate` - 简谱转减字（AI 翻译）
+- POST `/api/v1/translate/select` - LLM 候选择优（未配置密钥时回退启发式）
 
 ## Rust 代码规范
 
@@ -119,8 +119,9 @@ just ci
 - **前端入口**: `JianpuTranslator` 组件位于键盘卡片内（仅在非编辑模式显示）。序列模式下每音展示候选列表，默认选中 top1，用户可逐音切换后批量确认。
 - **时值解析**: 序列输入支持延音线 `-`（+1 拍，可跨小节）、减时线 `_`/`__`（八分/十六分）、附点 `.`（×1.5）；三拍映射为附点二分。解析器以三十二分音符为单位做整数拍数运算，无法精确映射的延音线被忽略。批量确认时回填 `NoteColumn.duration` / `jianpuDot`。`0` 解析为休止符（`ParsedJianpuRest`），确认时插入 `jianpuNumber: "0"` + 空减字的 `NoteColumn`，休止拍参与小节线计数。
 - **类型映射**: WASM 返回 Rust 枚举名（如 `Tiao`、`SanYin`、`Da`），`JianpuTranslator` 负责映射为键盘状态使用的显示字符（乚/散/大）。
-- **非目标**: LLM 选择、曲谱级调式持久化、按音徽分调式微调。
-- **验证方法**: Rust 测试覆盖音高表、单音/序列候选生成与排序、按音音高计算、上下文位置优化；前端测试覆盖单音选择回填、序列输入与批量确认、按音候选渲染。测试总数：Rust 36 + 前端 112 = **148**。
+- **LLM 择优**: `POST /api/v1/translate/select`（`crates/taiyin-server/src/llm.rs`）将调式+简谱+候选减字文本交 Anthropic Messages API 选择；`ANTHROPIC_API_KEY` 未配置或调用失败时回退启发式 top1，响应 `method` 字段标识 `"llm"`/`"heuristic"`。前端序列模式「AI 优选」按钮应用选择（note_index 映射回含休止符位置）。
+- **非目标**: 曲谱级调式持久化、按音徽分调式微调。
+- **验证方法**: Rust 测试覆盖音高表、单音/序列候选生成与排序、按音音高计算、上下文位置优化；前端测试覆盖单音选择回填、序列输入与批量确认、按音候选渲染。测试总数：Rust 45 + 前端 113 = **158**。
 
 ## 示例曲谱
 
@@ -135,13 +136,13 @@ just ci
 - **时值转拍数**: `apps/web/src/lib/types.ts` 中 `durationToBeats()` 将 `Duration` 映射为以四分音符为 1 拍的拍数（全=4、二分=2、四分=1、八分=0.5、十六分=0.25），可选 `dotted` 参数应用附点 ×1.5。
 - **小节线渲染**: `ScoreView` 累加每个音符的拍数，跨小节边界时插入 `BarLine` 竖直分隔符；最后一小节末尾不画线。
 - **非目标**: 播放/节拍器、散板/宕板特殊视觉、持久化拍号到后端。
-- **验证方法**: `types.test.ts` 测试 `durationToBeats`；`score-view.test.tsx` 测试不同拍号与混合时值下的小节线位置。测试总数：Rust 36 + 前端 112 = **148**。
+- **验证方法**: `types.test.ts` 测试 `durationToBeats`；`score-view.test.tsx` 测试不同拍号与混合时值下的小节线位置。测试总数：Rust 45 + 前端 113 = **158**。
 
 ## 乐谱导出
 
 - **PNG 导出**: `useExportImage` + `SaveLoadToolbar.onExportPng`（按钮「导出」），截图 `#score-area` 区域。
 - **文本导出**: `apps/web/src/lib/score-export.ts` 的 `formatScoreAsText()` 生成两行对照谱（上简谱、下减字），小节分隔逻辑与 `ScoreView` 一致；`downloadTextFile()` 经 Blob 触发下载。入口为 `SaveLoadToolbar.onExportText`（按钮「导出文本」），`page.tsx` 按当前 `beatsPerBar` 导出 `.txt`。
-- **验证方法**: `score-export.test.ts` 覆盖标题/小节线/八度标记/下载触发；`save-load-toolbar.test.tsx` 覆盖两个导出按钮。测试总数：Rust 36 + 前端 112 = **148**。
+- **验证方法**: `score-export.test.ts` 覆盖标题/小节线/八度标记/下载触发；`save-load-toolbar.test.tsx` 覆盖两个导出按钮。测试总数：Rust 45 + 前端 113 = **158**。
 
 ## 乐谱流数据流
 
@@ -209,6 +210,7 @@ src/
 ├── db.rs            # AppState + init_pool（自动迁移）
 ├── error.rs         # AppError（thiserror）→ IntoResponse
 ├── models.rs        # Score / CreateScoreRequest / UpdateScoreRequest
+├── llm.rs           # LLM 候选择优（Anthropic Messages API + 启发式回退）
 └── routes.rs        # API 路由 + handler 函数
 ```
 
@@ -219,7 +221,7 @@ src/
 - 后端集成测试需要运行中的 PostgreSQL。
 - 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
 - `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
-- 当前测试总数：Rust 36 + 前端 112 = **148**。
+- 当前测试总数：Rust 45 + 前端 113 = **158**。
 
 ## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
 
