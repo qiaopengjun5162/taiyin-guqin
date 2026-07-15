@@ -116,6 +116,8 @@ function SingleNoteMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (colum
   const [number, setNumber] = useState<JianpuNumber | "">("");
   const [octave, setOctave] = useState<JianpuOctave>("");
   const [candidates, setCandidates] = useState<WasmCandidate[]>([]);
+  // 候选产生时的调式；与当前调式不一致时候选作废，防止跨调式确认
+  const [candTuning, setCandTuning] = useState<Tuning | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleTranslate() {
@@ -132,6 +134,7 @@ function SingleNoteMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (colum
       parsed = { candidates: [] };
     }
     setCandidates(parsed.candidates ?? []);
+    setCandTuning(tuning);
     setLoading(false);
   }
 
@@ -177,7 +180,7 @@ function SingleNoteMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (colum
           {loading ? "翻译中…" : "翻译"}
         </button>
       </div>
-      {candidates.length > 0 && (
+      {candidates.length > 0 && candTuning === tuning && (
         <div className="flex flex-wrap gap-2">
           {candidates.map((c, i) => (
             <button
@@ -191,6 +194,9 @@ function SingleNoteMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (colum
           ))}
         </div>
       )}
+      {candidates.length > 0 && candTuning !== tuning && (
+        <p className="text-[10px] tracking-wider text-amber-600/50">调式已变更，请重新翻译</p>
+      )}
     </div>
   );
 }
@@ -200,6 +206,8 @@ function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns
   const [notes, setNotes] = useState<ParsedJianpuItem[]>([]);
   const [candidatesPerNote, setCandidatesPerNote] = useState<WasmCandidate[][]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number[]>([]);
+  // 候选产生时的调式；与当前调式不一致时整批候选作废
+  const [notesTuning, setNotesTuning] = useState<Tuning | null>(null);
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiHint, setAiHint] = useState<string | null>(null);
@@ -211,6 +219,7 @@ function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns
       setNotes(parsed);
       setCandidatesPerNote([]);
       setSelectedIndex([]);
+      setNotesTuning(tuning);
       return;
     }
 
@@ -244,6 +253,7 @@ function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns
     setNotes(parsed);
     setCandidatesPerNote(aligned);
     setSelectedIndex(parsed.map(() => 0));
+    setNotesTuning(tuning);
     setLoading(false);
   }
 
@@ -339,19 +349,25 @@ function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns
         </button>
         {notes.length > 0 && (
           <>
-            <button
-              onClick={handleConfirm}
-              className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300"
-            >
-              确认全部
-            </button>
-            <button
-              onClick={handleAiSelect}
-              disabled={aiLoading}
-              className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 disabled:opacity-30"
-            >
-              {aiLoading ? "优选中…" : "AI 优选"}
-            </button>
+            {notesTuning === tuning ? (
+              <>
+                <button
+                  onClick={handleConfirm}
+                  className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300"
+                >
+                  确认全部
+                </button>
+                <button
+                  onClick={handleAiSelect}
+                  disabled={aiLoading}
+                  className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 disabled:opacity-30"
+                >
+                  {aiLoading ? "优选中…" : "AI 优选"}
+                </button>
+              </>
+            ) : (
+              <span className="text-[10px] tracking-wider text-amber-600/50">调式已变更，请重新翻译</span>
+            )}
             <button
               onClick={handleClear}
               className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300"
@@ -364,7 +380,7 @@ function SequenceMode({ tuning, onSelect }: { tuning: Tuning; onSelect: (columns
           </>
         )}
       </div>
-      {notes.length > 0 && (
+      {notes.length > 0 && notesTuning === tuning && (
         <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
           {notes.map((item, noteIdx) => (
             <div

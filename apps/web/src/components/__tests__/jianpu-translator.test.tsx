@@ -117,6 +117,26 @@ describe("JianpuTranslator single mode", () => {
     });
     expect(vi.mocked(translateJianpuToJianzi).mock.calls.at(-1)?.[0]).toContain('"tuning":"ruibin"');
   });
+
+  it("invalidates candidates when tuning changes", async () => {
+    const { getByText, queryByText, container } = render(<JianpuTranslator onSelect={vi.fn()} />);
+
+    fireEvent.change(container.querySelectorAll("select")[1] as HTMLSelectElement, {
+      target: { value: "5" },
+    });
+    fireEvent.click(getByText("翻译"));
+
+    await waitFor(() => {
+      expect(getByText("散挑一")).toBeInTheDocument();
+    });
+
+    fireEvent.change(container.querySelectorAll("select")[0] as HTMLSelectElement, {
+      target: { value: "ruibin" },
+    });
+
+    expect(queryByText("散挑一")).not.toBeInTheDocument();
+    expect(getByText("调式已变更，请重新翻译")).toBeInTheDocument();
+  });
 });
 
 describe("JianpuTranslator sequence mode", () => {
@@ -239,5 +259,25 @@ describe("JianpuTranslator sequence mode", () => {
     const selected = onSelect.mock.calls[0][0];
     expect(selected[1].jianzi.toneType).toBe("散");
     expect(selected[1].jianzi.stringNumber).toBe("二");
+  });
+
+  it("hides confirm and candidates when tuning changes in sequence mode", async () => {
+    const { getByText, queryByText, container } = render(<JianpuTranslator onSelect={vi.fn()} />);
+
+    fireEvent.click(getByText("序列"));
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "5 6 1" } });
+    fireEvent.click(getByText("翻译"));
+
+    await waitFor(() => {
+      expect(getByText("确认全部")).toBeInTheDocument();
+    });
+
+    fireEvent.change(container.querySelectorAll("select")[0] as HTMLSelectElement, {
+      target: { value: "manjiao" },
+    });
+
+    expect(queryByText("确认全部")).not.toBeInTheDocument();
+    expect(getByText("调式已变更，请重新翻译")).toBeInTheDocument();
   });
 });
