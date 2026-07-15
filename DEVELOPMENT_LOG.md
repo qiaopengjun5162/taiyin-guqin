@@ -2,6 +2,12 @@
 
 ## 2026-07-15
 
+### 删除未使用的 WASM 桥接函数
+
+- `taiyin-wasm.ts` 的 6 个封装（`parseNote`/`parseScore`/`createOpenStringNote`/`createPressedNote`/`createFanYinNote`/`createScore`）在全仓库无调用方；对应 `wasm.rs` 导出同样未使用，一并删除（含 `deserialize_str`/`build_hui`/`ser_result` 私有助手）。
+- WASM 产物从 184KB 减至 146KB（-21%）。`just verify-wasm` 契约检查全过。
+- 当前 WASM 桥接仅保留两个 translate 函数，与前端实际使用面一致。
+
 ### 真实 WASM 契约验证与 note_type 序列化修复
 
 - 新增 `scripts/verify-wasm.mjs` + `just verify-wasm`：Node 直接加载 `apps/web/wasm` 真实产物，校验单音/序列/调式效果，不经 mock。
