@@ -58,6 +58,10 @@ build-web:
 ts-check:
     cd apps/web && npx tsc --noEmit
 
+# 真实 WASM 产物契约验证（不经过 mock，需先 build-wasm）
+verify-wasm:
+    node scripts/verify-wasm.mjs
+
 # 前端测试
 test-web:
     {{pnpm}} --filter web test

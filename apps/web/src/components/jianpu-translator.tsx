@@ -34,11 +34,13 @@ const TUNING_OPTIONS: { value: Tuning; label: string }[] = [
   { value: "manjiao", label: "慢角调" },
 ];
 
-const NOTE_TYPE_MAP: Record<string, "散" | "泛" | "按"> = {
-  SanYin: "散",
-  FanYin: "泛",
-  AnYin: "按",
-};
+// WASM 真实契约：note_type 序列化为中文（散/泛/按），left_finger/right_action 为 Rust 枚举名
+const TONE_TYPES = ["散", "泛", "按"] as const;
+type ToneType = (typeof TONE_TYPES)[number];
+
+function parseToneType(value: string): ToneType | null {
+  return (TONE_TYPES as readonly string[]).includes(value) ? (value as ToneType) : null;
+}
 
 const LEFT_FINGER_MAP: Record<string, string> = {
   Da: "大",
@@ -81,7 +83,7 @@ function toChineseNumber(n: number): string {
 function buildJianziState(candidate: WasmCandidate) {
   const note = candidate.note;
   const jianzi = createEmptyState();
-  jianzi.toneType = NOTE_TYPE_MAP[note.note_type] ?? null;
+  jianzi.toneType = parseToneType(note.note_type);
   if (note.left_finger) {
     jianzi.leftFinger = LEFT_FINGER_MAP[note.left_finger] ?? note.left_finger;
   }

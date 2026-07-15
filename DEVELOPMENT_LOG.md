@@ -2,6 +2,14 @@
 
 ## 2026-07-15
 
+### 真实 WASM 契约验证与 note_type 序列化修复
+
+- 新增 `scripts/verify-wasm.mjs` + `just verify-wasm`：Node 直接加载 `apps/web/wasm` 真实产物，校验单音/序列/调式效果，不经 mock。
+- **修复线上 bug**：`NoteType` 带 `#[serde(rename = "散"/"泛"/"按")]`，WASM 实际输出中文枚举值，而前端 `NOTE_TYPE_MAP` 按 Rust 枚举名（`SanYin`）映射——导致真实环境下所有翻译结果 `toneType` 落为 null、减字残缺。前端测试因 mock 写错契约（"SanYin"）从未暴露。
+- 修复：`parseToneType` 按真实契约（中文值）解析；测试 mock 全部改为真实契约。
+- 契约事实：`note_type` 中文值、`left_finger`/`right_action` Rust 枚举名；已记录在 CLAUDE.md。
+- 当前测试总数：Rust 45 + 前端 115 = **160**。
+
 ### 调式切换候选作废
 
 - 修复：切换调式后旧调式生成的候选仍显示并可被确认，会以新调式名义写入旧调式减字。

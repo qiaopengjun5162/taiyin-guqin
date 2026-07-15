@@ -10,7 +10,7 @@ import { translateJianpuToJianzi, translateJianpuSequenceToJianzi } from "@/lib/
 const singleCandidate = {
   score: 150,
   note: {
-    note_type: "SanYin",
+    note_type: "散",
     left_finger: null,
     hui: null,
     right_action: "Tiao",
@@ -30,7 +30,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
           {
             score: 140,
             note: {
-              note_type: "FanYin",
+              note_type: "泛",
               left_finger: "Da",
               hui: { hui: 10, fen: null },
               right_action: "Tiao",
@@ -40,7 +40,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
           {
             score: 135,
             note: {
-              note_type: "SanYin",
+              note_type: "散",
               left_finger: null,
               hui: null,
               right_action: "Tiao",
@@ -52,7 +52,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
           {
             score: 110,
             note: {
-              note_type: "AnYin",
+              note_type: "按",
               left_finger: "Da",
               hui: { hui: 4, fen: null },
               right_action: "Tiao",

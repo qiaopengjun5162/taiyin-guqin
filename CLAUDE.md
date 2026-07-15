@@ -118,7 +118,7 @@ just ci
 - **WASM 接口**: `translate_jianpu_to_jianzi` 接收 `{"number", "octave", "tuning"?}` JSON 字符串（tuning 默认 `zheng`），返回 `{"candidates": [...]}`；`translate_jianpu_sequence_to_jianzi` 接收 `{"notes": [...], "tuning"?}`，返回 `{"candidates_per_note": [...]}`，符合现有 JSON 桥接策略。
 - **前端入口**: `JianpuTranslator` 组件位于键盘卡片内（仅在非编辑模式显示）。序列模式下每音展示候选列表，默认选中 top1，用户可逐音切换后批量确认。切换调式会作废旧候选（`candTuning`/`notesTuning` 派生态比对），隐藏确认按钮并提示重新翻译。
 - **时值解析**: 序列输入支持延音线 `-`（+1 拍，可跨小节）、减时线 `_`/`__`（八分/十六分）、附点 `.`（×1.5）；三拍映射为附点二分。解析器以三十二分音符为单位做整数拍数运算，无法精确映射的延音线被忽略。批量确认时回填 `NoteColumn.duration` / `jianpuDot`。`0` 解析为休止符（`ParsedJianpuRest`），确认时插入 `jianpuNumber: "0"` + 空减字的 `NoteColumn`，休止拍参与小节线计数。
-- **类型映射**: WASM 返回 Rust 枚举名（如 `Tiao`、`SanYin`、`Da`），`JianpuTranslator` 负责映射为键盘状态使用的显示字符（乚/散/大）。
+- **类型映射**: WASM 序列化契约不对称——`note_type` 为中文枚举值（散/泛/按，直接可用），`left_finger`/`right_action` 为 Rust 枚举名（`Da`/`Tiao` 等，需映射为显示字符 大/乚）。前端测试 mock 必须与此契约一致。验证方法：`just verify-wasm`（`scripts/verify-wasm.mjs`，直接加载真实 WASM 产物校验序列化值与调式效果，不经 mock）。
 - **LLM 择优**: `POST /api/v1/translate/select`（`crates/taiyin-server/src/llm.rs`）将调式+简谱+候选减字文本交 Anthropic Messages API 选择；`ANTHROPIC_API_KEY` 未配置或调用失败时回退启发式 top1，响应 `method` 字段标识 `"llm"`/`"heuristic"`。前端序列模式「AI 优选」按钮应用选择（note_index 映射回含休止符位置）。
 - **非目标**: 曲谱级调式持久化、按音徽分调式微调。
 - **验证方法**: Rust 测试覆盖音高表、单音/序列候选生成与排序、按音音高计算、上下文位置优化；前端测试覆盖单音选择回填、序列输入与批量确认、按音候选渲染。测试总数：Rust 45 + 前端 115 = **160**。
