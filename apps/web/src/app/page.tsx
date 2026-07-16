@@ -12,6 +12,7 @@ import { useExportImage } from "@/lib/use-export-image";
 import { useScoreHistory } from "@/lib/use-score-history";
 import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
+import { useScorePlayer } from "@/lib/use-score-player";
 import * as api from "@/lib/api";
 
 /**
@@ -54,6 +55,7 @@ export default function Home() {
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [beatsPerBar, setBeatsPerBar] = useState(4);
+  const { play, stop: stopPlayback, isPlaying } = useScorePlayer(score);
   const exportRef = useRef<HTMLDivElement>(null);
   const { exportPng, isExporting } = useExportImage({
     containerRef: exportRef,
@@ -247,8 +249,15 @@ export default function Home() {
         onRedo={redo}
       />
 
-      {/* ── 拍号选择 ── */}
+      {/* ── 拍号选择 + 播放 ── */}
       <div className="no-print mt-2 w-full max-w-md flex items-center justify-end gap-2">
+        <button
+          onClick={isPlaying ? stopPlayback : play}
+          disabled={score.length === 0}
+          className="px-2 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+        >
+          {isPlaying ? "停止" : "播放"}
+        </button>
         <span className="text-[10px] tracking-wider text-amber-600/50">拍号</span>
         <select
           value={beatsPerBar}
