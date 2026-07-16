@@ -2,6 +2,16 @@
 
 ## 2026-07-16
 
+### 节拍器
+
+- 新增 `metronome.ts` 纯逻辑（强拍判定/拍点推进）与 `useMetronome`：lookahead 调度（25ms tick + 0.1s 前瞻窗）保证节奏稳定；强拍 2000Hz、弱拍 1200Hz 短促衰减音；拍速与播放一致（500ms/拍）。
+- 运行中修改拍号即时生效（每拍经 ref 实时读取）。
+- `page.tsx` 播放旁新增「节拍」开关按钮。
+- 新增测试：纯逻辑 4 个、hook 2 个（FakeAudioContext + fake timers 验证强弱拍序列与停止）。
+- 当前测试总数：Rust 45 + 前端 135 = **180**。
+
+## 2026-07-16
+
 ### 旋律播放与逐音高亮
 
 - 新增 `apps/web/src/lib/player.ts` 纯逻辑层：`jianpuToFrequency`（简谱 1 = C4，与 Rust `midi_note` 约定一致，相对音高参考）与 `buildSchedule`（按时值+附点排程）。

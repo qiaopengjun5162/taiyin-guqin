@@ -13,6 +13,7 @@ import { useScoreHistory } from "@/lib/use-score-history";
 import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
 import { useScorePlayer } from "@/lib/use-score-player";
+import { useMetronome } from "@/lib/use-metronome";
 import * as api from "@/lib/api";
 
 /**
@@ -56,6 +57,7 @@ export default function Home() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score);
+  const metronome = useMetronome(beatsPerBar);
   const exportRef = useRef<HTMLDivElement>(null);
   const { exportPng, isExporting } = useExportImage({
     containerRef: exportRef,
@@ -251,6 +253,16 @@ export default function Home() {
 
       {/* ── 拍号选择 + 播放 ── */}
       <div className="no-print mt-2 w-full max-w-md flex items-center justify-end gap-2">
+        <button
+          onClick={metronome.toggle}
+          className={`px-2 py-1 text-[10px] tracking-wider rounded border transition-all ${
+            metronome.isRunning
+              ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
+              : "border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50"
+          }`}
+        >
+          节拍
+        </button>
         <button
           onClick={isPlaying ? stopPlayback : play}
           disabled={score.length === 0}
