@@ -2,14 +2,15 @@
 
 ## 2026-07-16
 
-### 旋律播放
+### 旋律播放与逐音高亮
 
 - 新增 `apps/web/src/lib/player.ts` 纯逻辑层：`jianpuToFrequency`（简谱 1 = C4，与 Rust `midi_note` 约定一致，相对音高参考）与 `buildSchedule`（按时值+附点排程）。
 - 新增 `useScorePlayer`：Karplus-Strong 拨弦合成（噪声脉冲 + 阻尼低通反馈延迟，近似拨弦音色），整首一次性调度，`stop` 断开全部 source；休止符（`0`）与无简谱标注的音静默但占位时值。
 - `page.tsx` 拍号旁新增「播放/停止」按钮（空谱禁用）。
 - 新增测试：`player.test.ts`（8 个纯逻辑）、`use-score-player.test.ts`（2 个，stub AudioContext）。
-- 非目标：节拍器、逐音高亮、真实琴音采样、无简谱音的减字反推音高。
-- 当前测试总数：Rust 45 + 前端 125 = **170**。
+- 逐音高亮：`useScorePlayer` 暴露 `playingIndex`，按与音频同一起点的墙上时钟定时器逐音推进；`ScoreView` 新增 `playingIndex` 属性，播放中的音符列显示绿色高亮（优先于编辑高亮）。
+- 非目标：节拍器、真实琴音采样、无简谱音的减字反推音高。
+- 当前测试总数：Rust 45 + 前端 128 = **173**。
 
 ## 2026-07-15
 

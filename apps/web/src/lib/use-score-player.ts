@@ -42,9 +42,11 @@ function schedulePluck(ctx: AudioContext, freq: number, time: number): AudioBuff
  */
 export function useScorePlayer(notes: NoteColumn[]) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const indexTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const stop = useCallback(() => {
     for (const src of sourcesRef.current) {
@@ -59,7 +61,10 @@ export function useScorePlayer(notes: NoteColumn[]) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    for (const t of indexTimersRef.current) clearTimeout(t);
+    indexTimersRef.current = [];
     setIsPlaying(false);
+    setPlayingIndex(null);
   }, []);
 
   const play = useCallback(async () => {
@@ -78,6 +83,10 @@ export function useScorePlayer(notes: NoteColumn[]) {
       .map((s) => schedulePluck(ctx, s.freq as number, t0 + s.start));
 
     setIsPlaying(true);
+    // 逐音高亮：与音频同一起点 t0 的墙上时钟偏移
+    indexTimersRef.current = schedule.map((s, i) =>
+      setTimeout(() => setPlayingIndex(i), (s.start + 0.05) * 1000),
+    );
     const total = schedule.reduce((end, s) => Math.max(end, s.start + s.duration), 0);
     timerRef.current = setTimeout(stop, total * 1000 + 100);
   }, [isPlaying, notes, stop]);
@@ -91,5 +100,5 @@ export function useScorePlayer(notes: NoteColumn[]) {
     };
   }, [stop]);
 
-  return { play, stop, isPlaying };
+  return { play, stop, isPlaying, playingIndex };
 }

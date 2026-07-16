@@ -80,6 +80,28 @@ describe("ScoreView", () => {
     });
   });
 
+  describe("playingIndex highlight", () => {
+    it("adds playing class to the playing column", () => {
+      const notes = [makeNote({ id: "a" }), makeNote({ id: "b" })];
+      const { container } = render(
+        <ScoreView notes={notes} playingIndex={0} />,
+      );
+      const columns = container.firstElementChild!.children;
+      expect(columns[0].className).toContain("bg-emerald-50");
+      expect(columns[1].className).not.toContain("bg-emerald-50");
+    });
+
+    it("playing highlight takes precedence over editing", () => {
+      const notes = [makeNote({ id: "a" })];
+      const { container } = render(
+        <ScoreView notes={notes} editingIndex={0} playingIndex={0} />,
+      );
+      const column = container.firstElementChild!.children[0];
+      expect(column.className).toContain("bg-emerald-50");
+      expect(column.className).not.toContain("ring-amber");
+    });
+  });
+
   describe("empty state", () => {
     it("shows placeholder when notes is empty", () => {
       const { container } = render(<ScoreView notes={[]} />);

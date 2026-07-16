@@ -18,12 +18,14 @@ export function ScoreView({
   onRemove,
   onEdit,
   editingIndex,
+  playingIndex,
 }: {
   notes: NoteColumn[];
   beatsPerBar?: number;
   onRemove?: (id: string) => void;
   onEdit?: (index: number) => void;
   editingIndex?: number | null;
+  playingIndex?: number | null;
 }) {
   if (notes.length === 0) {
     return (
@@ -59,6 +61,7 @@ export function ScoreView({
         onRemove={onRemove}
         onEdit={onEdit}
         isEditing={editingIndex === index}
+        isPlaying={playingIndex === index}
       />,
     );
 
@@ -105,6 +108,7 @@ function NoteColumnView({
   onRemove,
   onEdit,
   isEditing,
+  isPlaying,
 }: {
   note: NoteColumn;
   index: number;
@@ -112,16 +116,20 @@ function NoteColumnView({
   onRemove?: (id: string) => void;
   onEdit?: (index: number) => void;
   isEditing?: boolean;
+  isPlaying?: boolean;
 }) {
   const { jianzi } = note;
 
   return (
     <div
       data-note-column
+      data-playing={isPlaying || undefined}
       className={`group flex flex-col items-center w-[72px] select-none cursor-pointer rounded pt-1 transition-all duration-150 hover:bg-amber-50/50 ${
-        isEditing
-          ? "ring-1 ring-amber-500/40 bg-amber-50 shadow-sm shadow-amber-500/10"
-          : ""
+        isPlaying
+          ? "ring-1 ring-emerald-600/50 bg-emerald-50 shadow-sm shadow-emerald-500/10"
+          : isEditing
+            ? "ring-1 ring-amber-500/40 bg-amber-50 shadow-sm shadow-amber-500/10"
+            : ""
       }`}
       onClick={() => onEdit?.(index)}
     >

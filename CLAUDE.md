@@ -121,7 +121,7 @@ just ci
 - **类型映射**: WASM 序列化契约不对称——`note_type` 为中文枚举值（散/泛/按，直接可用），`left_finger`/`right_action` 为 Rust 枚举名（`Da`/`Tiao` 等，需映射为显示字符 大/乚）。前端测试 mock 必须与此契约一致。验证方法：`just verify-wasm`（`scripts/verify-wasm.mjs`，直接加载真实 WASM 产物校验序列化值与调式效果，不经 mock）。
 - **LLM 择优**: `POST /api/v1/translate/select`（`crates/taiyin-server/src/llm.rs`）将调式+简谱+候选减字文本交 Anthropic Messages API 选择；`ANTHROPIC_API_KEY` 未配置或调用失败时回退启发式 top1，响应 `method` 字段标识 `"llm"`/`"heuristic"`。前端序列模式「AI 优选」按钮应用选择（note_index 映射回含休止符位置）。
 - **非目标**: 曲谱级调式持久化、按音徽分调式微调。
-- **验证方法**: Rust 测试覆盖音高表、单音/序列候选生成与排序、按音音高计算、上下文位置优化；前端测试覆盖单音选择回填、序列输入与批量确认、按音候选渲染。测试总数：Rust 45 + 前端 125 = **170**。
+- **验证方法**: Rust 测试覆盖音高表、单音/序列候选生成与排序、按音音高计算、上下文位置优化；前端测试覆盖单音选择回填、序列输入与批量确认、按音候选渲染。测试总数：Rust 45 + 前端 128 = **173**。
 
 ## 示例曲谱
 
@@ -136,21 +136,21 @@ just ci
 - **时值转拍数**: `apps/web/src/lib/types.ts` 中 `durationToBeats()` 将 `Duration` 映射为以四分音符为 1 拍的拍数（全=4、二分=2、四分=1、八分=0.5、十六分=0.25），可选 `dotted` 参数应用附点 ×1.5。
 - **小节线渲染**: `ScoreView` 累加每个音符的拍数，跨小节边界时插入 `BarLine` 竖直分隔符；最后一小节末尾不画线。
 - **非目标**: 播放/节拍器、散板/宕板特殊视觉、持久化拍号到后端。
-- **验证方法**: `types.test.ts` 测试 `durationToBeats`；`score-view.test.tsx` 测试不同拍号与混合时值下的小节线位置。测试总数：Rust 45 + 前端 125 = **170**。
+- **验证方法**: `types.test.ts` 测试 `durationToBeats`；`score-view.test.tsx` 测试不同拍号与混合时值下的小节线位置。测试总数：Rust 45 + 前端 128 = **173**。
 
 ## 乐谱导出
 
 - **PNG 导出**: `useExportImage` + `SaveLoadToolbar.onExportPng`（按钮「导出」），截图 `#score-area` 区域。
 - **文本导出**: `apps/web/src/lib/score-export.ts` 的 `formatScoreAsText()` 生成两行对照谱（上简谱、下减字），小节分隔逻辑与 `ScoreView` 一致；`downloadTextFile()` 经 Blob 触发下载。入口为 `SaveLoadToolbar.onExportText`（按钮「导出文本」），`page.tsx` 按当前 `beatsPerBar` 导出 `.txt`。
-- **验证方法**: `score-export.test.ts` 覆盖标题/小节线/八度标记/下载触发；`save-load-toolbar.test.tsx` 覆盖两个导出按钮。测试总数：Rust 45 + 前端 125 = **170**。
+- **验证方法**: `score-export.test.ts` 覆盖标题/小节线/八度标记/下载触发；`save-load-toolbar.test.tsx` 覆盖两个导出按钮。测试总数：Rust 45 + 前端 128 = **173**。
 
 ## 旋律播放
 
 - **纯逻辑层**: `apps/web/src/lib/player.ts` —— `jianpuToFrequency`（简谱 1 = C4 (MIDI 60)，与 Rust `midi_note` 一致的相对音高约定）、`buildSchedule`（时值+附点 → 秒级调度）。休止符（`"0"`）与无简谱标注的音 `freq: null` 静默但占位时值。
 - **合成**: `useScorePlayer` 用 Karplus-Strong 拨弦模型（噪声脉冲 + 阻尼低通反馈延迟），整首一次性调度到 AudioContext，`stop` 断开全部 source，组件卸载时 `close()`。
-- **入口**: `page.tsx` 拍号旁「播放/停止」按钮，空谱禁用。
+- **入口**: `page.tsx` 拍号旁「播放/停止」按钮，空谱禁用。`playingIndex` 逐音高亮传入 `ScoreView`，播放列绿色高亮优先于编辑高亮；高亮定时器与音频共用起点 t0 的墙上时钟偏移，`stop` 时全部清除。
 - **非目标**: 节拍器、逐音高亮、真实采样、无简谱音的减字反推。
-- **验证方法**: `player.test.ts` 纯逻辑测试；`use-score-player.test.ts` 用 FakeAudioContext 验证发声数与停止行为。测试总数：Rust 45 + 前端 125 = **170**。
+- **验证方法**: `player.test.ts` 纯逻辑测试；`use-score-player.test.ts` 用 FakeAudioContext 验证发声数与停止行为。测试总数：Rust 45 + 前端 128 = **173**。
 
 ## 乐谱流数据流
 
@@ -229,7 +229,7 @@ src/
 - 后端集成测试需要运行中的 PostgreSQL。
 - 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
 - `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
-- 当前测试总数：Rust 45 + 前端 125 = **170**。
+- 当前测试总数：Rust 45 + 前端 128 = **173**。
 
 ## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
 

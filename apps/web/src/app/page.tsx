@@ -55,7 +55,7 @@ export default function Home() {
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [beatsPerBar, setBeatsPerBar] = useState(4);
-  const { play, stop: stopPlayback, isPlaying } = useScorePlayer(score);
+  const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score);
   const exportRef = useRef<HTMLDivElement>(null);
   const { exportPng, isExporting } = useExportImage({
     containerRef: exportRef,
@@ -220,7 +220,7 @@ export default function Home() {
 
       {/* ── 乐谱流（导出截图目标） ── */}
       <div id="score-area" ref={exportRef} className="mt-8 w-full max-w-md">
-        <ScoreView notes={score} beatsPerBar={beatsPerBar} onRemove={handleRemove} onEdit={handleEdit} editingIndex={editingIndex} />
+        <ScoreView notes={score} beatsPerBar={beatsPerBar} onRemove={handleRemove} onEdit={handleEdit} editingIndex={editingIndex} playingIndex={playingIndex} />
         {score.length === 0 && (
           <p className="mt-4 text-center text-[11px] tracking-wider text-amber-700/40">
             暂无音符 · 用「简谱转减字」输入，或从上方「示例」加载一首曲谱
