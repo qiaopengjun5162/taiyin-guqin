@@ -1,10 +1,24 @@
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useScoreHistory } from "@/lib/use-score-history";
+import type { NoteColumn } from "@/lib/types";
+import { createEmptyState } from "@/lib/types";
+
+function makeNoteColumn(overrides: Partial<NoteColumn> = {}): NoteColumn {
+  return {
+    id: crypto.randomUUID(),
+    jianpuNumber: null,
+    jianpuOctave: "",
+    jianpuDot: false,
+    duration: "四分",
+    jianzi: createEmptyState(),
+    ...overrides,
+  };
+}
 
 describe("useScoreHistory", () => {
   it("initializes with provided defaults", () => {
-    const { result } = renderHook(() => useScoreHistory([{ id: "1" } as any], "test"));
+    const { result } = renderHook(() => useScoreHistory([makeNoteColumn({ id: "1" })], "test"));
     expect(result.current.score).toHaveLength(1);
     expect(result.current.title).toBe("test");
     expect(result.current.canUndo).toBe(false);
@@ -15,7 +29,7 @@ describe("useScoreHistory", () => {
     const { result } = renderHook(() => useScoreHistory([]));
 
     act(() => {
-      result.current.commitScore([{ id: "a" } as any]);
+      result.current.commitScore([makeNoteColumn({ id: "a" })]);
     });
     expect(result.current.score).toHaveLength(1);
     expect(result.current.canUndo).toBe(true);
@@ -36,12 +50,12 @@ describe("useScoreHistory", () => {
   it("clears future on new commit after undo", () => {
     const { result } = renderHook(() => useScoreHistory([]));
 
-    act(() => result.current.commitScore([{ id: "a" } as any]));
-    act(() => result.current.commitScore([{ id: "b" } as any]));
+    act(() => result.current.commitScore([makeNoteColumn({ id: "a" })]));
+    act(() => result.current.commitScore([makeNoteColumn({ id: "b" })]));
     act(() => result.current.undo());
     expect(result.current.canRedo).toBe(true);
 
-    act(() => result.current.commitScore([{ id: "c" } as any]));
+    act(() => result.current.commitScore([makeNoteColumn({ id: "c" })]));
     expect(result.current.canRedo).toBe(false);
     expect(result.current.score[0].id).toBe("c");
   });
@@ -55,7 +69,7 @@ describe("useScoreHistory", () => {
   it("caps history at 50 snapshots", () => {
     const { result } = renderHook(() => useScoreHistory([]));
     for (let i = 0; i < 55; i++) {
-      act(() => result.current.commitScore([{ id: `n${i}` } as any]));
+      act(() => result.current.commitScore([makeNoteColumn({ id: `n${i}` })]));
     }
     act(() => {
       for (let i = 0; i < 55; i++) result.current.undo();
@@ -74,7 +88,7 @@ describe("useScoreHistory", () => {
 
   it("supports functional score updater", () => {
     const { result } = renderHook(() => useScoreHistory([]));
-    act(() => result.current.commitScore((prev) => [...prev, { id: "x" } as any]));
+    act(() => result.current.commitScore((prev) => [...prev, makeNoteColumn({ id: "x" })]));
     expect(result.current.score).toHaveLength(1);
   });
 });

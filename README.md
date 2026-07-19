@@ -32,7 +32,7 @@
 | **后端** | Axum (Rust) | 社区 API、AI 翻译转发、积分记账 |
 | **前端** | Next.js 16 + React 19 | H5 网页，后续可封装为小程序 |
 | **样式** | Tailwind CSS 4 + shadcn/ui | 减字键盘 CSS 拼装渲染 |
-| **AI** | DeepSeek R1/V3 (Python) | 简谱→减字翻译、乐理问答 |
+| **AI** | Anthropic Messages API (Rust) | `/api/v1/translate/select` 简谱序列候选择优 |
 
 ## 🚀 快速开始
 
@@ -80,6 +80,47 @@ just clippy        # clippy lint
 just dev           # 前端开发服务器
 just ci            # 提交前全量检查
 ```
+
+## 🚀 部署
+
+### 环境变量
+
+后端（`crates/taiyin-server`）与前端构建均通过环境变量配置：
+
+```bash
+# 后端
+DATABASE_URL=postgres://taiyin:taiyin_dev@localhost:5432/taiyin
+HOST=0.0.0.0
+PORT=3001
+ANTHROPIC_API_KEY=sk-...        # 可选，未配置时 LLM 择优回退启发式
+ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+
+# 前端构建
+NEXT_PUBLIC_API_URL=http://localhost:3001
+```
+
+### Docker 部署后端
+
+```bash
+# 构建镜像
+docker build -t taiyin-server .
+
+# 运行（需 PostgreSQL 可达）
+docker run -d \
+  -e DATABASE_URL=postgres://taiyin:taiyin_dev@host.docker.internal:5432/taiyin \
+  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+  -p 3001:3001 \
+  taiyin-server
+```
+
+### 静态前端部署
+
+```bash
+just build-wasm      # 构建 WASM 并复制到 public/wasm
+pnpm --filter web build   # 输出到 apps/web/dist
+```
+
+`dist/` 为纯静态文件，可用 nginx、Cloudflare Pages、Vercel 等任意静态托管。
 
 ## 📄 许可
 

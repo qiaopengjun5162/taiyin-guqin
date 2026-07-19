@@ -98,7 +98,14 @@ extract-ancient-paths:
 merge-ancient-paths:
     python3 scripts/merge-ancient-paths.py
 
-# ── 完整流程 ──────────────────────────────────
+# ── 部署 ─────────────────────────────────────
+
+# 构建生产产物：WASM + 前端静态导出
+prod-build: build-wasm build-web
+
+# 本地完整启动：数据库 + 后端 + 前端开发服务器
+run-local: docker-up
+    @echo "PostgreSQL/Redis 已启动，请另开终端运行 just dev"
 
 # 全量检查和测试（提交前运行）
 ci: fmt-check clippy test test-web

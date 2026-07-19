@@ -91,6 +91,14 @@ export function useScorePlayer(notes: NoteColumn[]) {
     timerRef.current = setTimeout(stop, total * 1000 + 100);
   }, [isPlaying, notes, stop]);
 
+  // 乐谱变更时自动停止播放，防止旧音频继续发声
+  useEffect(() => {
+    if (isPlaying) {
+      stop();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes]);
+
   // 卸载时停止播放并释放 AudioContext
   useEffect(() => {
     return () => {

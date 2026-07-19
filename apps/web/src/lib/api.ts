@@ -3,7 +3,20 @@ import type { NoteColumn } from "./types";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const DEFAULT_TIMEOUT = 10_000;
 
-async function fetchWithTimeout(url: string, options?: RequestInit, timeout = DEFAULT_TIMEOUT) {
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options?: RequestInit,
+  timeout = DEFAULT_TIMEOUT,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
@@ -20,6 +33,13 @@ async function parseErrorMessage(res: Response): Promise<string> {
   } catch {
     return res.statusText;
   }
+}
+
+async function handleResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    throw new ApiError(await parseErrorMessage(res), res.status);
+  }
+  return res.json();
 }
 
 export interface ScoreListItem {
@@ -42,20 +62,17 @@ export async function createScore(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title, notes }),
   });
-  if (!res.ok) throw new Error(await parseErrorMessage(res));
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function listScores(): Promise<ScoreListItem[]> {
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`);
-  if (!res.ok) throw new Error(await parseErrorMessage(res));
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function getScore(id: string): Promise<Score> {
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`);
-  if (!res.ok) throw new Error(await parseErrorMessage(res));
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function updateScore(
@@ -67,15 +84,14 @@ export async function updateScore(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(await parseErrorMessage(res));
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function deleteScore(id: string): Promise<void> {
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
     method: "DELETE",
   });
-  if (!res.ok) throw new Error(await parseErrorMessage(res));
+  await handleResponse(res);
 }
 
 export interface CandidateSelection {
@@ -98,6 +114,5 @@ export async function selectCandidates(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ notes, tuning }),
   });
-  if (!res.ok) throw new Error(await parseErrorMessage(res));
-  return res.json();
+  return handleResponse(res);
 }

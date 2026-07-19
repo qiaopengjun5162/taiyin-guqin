@@ -33,7 +33,12 @@ async fn main() -> anyhow::Result<()> {
     })
     .route_layer(GovernorLayer::new(governor_conf));
 
-    let addr = "0.0.0.0:3001";
+    let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3001);
+    let addr = format!("{host}:{port}");
     tracing::info!("taiyin-server listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -27,7 +27,8 @@ class FakeAudioContext {
   currentTime = 0;
   state: AudioContextState = "running";
   destination = {};
-  createBuffer(_ch: number, len: number, _sr: number) {
+  createBuffer(_ch: number, len: number, _sampleRate: number) {
+    void _sampleRate;
     return { getChannelData: () => new Float32Array(len) } as unknown as AudioBuffer;
   }
   createBufferSource() {
@@ -124,5 +125,21 @@ describe("useScorePlayer", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("stops playback when notes change", async () => {
+    const notes = [makeNote({ jianpuNumber: "5" })];
+    const { result, rerender } = renderHook(
+      ({ notes }: { notes: NoteColumn[] }) => useScorePlayer(notes),
+      { initialProps: { notes } },
+    );
+
+    await act(async () => {
+      await result.current.play();
+    });
+    expect(result.current.isPlaying).toBe(true);
+
+    rerender({ notes: [makeNote({ jianpuNumber: "6" })] });
+    expect(result.current.isPlaying).toBe(false);
   });
 });

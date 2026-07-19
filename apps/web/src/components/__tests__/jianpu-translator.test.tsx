@@ -1,11 +1,15 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { JianpuTranslator } from "../jianpu-translator";
-import { translateJianpuToJianzi, translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
+import {
+  translateJianpuToJianzi,
+  translateJianpuSequenceToJianzi,
+  useWasmInit,
+} from "@/lib/taiyin-wasm";
 
 const singleCandidate = {
   score: 150,
@@ -63,6 +67,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
       ],
     }),
   ),
+  useWasmInit: vi.fn(() => ({ state: "ready", error: null })),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -72,7 +77,15 @@ vi.mock("@/lib/api", () => ({
   })),
 }));
 
+beforeEach(() => {
+  vi.mocked(useWasmInit).mockReturnValue({ state: "ready", error: null });
+});
+
 describe("JianpuTranslator single mode", () => {
+  beforeEach(() => {
+    vi.mocked(useWasmInit).mockReturnValue({ state: "ready", error: null });
+  });
+
   it("renders inputs and translate button", () => {
     const { container } = render(<JianpuTranslator onSelect={vi.fn()} />);
     expect(container.textContent).toContain("翻译");
@@ -136,6 +149,16 @@ describe("JianpuTranslator single mode", () => {
 
     expect(queryByText("散挑一")).not.toBeInTheDocument();
     expect(getByText("调式已变更，请重新翻译")).toBeInTheDocument();
+  });
+
+  it("shows WASM initialization error and disables translate", () => {
+    vi.mocked(useWasmInit).mockReturnValue({
+      state: "error",
+      error: new Error("wasm load failed"),
+    });
+    const { container } = render(<JianpuTranslator onSelect={vi.fn()} />);
+    expect(container.textContent).toContain("引擎加载失败");
+    expect(container.textContent).toContain("wasm load failed");
   });
 });
 

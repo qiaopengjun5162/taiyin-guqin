@@ -62,5 +62,9 @@ jobs:
         run: pnpm --version
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile --ignore-scripts
+      - name: Lint
+        run: pnpm --filter web lint
+      - name: Test
+        run: pnpm --filter web test
       - name: Build
         run: pnpm --filter web build

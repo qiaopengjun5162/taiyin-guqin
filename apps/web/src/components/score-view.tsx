@@ -157,10 +157,12 @@ function NoteColumnView({
             e.stopPropagation();
             onRemove(note.id);
           }}
-          className="mt-1 w-5 h-5 flex items-center justify-center rounded-full
+          aria-label="删除此音"
+          className="mt-1 min-w-[44px] min-h-[44px] -my-2 flex items-center justify-center rounded-full
                      text-stone-400/30 hover:text-amber-600/70 hover:bg-amber-50
                      transition-all duration-200
                      opacity-0 group-hover:opacity-100
+                     [@media(hover:none)]:opacity-100
                      text-xs leading-none"
           title="删除此音"
         >

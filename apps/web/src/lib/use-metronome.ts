@@ -30,7 +30,10 @@ export function useMetronome(beatsPerBar: number) {
   const ctxRef = useRef<AudioContext | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const beatsPerBarRef = useRef(beatsPerBar);
-  beatsPerBarRef.current = beatsPerBar;
+
+  useEffect(() => {
+    beatsPerBarRef.current = beatsPerBar;
+  }, [beatsPerBar]);
 
   const stop = useCallback(() => {
     if (intervalRef.current) {

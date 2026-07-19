@@ -55,14 +55,28 @@ export default function Home() {
   const [savedScores, setSavedScores] = useState<api.ScoreListItem[]>([]);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score);
   const metronome = useMetronome(beatsPerBar);
   const exportRef = useRef<HTMLDivElement>(null);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { exportPng, isExporting } = useExportImage({
     containerRef: exportRef,
     title: scoreTitle,
   });
+
+  function showError(message: string) {
+    setErrorMessage(message);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setErrorMessage(null), 4000);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    };
+  }, []);
 
   /** 全局撤销/重做快捷键 */
   useEffect(() => {
@@ -130,8 +144,9 @@ export default function Home() {
       }
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
-    } catch {
+    } catch (err) {
       setSaveStatus("error");
+      showError(err instanceof api.ApiError ? err.message : "保存失败，请检查网络或后端状态");
       setTimeout(() => setSaveStatus("idle"), 3000);
     }
   }
@@ -143,7 +158,7 @@ export default function Home() {
       setSavedScores(list);
       setShowLoadDialog(true);
     } catch {
-      alert("无法连接到服务器，请确认后端已启动。");
+      showError("无法连接到服务器，请确认后端已启动");
     }
   }
 
@@ -159,7 +174,7 @@ export default function Home() {
         setCurrentScoreId(null);
       }
     } catch {
-      alert("删除失败。");
+      showError("删除失败");
     }
     // 刷新列表
     try { setSavedScores(await api.listScores()); } catch {}
@@ -175,7 +190,7 @@ export default function Home() {
       setShowLoadDialog(false);
       setEditingIndex(null);
     } catch {
-      alert("加载失败。");
+      showError("加载失败");
     }
   }
 
@@ -220,13 +235,33 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ── 全局错误提示 ── */}
+      {errorMessage && (
+        <div className="no-print mt-4 w-full max-w-md px-3 py-2 rounded border border-red-400/30 bg-red-900/20 text-[11px] tracking-wider text-red-200/80">
+          {errorMessage}
+        </div>
+      )}
+
       {/* ── 乐谱流（导出截图目标） ── */}
       <div id="score-area" ref={exportRef} className="mt-8 w-full max-w-md">
         <ScoreView notes={score} beatsPerBar={beatsPerBar} onRemove={handleRemove} onEdit={handleEdit} editingIndex={editingIndex} playingIndex={playingIndex} />
         {score.length === 0 && (
-          <p className="mt-4 text-center text-[11px] tracking-wider text-amber-700/40">
-            暂无音符 · 用「简谱转减字」输入，或从上方「示例」加载一首曲谱
-          </p>
+          <div className="mt-4 text-center">
+            <p className="text-[11px] tracking-wider text-amber-700/40">
+              暂无音符 · 用「简谱转减字」输入，或从上方「示例」加载一首曲谱
+            </p>
+            <div className="mt-2 flex items-center justify-center gap-2">
+              {EXAMPLE_SCORES.slice(0, 2).map((ex) => (
+                <button
+                  key={ex.id}
+                  onClick={() => handleLoadExample(ex.id)}
+                  className="px-2 py-1 text-[10px] tracking-wider rounded border border-amber-700/20 text-amber-700/50 hover:text-amber-100/70 hover:border-amber-600/40 transition-all"
+                >
+                  {ex.title.replace("（片段）", "")}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {score.length > 0 && <ExportFooter title={scoreTitle} />}
       </div>
@@ -255,7 +290,8 @@ export default function Home() {
       <div className="no-print mt-2 w-full max-w-md flex items-center justify-end gap-2">
         <button
           onClick={metronome.toggle}
-          className={`px-2 py-1 text-[10px] tracking-wider rounded border transition-all ${
+          aria-label={metronome.isRunning ? "停止节拍器" : "启动节拍器"}
+          className={`px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border transition-all ${
             metronome.isRunning
               ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
               : "border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50"
@@ -266,7 +302,8 @@ export default function Home() {
         <button
           onClick={isPlaying ? stopPlayback : play}
           disabled={score.length === 0}
-          className="px-2 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+          aria-label={isPlaying ? "停止播放" : "播放"}
+          className="px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isPlaying ? "停止" : "播放"}
         </button>
@@ -274,7 +311,8 @@ export default function Home() {
         <select
           value={beatsPerBar}
           onChange={(e) => setBeatsPerBar(parseInt(e.target.value, 10))}
-          className="px-2 py-1 text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 outline-none focus:border-amber-600/50"
+          aria-label="拍号"
+          className="px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 outline-none focus:border-amber-600/50"
         >
           <option value={3}>3/4</option>
           <option value={4}>4/4</option>

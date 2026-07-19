@@ -1,6 +1,7 @@
 node_modules
 target
 .next
+dist
 *.wasm
 *.local
 .DS_Store
