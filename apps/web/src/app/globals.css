@@ -3,7 +3,7 @@
 /* ── 太音减字谱楷体（基于忘机减字谱楷体修改，去除推广弹窗） ── */
 @font-face {
   font-family: "TaiYinJianZiPuKaiTi";
-  src: url("/fonts/TaiYinJianZiPuKaiTi.ttf") format("truetype");
+  src: url("/taiyin-guqin/fonts/TaiYinJianZiPuKaiTi.ttf") format("truetype");
   font-weight: normal;
   font-style: normal;
   font-display: swap;

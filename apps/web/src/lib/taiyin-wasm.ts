@@ -63,7 +63,7 @@ export async function initWasm(): Promise<void> {
       // 因此显式传入通过 public/ 静态服务的 .wasm 文件 URL。
       // __wbg_init accepts { module_or_path: ... } | InitInput | Promise<InitInput>
       await (mod.default as (path: string) => Promise<unknown>)(
-        "/wasm/taiyin_core_bg.wasm",
+        "wasm/taiyin_core_bg.wasm",
       );
       instance = mod as unknown as WasmModule;
       setState("ready", null);
