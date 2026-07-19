@@ -53,8 +53,8 @@ docs: 更新 API 文档
 同 `README.md` 中的快速开始。如有代理需求：
 
 ```bash
-export http_proxy=http://127.0.0.1:7897
-export https_proxy=http://127.0.0.1:7897
+export http_proxy=http://127.0.0.1:7890
+export https_proxy=http://127.0.0.1:7890
 ```
 
 ---

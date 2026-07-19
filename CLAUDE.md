@@ -288,6 +288,6 @@ src/
 
 外部访问（如安装 pnpm 依赖时）使用代理：
 ```bash
-export http_proxy=http://127.0.0.1:7897
-export https_proxy=http://127.0.0.1:7897
+export http_proxy=http://127.0.0.1:7890
+export https_proxy=http://127.0.0.1:7890
 ```
