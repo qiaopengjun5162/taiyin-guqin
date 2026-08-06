@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { jianpuToFrequency, buildSchedule } from "../player";
-import { createEmptyState } from "../types";
+import { createEmptyState } from "../jianzi";
 import type { NoteColumn } from "../types";
 
 function makeNote(overrides: Partial<NoteColumn> = {}): NoteColumn {

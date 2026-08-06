@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { JianpuNumber, JianpuOctave, NoteColumn } from "@/lib/types";
-import { jianziToText } from "@/lib/types";
+import { jianziToText } from "@/lib/jianzi";
 import { translateJianpuToJianzi } from "@/lib/taiyin-wasm";
 import type { WasmCandidate } from "./types";
 import { buildJianziState, candidateToNoteColumn } from "./candidate";

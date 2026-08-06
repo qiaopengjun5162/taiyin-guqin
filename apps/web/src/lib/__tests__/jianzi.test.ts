@@ -6,7 +6,7 @@ import {
   parseJianziText,
   getRhythmLineCount,
   durationToBeats,
-} from "../types";
+} from "../jianzi";
 import type { JianziState } from "../types";
 
 function make(overrides: Partial<JianziState> = {}): JianziState {

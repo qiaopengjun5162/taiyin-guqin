@@ -4,7 +4,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { ScoreView } from "../score-view";
-import { createEmptyState } from "@/lib/types";
+import { createEmptyState } from "@/lib/jianzi";
 import type { NoteColumn, JianziState } from "@/lib/types";
 
 function makeNote(overrides: Partial<NoteColumn> = {}): NoteColumn {

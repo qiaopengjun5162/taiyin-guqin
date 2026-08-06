@@ -7,7 +7,7 @@
  */
 
 import type { NoteColumn } from "./types";
-import { durationToBeats } from "./types";
+import { durationToBeats } from "./jianzi";
 
 /** 简谱数字 → 相对 C 的半音数。 */
 const SEMITONES: Record<string, number> = {

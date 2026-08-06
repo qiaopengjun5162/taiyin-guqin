@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { formatScoreAsText, downloadTextFile } from "../score-export";
-import { createEmptyState } from "../types";
+import { createEmptyState } from "@/lib/jianzi";
 import type { NoteColumn, JianziState } from "../types";
 
 function makeNote(overrides: Partial<NoteColumn> = {}): NoteColumn {

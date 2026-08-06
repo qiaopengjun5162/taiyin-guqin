@@ -1,5 +1,5 @@
 import type { NoteColumn } from "./types";
-import { durationToBeats, jianziToText } from "./types";
+import { durationToBeats, jianziToText } from "@/lib/jianzi";
 
 export interface TextExportOptions {
   /** 曲谱标题，会放在文件第一行。 */

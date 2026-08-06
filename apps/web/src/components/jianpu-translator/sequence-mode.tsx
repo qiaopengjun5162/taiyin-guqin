@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { NoteColumn } from "@/lib/types";
-import { jianziToText, createEmptyState } from "@/lib/types";
+import { jianziToText, createEmptyState } from "@/lib/jianzi";
 import { translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
 import { selectCandidates } from "@/lib/api";
 import {

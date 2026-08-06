@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { EXAMPLE_SCORES, findExampleScore } from "../example-scores";
-import { isComplete } from "../types";
+import { isComplete } from "../jianzi";
 
 describe("example-scores", () => {
   it("contains at least one example", () => {

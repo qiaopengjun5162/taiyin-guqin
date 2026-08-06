@@ -10,13 +10,15 @@ import {
   DEFAULT_KEYBOARD,
   DEFAULT_JIANPU_NUMBERS,
   DEFAULT_DURATIONS,
+  type NoteType,
+  type RhythmMode,
+} from "@/lib/types";
+import {
   createEmptyState,
   isComplete,
   jianziToText,
   parseJianziText,
-  type NoteType,
-  type RhythmMode,
-} from "@/lib/types";
+} from "@/lib/jianzi";
 import { lookupPinyin } from "@/lib/pinyin-dict";
 import { JianzipuPreview } from "./jianzipu-preview";
 

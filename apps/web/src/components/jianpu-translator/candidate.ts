@@ -1,5 +1,5 @@
 import type { JianpuNumber, NoteColumn } from "@/lib/types";
-import { createEmptyState } from "@/lib/types";
+import { createEmptyState } from "@/lib/jianzi";
 import type { ParsedJianpuNote } from "@/lib/jianpu-parser";
 import {
   parseToneType,

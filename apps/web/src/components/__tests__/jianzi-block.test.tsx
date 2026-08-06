@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { JianziBlock } from "../jianzi-block";
-import { createEmptyState } from "@/lib/types";
+import { createEmptyState } from "@/lib/jianzi";
 import type { JianziState } from "@/lib/types";
 
 function make(overrides: Partial<JianziState> = {}): JianziState {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { NoteColumn, Duration } from "@/lib/types";
-import { getRhythmLineCount, durationToBeats } from "@/lib/types";
+import { getRhythmLineCount, durationToBeats } from "@/lib/jianzi";
 import { JianziBlock } from "./jianzi-block";
 
 const SERIF_FONT =

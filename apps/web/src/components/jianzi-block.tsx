@@ -1,7 +1,7 @@
 "use client";
 
 import type { JianziState } from "@/lib/types";
-import { jianziToText } from "@/lib/types";
+import { jianziToText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "./svg-jianzi-block";
 
 const JIANZI_FONT = '"TaiYinJianZiPuKaiTi", "KaiTi", "STKaiti", "Ma Shan Zheng", "Noto Serif SC", serif';

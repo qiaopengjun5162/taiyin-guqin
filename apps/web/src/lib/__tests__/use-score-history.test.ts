@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useScoreHistory } from "@/lib/use-score-history";
 import type { NoteColumn } from "@/lib/types";
-import { createEmptyState } from "@/lib/types";
+import { createEmptyState } from "@/lib/jianzi";
 
 function makeNoteColumn(overrides: Partial<NoteColumn> = {}): NoteColumn {
   return {
