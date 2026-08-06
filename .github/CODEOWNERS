@@ -1,0 +1,24 @@
+# 太音 · CODEOWNERS
+#
+# 关键模块的变更必须经由对应 reviewer 批准，作为团队代码质量把控的制度抓手。
+# 请根据实际团队补充下面的 GitHub 用户名（当前占位为仓库 owner）。
+
+# 核心库：领域不变量（Hui / StringNumber 等 newtype）与减字谱算法，必须 senior review
+crates/taiyin-core/                       @qiaopengjun5162
+
+# 后端安全相关：鉴权 / CORS / 限流 / 配置
+crates/taiyin-server/src/auth.rs          @qiaopengjun5162
+crates/taiyin-server/src/config.rs        @qiaopengjun5162
+crates/taiyin-server/src/main.rs          @qiaopengjun5162
+crates/taiyin-server/src/routes.rs        @qiaopengjun5162
+
+# 前端 API 契约层（与后端 CORS / 鉴权强耦合）
+apps/web/src/lib/api.ts                   @qiaopengjun5162
+
+# CI / 构建 / 工程规范
+.github/                                  @qiaopengjun5162
+.cargo/                                   @qiaopengjun5162
+justfile                                  @qiaopengjun5162
+
+# 默认兜底（所有未被上面覆盖的文件）
+*                                        @qiaopengjun5162

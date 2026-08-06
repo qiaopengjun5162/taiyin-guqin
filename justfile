@@ -107,15 +107,33 @@ prod-build: build-wasm build-web
 run-local: docker-up
     @echo "PostgreSQL/Redis 已启动，请另开终端运行 just dev"
 
-# 全量检查和测试（提交前运行）
+# 全量检查和测试（CI 用，需要数据库；见 .github/workflows/build.yml 的 postgres 服务）
 ci: fmt-check clippy test test-web
+
+# 单元测试（不含需要 DATABASE_URL 的集成测试，本地无需起库）
+test-lib *args="":
+	{{cargo}} nextest run --all-features --lib {{args}}
+
+# 提交前本地快速检查（不依赖数据库，秒级）
+# 由 .githooks/pre-commit 调用；需要数据库的后端集成测试交给 CI。
+precommit: fmt-check clippy test-lib test-web
+
+# ── 覆盖率 ────────────────────────────────────
+
+# 生成覆盖率报告（lcov 格式，便于 CI/编辑器展示）。
+# 前置：rustup component add llvm-tools-preview && cargo install cargo-llvm-cov
+# 仅跑 --lib（不依赖数据库）；软目标：taiyin-core 行覆盖 ≥ 90%（2026-08-02 实测基线 96.8%）。
+# 设计上不硬性 fail 构建，避免误伤正常改动；达标情况以报告为准。
+coverage:
+    {{cargo}} llvm-cov nextest --lib --lcov --output-path lcov.info
 
 # ── 杂项 ──────────────────────────────────────
 
 # 设置 git hooks（首次克隆仓库后运行一次）
+# 唯一机制：git native hook + just。项目不再使用 python 的 pre-commit 框架。
 setup-hooks:
     git config core.hooksPath .githooks
-    @echo "✓ git hooks 已安装（.githooks/）"
+    @echo "✓ git hooks 已安装（.githooks/）；提交前会自动运行 just precommit"
 
 # 显示本帮助
 default:

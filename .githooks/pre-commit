@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
 # 太音 · pre-commit hook
-# 提交前自动运行 just ci（fmt + clippy + Rust 测试 + 前端测试）
-exec just ci
+#
+# 项目统一使用 git native hook + just，不再依赖 python 的 pre-commit 框架
+# （原 .pre-commit-config.yaml 因 core.hooksPath=.githooks 而永不生效，已删除）。
+# 只需一次 `just setup-hooks` 即可启用。
+#
+# 本 hook 只做「本地可秒级验证」的检查；需要 DATABASE_URL 的后端集成测试
+# 交给 CI（见 .github/workflows/build.yml 的 postgres 服务）。
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+echo "→ 检查合并冲突标记与行尾空白"
+git diff --cached --name-only --diff-filter=ACM | while IFS= read -r f; do
+  if grep -nE '^(<<<<<<<|>>>>>>>|=======$)' "$ROOT/$f" 2>/dev/null; then
+    echo "✗ 提交中包含合并冲突标记：$f"
+    exit 1
+  fi
+  if grep -nE ' +$' "$ROOT/$f" 2>/dev/null; then
+    echo "✗ 提交中包含行尾空白：$f"
+    exit 1
+  fi
+done
+
+echo "→ 运行 just precommit（fmt + clippy + 单元测试 + 前端测试）"
+exec just precommit

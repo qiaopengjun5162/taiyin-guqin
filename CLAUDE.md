@@ -209,6 +209,22 @@ CREATE TABLE scores (
 | PUT | `/api/v1/scores/{id}` | 更新（body: `{title?, notes?}`） |
 | DELETE | `/api/v1/scores/{id}` | 删除 |
 
+### 服务端安全配置（v0.3）
+
+- **CORS**：由 `ALLOWED_ORIGINS`（逗号分隔）控制允许来源。留空 = 开发态放开（仅本地）。
+  生产部署**必须**设置，否则任何站点都能嵌入你的 API。
+- **限流**：`tower_governor` 按客户端 IP 计。全局 `GLOBAL_RATE_PER_SECOND` / `GLOBAL_RATE_BURST`
+  （默认 2/s、burst 60）；`/translate/select` 额外使用更严格的
+  `TRANSLATE_RATE_PER_SECOND` / `TRANSLATE_RATE_BURST`（默认 1/s、burst 5），因该端点直接消耗
+  服务端 Anthropic 额度。反向代理部署时读取 `X-Forwarded-For` / `X-Real-IP` 头做 per-IP 限流，
+  回退到 TCP peer IP。
+- **API-key 闸门（纵深防御）**：设置 `TRANSLATE_API_KEY` 后，`/translate/select` 要求携带
+  `Authorization: Bearer <key>` 或 `x-api-key: <key>`。注意：该 key 会出现在前端 JS 包
+  （`NEXT_PUBLIC_TRANSLATE_API_KEY`），故仅阻止跨站/自动化滥用，**不是真正的用户鉴权**。
+  真正的用户级鉴权需要账号体系，列为后续迭代。
+- **设计取舍**：`/scores` 写操作当前 intentionally 开放（社区 UGC，无成本敞口）；
+  `/translate/select` 是唯一的成本敞口，因此重点防护它。
+
 ### taiyin-server 模块结构
 
 ```
@@ -291,3 +307,27 @@ src/
 export http_proxy=http://127.0.0.1:7890
 export https_proxy=http://127.0.0.1:7890
 ```
+
+## 工程规范
+
+面向团队与 AI 协作者的统一约定，确保代码质量可被持续把控。
+
+### pre-commit 机制（唯一）
+- 统一使用 **git native hook + `just`**，不使用 python 的 pre-commit 框架（原 `.pre-commit-config.yaml` 因 `core.hooksPath=.githooks` 永不生效，已删除）。
+- 启用：`just setup-hooks`。
+- 提交时自动执行 `just precommit`：fmt + clippy(`-D warnings`) + 单元(`--lib`) + 前端测试。
+- 需要 `DATABASE_URL` 的后端集成测试交给 CI（build.yml 的 postgres 服务）；本地用 `just ci` 跑全量（需先 `just docker-up`）。
+
+### Definition of Done
+- CI 全绿（build.yml `rust` + `web`）。
+- 至少 1 approval；`crates/taiyin-core/` 与后端安全文件（`auth.rs`/`config.rs`/`main.rs`/`routes.rs`）需 `.github/CODEOWNERS` 指定 reviewer 批准。
+- 提交信息符合 Conventional Commits；用户可见变更同步文档。
+
+### Code Review 重点
+- 测试覆盖（边界 + 错误路径）、公开契约兼容性、安全（密钥不进前端 / 日志）、性能回归。
+- 涉及领域不变量（如 `Hui`/`StringNumber` newtype）、CORS / 限流、数据库迁移时，必须在 PR 描述中说明。
+
+### 安全变更约束
+- 任何端点改动不得把服务端密钥（`ANTHROPIC_API_KEY` 等）暴露给前端；前端只可持有 `TRANSLATE_API_KEY` 这类非机密的闸门 key（详见「服务端安全配置」）。
+- CORS 仅放行 `ALLOWED_ORIGINS` 已知来源，禁止 `CorsLayer::permissive()`。
+- 昂贵 LLM 端点必须叠加 per-IP 限流（`SmartIpKeyExtractor`）。
