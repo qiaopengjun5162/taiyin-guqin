@@ -2,7 +2,7 @@ mod common;
 
 use axum::{body::Body, http::Request};
 use serde_json::{Value, json};
-use taiyin_server::{AppState, app};
+use taiyin_server::{AppState, ServerConfig, app};
 use tower::util::ServiceExt;
 
 #[tokio::test]
@@ -20,7 +20,7 @@ async fn test_create_and_list_scores() {
     let notes = json!([{"id": "1", "toneType": "散", "rightAction": "勾", "stringNumber": "五"}]);
     let body_str = serde_json::to_string(&json!({"title": "练习曲", "notes": notes})).unwrap();
 
-    let resp = app(state.clone())
+    let resp = app(state.clone(), &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -33,7 +33,7 @@ async fn test_create_and_list_scores() {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    let resp = app(state)
+    let resp = app(state, &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .uri("/api/v1/scores")
@@ -74,7 +74,7 @@ async fn test_create_get_update_delete() {
         "notes": [{"id": "a", "toneType": "泛"}]
     }))
     .unwrap();
-    let resp = app(state.clone())
+    let resp = app(state.clone(), &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -93,7 +93,7 @@ async fn test_create_get_update_delete() {
     let id = created["id"].as_str().unwrap().to_string();
 
     // 获取单个
-    let resp = app(state.clone())
+    let resp = app(state.clone(), &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .uri(format!("/api/v1/scores/{id}"))
@@ -110,7 +110,7 @@ async fn test_create_get_update_delete() {
         "notes": [{"id": "a", "toneType": "按"}]
     }))
     .unwrap();
-    let resp = app(state.clone())
+    let resp = app(state.clone(), &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .method("PUT")
@@ -124,7 +124,7 @@ async fn test_create_get_update_delete() {
     assert_eq!(resp.status(), 200);
 
     // 验证更新
-    let resp = app(state.clone())
+    let resp = app(state.clone(), &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .uri(format!("/api/v1/scores/{id}"))
@@ -140,7 +140,7 @@ async fn test_create_get_update_delete() {
     assert_eq!(updated["title"], "已修改");
 
     // 删除
-    let resp = app(state.clone())
+    let resp = app(state.clone(), &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .method("DELETE")
@@ -153,7 +153,7 @@ async fn test_create_get_update_delete() {
     assert_eq!(resp.status(), 200);
 
     // 确认删除
-    let resp = app(state)
+    let resp = app(state, &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .uri(format!("/api/v1/scores/{id}"))

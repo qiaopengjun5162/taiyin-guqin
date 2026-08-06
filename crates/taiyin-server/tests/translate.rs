@@ -2,7 +2,7 @@ mod common;
 
 use axum::{body::Body, http::Request};
 use serde_json::{Value, json};
-use taiyin_server::{AppState, app};
+use taiyin_server::{AppState, ServerConfig, app};
 use tower::util::ServiceExt;
 
 #[tokio::test]
@@ -19,12 +19,13 @@ async fn select_without_api_key_falls_back_to_heuristic() {
     }))
     .unwrap();
 
-    let resp = app(state)
+    let resp = app(state, &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/translate/select")
                 .header("content-type", "application/json")
+                .header("x-real-ip", "127.0.0.1")
                 .body(Body::from(body))
                 .unwrap(),
         )
@@ -51,12 +52,13 @@ async fn select_rejects_invalid_body() {
         llm: Default::default(),
     };
 
-    let resp = app(state)
+    let resp = app(state, &ServerConfig::default())
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/translate/select")
                 .header("content-type", "application/json")
+                .header("x-real-ip", "127.0.0.1")
                 .body(Body::from("{}"))
                 .unwrap(),
         )

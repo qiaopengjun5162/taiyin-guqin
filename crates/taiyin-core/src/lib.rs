@@ -15,7 +15,7 @@
 //! - **节奏显式化**：传统减字谱不记节奏，但传习平台需要，
 //!   故 `duration` 字段为必填（默认 1.0，由上下文拍号解释）。
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 // WASM 桥接模块 —— 仅在 wasm32 目标下编译
 #[cfg(target_arch = "wasm32")]
@@ -90,14 +90,83 @@ pub enum Ornament {
     DaiQi,
 }
 
+/// 徽位（第几徽）。
+///
+/// 古琴琴面镶嵌 13 个徽位，标记泛音位置与按音点位。
+/// 用 newtype 而非裸 `u8` 强制域约束（有效范围 1..=13）：
+/// 反序列化非法值时**直接报错**，而不是让下游逻辑（`hui_to_ratio` 等）静默产出错误结果。
+///
+/// 序列化对外透明为 `u8`（如 `{"hui":9}`），字段名不变，前端无需改动。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hui(u8);
+
+impl Hui {
+    /// 构造徽位；越界（非 1..=13）返回 `None`。
+    pub fn new(value: u8) -> Option<Self> {
+        (1..=13).contains(&value).then_some(Self(value))
+    }
+    /// 取出底层数值。
+    pub fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl Serialize for Hui {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for Hui {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let v = u8::deserialize(deserializer)?;
+        Hui::new(v).ok_or_else(|| de::Error::custom(format!("徽位 {v} 超出有效范围 1..=13")))
+    }
+}
+
+/// 弦序（第几弦）。
+///
+/// 古琴七根弦，有效范围 1..=7。
+/// 用 newtype 保证：任何持有 `StringNumber` 的代码都确信其处于合法弦序，
+/// 无需在 `describe`、前端渲染等下游反复做边界检查。
+///
+/// 序列化对外透明为 `u8`（如 `{"string_number":5}`），字段名不变，前端无需改动。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StringNumber(u8);
+
+impl StringNumber {
+    /// 构造弦序；越界（非 1..=7）返回 `None`。
+    pub fn new(value: u8) -> Option<Self> {
+        (1..=7).contains(&value).then_some(Self(value))
+    }
+    /// 取出底层数值。
+    pub fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl Serialize for StringNumber {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for StringNumber {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let v = u8::deserialize(deserializer)?;
+        StringNumber::new(v)
+            .ok_or_else(|| de::Error::custom(format!("弦序 {v} 超出有效范围 1..=7")))
+    }
+}
+
 /// 徽位 + 分——按弦的位置。
 ///
 /// 琴面镶嵌的十三个徽位标记泛音位置，
 /// 按音时可在徽位之间。例如 9.6 徽 = 九徽六分。
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct HuiPosition {
-    /// 第几徽（1..=13 的有效值，但不由类型系统强制）
-    pub hui: u8,
+    /// 第几徽（1..=13，由 `Hui` newtype 强制）。
+    pub hui: Hui,
     /// 几分（有效值通常为 0, 3, 6, 8）。`None` 表示正当徽。
     pub fen: Option<u8>,
 }
@@ -288,8 +357,8 @@ pub struct GuqinNote {
     pub hui: Option<HuiPosition>,
     /// 右手指法（基本八法之一，必填）。
     pub right_action: RightAction,
-    /// 弦序（1..=7）。
-    pub string_number: u8,
+    /// 弦序（1..=7，由 `StringNumber` newtype 强制）。
+    pub string_number: StringNumber,
     /// 复合右手指法（如历、轮、滚、拂等），非必填。
     pub compound: Option<CompoundAction>,
     /// 装饰音列表（吟猱绰注等）。按出现顺序存储。
@@ -301,7 +370,8 @@ pub struct GuqinNote {
     /// 时值。以四分音符为 1.0，八分音符为 0.5。
     /// 严格节拍下由曲谱的 `beat_numerator` / `beat_denominator` 解释实际含义；
     /// 散板/跌宕下仅表示相对长短。
-    pub duration: f32,
+    /// 使用 `f64`（JSON 数字本就是 f64，避免 f32 往返有损；亦为更细时值/负值留空间）。
+    pub duration: f64,
 }
 
 // ──────────────────────────────────────────────
@@ -345,7 +415,7 @@ impl GuqinNote {
     /// 创建一个散音（空弦音）。
     ///
     /// 散音不需要左手动作，是古琴最基本的音色。`note_type` 自动设为 `SanYin`。
-    pub fn open_string(right_action: RightAction, string_number: u8) -> Self {
+    pub fn open_string(right_action: RightAction, string_number: StringNumber) -> Self {
         Self {
             note_type: NoteType::SanYin,
             left_finger: None,
@@ -366,7 +436,7 @@ impl GuqinNote {
         left_finger: LeftFinger,
         hui: HuiPosition,
         right_action: RightAction,
-        string_number: u8,
+        string_number: StringNumber,
     ) -> Self {
         Self {
             note_type: NoteType::AnYin,
@@ -388,7 +458,7 @@ impl GuqinNote {
         left_finger: LeftFinger,
         hui: HuiPosition,
         right_action: RightAction,
-        string_number: u8,
+        string_number: StringNumber,
     ) -> Self {
         Self {
             note_type: NoteType::FanYin,
@@ -427,7 +497,7 @@ impl GuqinNote {
     }
 
     /// 设置时值并返回自身（链式调用）。
-    pub fn with_duration(mut self, duration: f32) -> Self {
+    pub fn with_duration(mut self, duration: f64) -> Self {
         self.duration = duration;
         self
     }
@@ -459,10 +529,10 @@ mod tests {
 
     #[test]
     fn test_open_string_note() {
-        let note = GuqinNote::open_string(RightAction::Tiao, 5);
+        let note = GuqinNote::open_string(RightAction::Tiao, StringNumber::new(5).unwrap());
         assert!(note.is_open());
         assert_eq!(note.note_type, NoteType::SanYin);
-        assert_eq!(note.string_number, 5);
+        assert_eq!(note.string_number.get(), 5);
         assert_eq!(note.duration, 1.0);
         assert!(note.compound.is_none());
     }
@@ -471,23 +541,35 @@ mod tests {
     fn test_pressed_note() {
         let note = GuqinNote::pressed(
             LeftFinger::Da,
-            HuiPosition { hui: 9, fen: None },
+            HuiPosition {
+                hui: Hui::new(9).unwrap(),
+                fen: None,
+            },
             RightAction::Gou,
-            1,
+            StringNumber::new(1).unwrap(),
         );
         assert!(!note.is_open());
         assert_eq!(note.note_type, NoteType::AnYin);
         assert_eq!(note.left_finger, Some(LeftFinger::Da));
-        assert_eq!(note.hui, Some(HuiPosition { hui: 9, fen: None }));
+        assert_eq!(
+            note.hui,
+            Some(HuiPosition {
+                hui: Hui::new(9).unwrap(),
+                fen: None
+            })
+        );
     }
 
     #[test]
     fn test_fan_yin_note() {
         let note = GuqinNote::fan_yin(
             LeftFinger::Da,
-            HuiPosition { hui: 10, fen: None },
+            HuiPosition {
+                hui: Hui::new(10).unwrap(),
+                fen: None,
+            },
             RightAction::Tiao,
-            5,
+            StringNumber::new(5).unwrap(),
         );
         assert!(!note.is_open());
         assert_eq!(note.note_type, NoteType::FanYin);
@@ -498,9 +580,12 @@ mod tests {
     fn test_chain_builder() {
         let note = GuqinNote::pressed(
             LeftFinger::Da,
-            HuiPosition { hui: 9, fen: None },
+            HuiPosition {
+                hui: Hui::new(9).unwrap(),
+                fen: None,
+            },
             RightAction::Tiao,
-            7,
+            StringNumber::new(7).unwrap(),
         )
         .with_ornaments(vec![Ornament::Yin])
         .with_compound(CompoundAction::Cuo)
@@ -513,7 +598,7 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let note = GuqinNote::open_string(RightAction::Tiao, 5);
+        let note = GuqinNote::open_string(RightAction::Tiao, StringNumber::new(5).unwrap());
         let json = serde_json::to_string(&note).unwrap();
         let deserialized: GuqinNote = serde_json::from_str(&json).unwrap();
         assert_eq!(note, deserialized);
@@ -542,9 +627,12 @@ mod tests {
     fn test_compound_action_serialization() {
         let note = GuqinNote::pressed(
             LeftFinger::Da,
-            HuiPosition { hui: 7, fen: None },
+            HuiPosition {
+                hui: Hui::new(7).unwrap(),
+                fen: None,
+            },
             RightAction::Gou,
-            1,
+            StringNumber::new(1).unwrap(),
         )
         .with_compound(CompoundAction::Gun);
         let json = serde_json::to_value(&note).unwrap();
@@ -565,8 +653,8 @@ mod tests {
             bpm: 80,
             version: 1,
             notes: vec![
-                GuqinNote::open_string(RightAction::Tiao, 5),
-                GuqinNote::open_string(RightAction::Tiao, 6),
+                GuqinNote::open_string(RightAction::Tiao, StringNumber::new(5).unwrap()),
+                GuqinNote::open_string(RightAction::Tiao, StringNumber::new(6).unwrap()),
             ],
         };
 
@@ -579,7 +667,7 @@ mod tests {
     #[test]
     fn test_no_left_hand_open_string() {
         // 测试散音在 JSON 中 left_finger 和 hui 同时为 null
-        let note = GuqinNote::open_string(RightAction::Gou, 3);
+        let note = GuqinNote::open_string(RightAction::Gou, StringNumber::new(3).unwrap());
         let json = serde_json::to_value(&note).unwrap();
         assert_eq!(json.get("note_type").unwrap(), "散");
         assert!(json.get("left_finger").unwrap().is_null());
@@ -596,7 +684,7 @@ mod tests {
 
     #[test]
     fn test_rhythm_mode_default() {
-        let note = GuqinNote::open_string(RightAction::Tiao, 5);
+        let note = GuqinNote::open_string(RightAction::Tiao, StringNumber::new(5).unwrap());
         assert_eq!(note.rhythm_mode, RhythmMode::Strict);
     }
 
@@ -604,9 +692,12 @@ mod tests {
     fn test_rhythm_mode_builder() {
         let note = GuqinNote::pressed(
             LeftFinger::Da,
-            HuiPosition { hui: 9, fen: None },
+            HuiPosition {
+                hui: Hui::new(9).unwrap(),
+                fen: None,
+            },
             RightAction::Gou,
-            1,
+            StringNumber::new(1).unwrap(),
         )
         .with_rhythm_mode(RhythmMode::Free);
 
@@ -616,7 +707,8 @@ mod tests {
     #[test]
     fn test_rhythm_mode_serialization() {
         // 序列化
-        let note = GuqinNote::open_string(RightAction::Gou, 3).with_rhythm_mode(RhythmMode::Drop);
+        let note = GuqinNote::open_string(RightAction::Gou, StringNumber::new(3).unwrap())
+            .with_rhythm_mode(RhythmMode::Drop);
         let json = serde_json::to_value(&note).unwrap();
         assert_eq!(json.get("rhythm_mode").unwrap(), "宕");
 

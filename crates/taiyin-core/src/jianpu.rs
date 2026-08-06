@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{GuqinNote, HuiPosition, LeftFinger, RightAction};
+use crate::{GuqinNote, Hui, HuiPosition, LeftFinger, RightAction, StringNumber};
 
 /// 简谱音符。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -317,19 +317,19 @@ fn position_from_note(note: &GuqinNote) -> FretPosition {
         _ => 0.0,
     };
     FretPosition {
-        string: note.string_number,
+        string: note.string_number.get(),
         ratio,
     }
 }
 
 fn hui_to_ratio(hui: HuiPosition) -> f64 {
-    let hui_idx = (hui.hui.saturating_sub(1)) as usize;
+    let hui_idx = (hui.hui.get().saturating_sub(1)) as usize;
     if hui_idx >= HUI_RATIOS.len() {
         return 0.0;
     }
     let base = HUI_RATIOS[hui_idx];
     match hui.fen {
-        Some(fen) if hui.hui < 13 => {
+        Some(fen) if hui.hui.get() < 13 => {
             let next = HUI_RATIOS[hui_idx + 1];
             base + (next - base) * (fen as f64 / 10.0)
         }
@@ -372,7 +372,8 @@ fn find_open_and_harmonic_candidates(
     positions
         .into_iter()
         .map(|(string_idx, pos_idx)| {
-            let string_number = (string_idx + 1) as u8;
+            let string_number = StringNumber::new((string_idx + 1) as u8)
+                .expect("弦序由 string_idx(0..=6)+1 恒为 1..=7");
             if pos_idx == 0 {
                 // 散音：空弦优先，右手默认用挑。
                 JianziCandidate {
@@ -387,7 +388,10 @@ fn find_open_and_harmonic_candidates(
                     score: 130 - hui_penalty,
                     note: GuqinNote::fan_yin(
                         LeftFinger::Da,
-                        HuiPosition { hui, fen: None },
+                        HuiPosition {
+                            hui: Hui::new(hui).expect("泛音徽位恒在 1..=13 内"),
+                            fen: None,
+                        },
                         RightAction::Tiao,
                         string_number,
                     ),
@@ -433,12 +437,13 @@ fn find_pressed_candidates(table: &[[Pitch; 10]; 7], target: Pitch) -> Vec<Jianz
 }
 
 fn build_pressed_candidate(string_idx: usize, hui: u8, fen: Option<u8>) -> JianziCandidate {
-    let string_number = (string_idx + 1) as u8;
+    let string_number =
+        StringNumber::new((string_idx + 1) as u8).expect("弦序由 string_idx(0..=6)+1 恒为 1..=7");
     let left_finger = choose_left_finger(hui);
 
     let mut score: i32 = 100;
     score += 13 - hui as i32;
-    if string_number >= 5 {
+    if string_number.get() >= 5 {
         score += 5;
     }
     if matches!(left_finger, LeftFinger::Gui) {
@@ -449,7 +454,10 @@ fn build_pressed_candidate(string_idx: usize, hui: u8, fen: Option<u8>) -> Jianz
         score,
         note: GuqinNote::pressed(
             left_finger,
-            HuiPosition { hui, fen },
+            HuiPosition {
+                hui: Hui::new(hui).expect("按音徽位恒在 1..=13 内"),
+                fen,
+            },
             RightAction::Tiao,
             string_number,
         ),
@@ -522,7 +530,7 @@ mod tests {
         let candidates = translate_jianpu(JianpuNote::new(5, 0), Tuning::ZhengDiao);
         assert!(!candidates.is_empty());
         let first = &candidates[0].note;
-        assert_eq!(first.string_number, 1);
+        assert_eq!(first.string_number.get(), 1);
         assert_eq!(first.note_type, crate::NoteType::SanYin);
         assert_eq!(first.right_action, RightAction::Tiao);
     }
@@ -648,9 +656,9 @@ mod tests {
     fn test_ruibin_translate_open_string_five() {
         // 蕤宾调五弦散音为 4：translate(4) 应出现五弦散音候选
         let candidates = translate_jianpu(JianpuNote::new(4, 1), Tuning::RuiBin);
-        let open_five = candidates
-            .iter()
-            .any(|c| c.note.note_type == crate::NoteType::SanYin && c.note.string_number == 5);
+        let open_five = candidates.iter().any(|c| {
+            c.note.note_type == crate::NoteType::SanYin && c.note.string_number.get() == 5
+        });
         assert!(open_five, "蕤宾调下 4 应含五弦散音候选");
     }
 
@@ -658,9 +666,9 @@ mod tests {
     fn test_manjiao_translate_open_string_three() {
         // 慢角调三弦散音为 7：translate(7) 应出现三弦散音候选
         let candidates = translate_jianpu(JianpuNote::new(7, 0), Tuning::ManJiao);
-        let open_three = candidates
-            .iter()
-            .any(|c| c.note.note_type == crate::NoteType::SanYin && c.note.string_number == 3);
+        let open_three = candidates.iter().any(|c| {
+            c.note.note_type == crate::NoteType::SanYin && c.note.string_number.get() == 3
+        });
         assert!(open_three, "慢角调下 7 应含三弦散音候选");
     }
 
@@ -668,9 +676,9 @@ mod tests {
     fn test_tuning_changes_candidates() {
         // 同一简谱数字在不同调式下候选不同：4 在正调五弦无散音，在蕤宾调有
         let zheng = translate_jianpu(JianpuNote::new(4, 1), Tuning::ZhengDiao);
-        let zheng_open_five = zheng
-            .iter()
-            .any(|c| c.note.note_type == crate::NoteType::SanYin && c.note.string_number == 5);
+        let zheng_open_five = zheng.iter().any(|c| {
+            c.note.note_type == crate::NoteType::SanYin && c.note.string_number.get() == 5
+        });
         assert!(!zheng_open_five, "正调五弦散音为 3，不应匹配 4");
     }
 
@@ -679,11 +687,9 @@ mod tests {
         let notes = [JianpuNote::new(4, 1)];
         let result = translate_jianpu_sequence(&notes, Tuning::RuiBin);
         assert_eq!(result.len(), 1);
-        assert!(
-            result[0].iter().any(|c| {
-                c.note.note_type == crate::NoteType::SanYin && c.note.string_number == 5
-            })
-        );
+        assert!(result[0].iter().any(|c| {
+            c.note.note_type == crate::NoteType::SanYin && c.note.string_number.get() == 5
+        }));
     }
 
     #[test]

@@ -1,13 +1,24 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
+    http::{HeaderValue, Method},
+    middleware::from_fn_with_state,
     routing::{get, post},
 };
 use serde_json::json;
 use sqlx::PgPool;
-use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
+use std::sync::Arc;
+use tower_governor::{
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
+};
+use tower_http::{
+    cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer},
+    limit::RequestBodyLimitLayer,
+};
 use uuid::Uuid;
 
+use crate::auth::require_api_key;
+use crate::config::ServerConfig;
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
 use crate::llm::{SelectRequest, SelectResponse, heuristic_selections, select_with_llm};
@@ -15,7 +26,54 @@ use crate::models::{CreateScoreRequest, Score, ScoreListItem, UpdateScoreRequest
 
 const MAX_TITLE_LENGTH: usize = 200;
 
-pub fn app(state: AppState) -> Router {
+/// 构造 CORS 层。
+///
+/// - `allowed` 为空：开发态放开（`permissive`），并在 `main` 中记录 warning。
+/// - `allowed` 非空：仅允许列出的来源（生产应配置 `ALLOWED_ORIGINS`）。
+fn build_cors(allowed: &[String]) -> CorsLayer {
+    if allowed.is_empty() {
+        return CorsLayer::permissive();
+    }
+    let origins: Vec<HeaderValue> = allowed
+        .iter()
+        .filter_map(|o| HeaderValue::from_str(o).ok())
+        .collect();
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods(AllowMethods::list([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+        ]))
+        .allow_headers(AllowHeaders::list([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::AUTHORIZATION,
+            axum::http::HeaderName::from_static("x-api-key"),
+        ]))
+}
+
+pub fn app(state: AppState, config: &ServerConfig) -> Router {
+    let cors = build_cors(&config.allowed_origins);
+
+    // 翻译端点：独立严格限流（per-IP）+ 可选 API-key 闸门。
+    // 该端点直接消耗服务端 Anthropic 额度，是成本敞口最大的地方。
+    let translate_limiter = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
+            .per_second(config.translate_per_second)
+            .burst_size(config.translate_burst)
+            .use_headers()
+            .finish()
+            .expect("translate rate config must be valid"),
+    );
+    let translate_key: Option<Arc<str>> = config.translate_api_key.as_deref().map(Arc::from);
+
+    let translate_routes = Router::new()
+        .route("/api/v1/translate/select", post(select_candidates))
+        .route_layer(GovernorLayer::new(translate_limiter))
+        .route_layer(from_fn_with_state(translate_key, require_api_key));
+
     Router::new()
         .route("/health", get(health_check))
         .route("/api/v1/scores", post(create_score).get(list_scores))
@@ -23,9 +81,9 @@ pub fn app(state: AppState) -> Router {
             "/api/v1/scores/{id}",
             get(get_score).put(update_score).delete(delete_score),
         )
-        .route("/api/v1/translate/select", post(select_candidates))
+        .merge(translate_routes)
         .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024)) // 5 MB
-        .layer(CorsLayer::permissive())
+        .layer(cors)
         .with_state(state)
 }
 

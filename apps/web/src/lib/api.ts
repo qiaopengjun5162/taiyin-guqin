@@ -3,6 +3,18 @@ import type { NoteColumn } from "./types";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const DEFAULT_TIMEOUT = 10_000;
 
+// 后端可选 API-key 闸门（纵深防御性设计）：配置后调用 /translate/select 需携带。
+// 该 key 会出现在前端 JS 包中，仅用于阻止跨站/自动化滥用，并非机密。
+const TRANSLATE_API_KEY = process.env.NEXT_PUBLIC_TRANSLATE_API_KEY;
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (TRANSLATE_API_KEY) {
+    headers["x-api-key"] = TRANSLATE_API_KEY;
+  }
+  return headers;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -111,7 +123,7 @@ export async function selectCandidates(
 ): Promise<SelectCandidatesResponse> {
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/translate/select`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify({ notes, tuning }),
   });
   return handleResponse(res);

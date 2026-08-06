@@ -129,13 +129,20 @@ fn describe(note: &GuqinNote) -> String {
         s.push_str(finger_text(f));
     }
     if let Some(h) = note.hui {
-        s.push_str(&h.hui.to_string());
+        s.push_str(&h.hui.get().to_string());
         if let Some(fen) = h.fen {
             s.push_str(&format!(".{fen}"));
         }
     }
     s.push_str(action_text(&note.right_action));
-    s.push_str(DIGITS.get(note.string_number as usize).unwrap_or(&"?"));
+    // `StringNumber` 已在类型层保证弦序 ∈ 1..=7，索引 `DIGITS[1..=7]` 必命中。
+    // 此处用 `expect` 而非静默 `"?"`：一旦类型约束被绕过，错误应当显式暴露、可定位，
+    // 而不是被一个误导性的占位符悄悄掩盖（旧实现正是如此藏 bug）。
+    s.push_str(
+        DIGITS
+            .get(note.string_number.get() as usize)
+            .expect("StringNumber 保证弦序 1..=7，索引必命中 DIGITS"),
+    );
     format!("{tone}{s}")
 }
 
@@ -339,12 +346,12 @@ pub async fn select_with_llm(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use taiyin_core::{HuiPosition, LeftFinger, RightAction};
+    use taiyin_core::{Hui, HuiPosition, LeftFinger, RightAction, StringNumber};
 
     fn open(string: u8) -> JianziCandidate {
         JianziCandidate {
             score: 150,
-            note: GuqinNote::open_string(RightAction::Tiao, string),
+            note: GuqinNote::open_string(RightAction::Tiao, StringNumber::new(string).unwrap()),
         }
     }
 
@@ -353,9 +360,12 @@ mod tests {
             score: 100,
             note: GuqinNote::pressed(
                 LeftFinger::Da,
-                HuiPosition { hui: 9, fen: None },
+                HuiPosition {
+                    hui: Hui::new(9).unwrap(),
+                    fen: None,
+                },
                 RightAction::Gou,
-                string,
+                StringNumber::new(string).unwrap(),
             ),
         }
     }
