@@ -126,7 +126,8 @@ run-local: docker-up
     @echo "PostgreSQL/Redis 已启动，请另开终端运行 just dev"
 
 # 全量检查和测试（CI 用，需要数据库；见 .github/workflows/build.yml 的 postgres 服务）
-ci: fmt-check clippy test test-web check-types-fresh
+# audit 与 build.yml 的 rustsec/audit-check 保持一致：本地全量检查也跑依赖安全审计。
+ci: fmt-check clippy test test-web check-types-fresh audit
 
 # 单元测试（不含需要 DATABASE_URL 的集成测试，本地无需起库）
 test-lib *args="":

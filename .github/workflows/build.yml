@@ -135,6 +135,11 @@ jobs:
           rm -rf apps/web/wasm apps/web/public/wasm
           cp -r crates/taiyin-core/pkg apps/web/wasm
           cp -r crates/taiyin-core/pkg apps/web/public/wasm
+      - name: Verify WASM contract
+        # 真实 WASM 产物契约验证（非 mock）：断言翻译返回、枚举序列化与前端映射兼容、
+        # tuning 参数确实改变候选。前置条件由上一 Build WASM 步骤满足（apps/web/wasm 已生成）。
+        # 见 scripts/verify-wasm.mjs 与 just verify-wasm。
+        run: node scripts/verify-wasm.mjs
       - name: Lint
         run: pnpm --filter web lint
       - name: Type check

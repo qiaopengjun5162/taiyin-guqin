@@ -1,5 +1,34 @@
 # 更新日志
 
+## [0.3.0] - 2026-09-03
+
+### 新增
+
+- 从 Rust wire 类型自动生成前端 TS 类型（`crates/taiyin-core/src/bin/gen_types.rs` + `ts-rs`），
+  输出到 `apps/web/src/lib/generated/`，消除手工维护的 `WasmCandidate`/`WasmCandidateNote` 与契约漂移。
+  提供 `just gen-types`（重新生成）与 `just check-types-fresh`（断言与 Rust 契约同步）。
+- 依赖安全审计接入：新增 `.cargo/audit.toml`，`just audit` 目标，`build.yml` Rust job
+  增加 `rustsec/audit-check` 步骤，每次 push 自动查依赖漏洞。
+- `build.yml` web job 新增 **Verify WASM contract** 步骤（`node scripts/verify-wasm.mjs`），
+  对真实 WASM 产物做契约断言（翻译返回、枚举序列化、tuning 生效），不再只靠 mock。
+
+### 修复
+
+- **CI 长期失败根因修复**（build 工作流此前自 2026-07-19 起一直红）：
+  - web job 此前从不编译 wasm，而前端 `import('@/wasm/taiyin_core')` 解析到被 gitignore 的
+    `apps/web/wasm`，导致 Type check / Build 找不到模块。已照搬一直绿的 `pages.yml` 补齐
+    Rust + wasm-pack + Build WASM 步骤。
+  - `.cargo/config.toml` 的全局 `target-cpu=native` 把 proc-macro 按构建机 CPU 编译，
+    与 `Swatinem/rust-cache` 跨异构 runner 复用 `target/` 缓存冲突 → `cargo check` 间歇性
+    `SIGILL`。已移除该设置，改用默认 baseline 指令集。
+  - 前端 `use-score-player.ts` 的 `react-hooks/set-state-in-effect` 与未用 import 告警。
+
+### 工程
+
+- `just ci` 增加 `audit`，与 `build.yml` 的审计步骤保持一致（本地全量检查也覆盖依赖安全）。
+- 新增架构决策留档：`docs/adr/0002-ts-rs-frontend-type-generation.md`、
+  `docs/adr/0003-cargo-audit-vulnerability-policy.md`。
+
 ## [0.2.0] - 2026-07-19
 
 ### 新增
