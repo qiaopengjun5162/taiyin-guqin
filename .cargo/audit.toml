@@ -1,0 +1,15 @@
+# cargo audit 配置（cargo-audit 会自动读取 .cargo/audit.toml）。
+#
+# 仅豁免「上游暂无修复版本」的 advisory；凡有可用修复版本的漏洞，
+# 都应在 Cargo.lock 中通过 `cargo update -p <crate>` 升级解决，而非在此豁免。
+#
+# RUSTSEC-2023-0071 — rsa 0.9.x 的 Marvin 计时侧信道攻击（severity 5.9 / medium）。
+#   RustSec 官方明确 "No fixed upgrade is available!"，无法靠升级 rsa 修复。
+#   缓解依据：本项目仅在 JWT 验签路径使用 rsa（经由 jsonwebtoken），且为自托管部署，
+#   攻击者的计时侧信道测量窗口极窄，现实风险可控。
+#   一旦上游 rsa / jsonwebtoken 发布补丁，应立即移除该豁免并升级依赖。
+
+[advisories]
+ignore = [
+    "RUSTSEC-2023-0071",
+]

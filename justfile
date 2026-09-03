@@ -27,6 +27,13 @@ test-watch *args="":
 clippy *args="":
     {{cargo}} clippy --all-targets --all-features --tests --benches -- -D warnings {{args}}
 
+# 依赖安全审计（cargo audit）。
+# 不可修的已知 advisory 在 .cargo/audit.toml 中豁免并附说明；
+# 凡有修复版本的漏洞应通过 `cargo update -p <crate>` 升级，而非豁免。
+# CI 中由 .github/workflows/build.yml 的 rustsec/audit-check 步骤强制跑。
+audit:
+    {{cargo}} audit
+
 # 格式化 Rust 代码
 fmt:
     {{cargo}} fmt --all
