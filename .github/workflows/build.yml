@@ -57,6 +57,11 @@ jobs:
         run: cargo check --all
       - name: Clippy
         run: cargo clippy --all-targets --all-features --tests --benches -- -D warnings
+      - name: Verify Rust-to-TS wire types are in sync
+        # 重新从 Rust wire 类型生成前端 TS（src/bin/gen_types.rs），
+        # 再比对 git 工作树中的 apps/web/src/lib/generated。
+        # 若有人改了 Rust 契约却忘了 just gen-types，这里会失败，防止契约漂移。
+        run: cargo run -p taiyin-core --bin gen_types && git diff --exit-code -- apps/web/src/lib/generated
       - name: Test
         run: cargo nextest run --all-features
 
