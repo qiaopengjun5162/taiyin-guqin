@@ -94,7 +94,11 @@ export function useScorePlayer(notes: NoteColumn[]) {
   // 乐谱变更时自动停止播放，防止旧音频继续发声
   useEffect(() => {
     if (isPlaying) {
-      stop();
+      // 延迟一拍再 stop：避免在 effect 体内同步 setState（触发
+      // react-hooks/set-state-in-effect）。stop 本身是稳定 useCallback，
+      // 延后到下一 tick 执行，语义不变（乐谱一变就停旧播放）。
+      const id = setTimeout(stop, 0);
+      return () => clearTimeout(id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notes]);

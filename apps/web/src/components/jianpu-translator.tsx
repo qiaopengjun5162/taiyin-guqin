@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { NoteColumn } from "@/lib/types";
 import { useWasmInit } from "@/lib/taiyin-wasm";
 import { SingleNoteMode } from "./jianpu-translator/single-note-mode";
 import { SequenceMode } from "./jianpu-translator/sequence-mode";
