@@ -1,2 +1,8 @@
+# 注意：此前此处有 `rustflags = ["-C", "target-cpu=native"]`，已移除。
+# 原因：CI 用 Swatinem/rust-cache 跨异构 runner 复用 target/ 产物，而 native 会把
+# proc-macro（如 ts_rs_macros）编译成特定 CPU 的指令；当缓存被另一台 CPU 不同的
+# runner 复用时，加载即触发 SIGILL（cargo check 偶发崩溃，导致 build 工作流间歇性红）。
+# 同时 native 还会让 wasm-pack build 给 wasm32 目标喂无效 target-cpu（znver4 警告）。
+# 改用默认 baseline 指令集，在所有 runner 上可移植。本地追求性能可通过环境变量
+# RUSTFLAGS 自行设置，不要写进仓库共享配置。
 [build]
-rustflags = ["-C", "target-cpu=native"]
