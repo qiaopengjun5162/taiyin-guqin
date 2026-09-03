@@ -118,6 +118,22 @@ jobs:
         run: pnpm --version
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+      - name: Build WASM
+        # 前端直接 import('@/wasm/taiyin_core')（经 tsconfig 的 '@/wasm/*': ['./wasm/*']
+        # 解析到 apps/web/wasm），而 apps/web/wasm 被本地 .gitignore(*) 忽略、不进仓库，
+        # CI 必须先编译 wasm 并拷贝 pkg 到 apps/web/wasm 与 apps/web/public/wasm，
+        # 否则后续 Type check / Build 会因找不到模块而失败。
+        # 步骤与一直绿的 pages.yml 保持一致。
+        run: |
+          cd crates/taiyin-core
+          wasm-pack build --target web
+          rm -rf apps/web/wasm apps/web/public/wasm
+          cp -r crates/taiyin-core/pkg apps/web/wasm
+          cp -r crates/taiyin-core/pkg apps/web/public/wasm
       - name: Lint
         run: pnpm --filter web lint
       - name: Type check
