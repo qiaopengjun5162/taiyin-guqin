@@ -16,6 +16,8 @@
 //!   故 `duration` 字段为必填（默认 1.0，由上下文拍号解释）。
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+// ts-rs：从 Rust wire 类型生成前端 TS 类型（见 src/bin/gen_types.rs）。
+use ts_rs::TS;
 
 // WASM 桥接模块 —— 仅在 wasm32 目标下编译
 #[cfg(target_arch = "wasm32")]
@@ -30,7 +32,8 @@ pub mod jianpu;
 /// 左手手指。
 ///
 /// 古琴按弦的五种常用手指。散音（空弦）时该字段为 `None`。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+#[ts(export_to = "LeftFinger.ts")]
 pub enum LeftFinger {
     /// 大指
     Da,
@@ -45,7 +48,8 @@ pub enum LeftFinger {
 }
 
 /// 右手指法——右手八法核心。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+#[ts(export_to = "RightAction.ts")]
 pub enum RightAction {
     /// 挑：食指（或大指）向外拨弦
     Tiao,
@@ -66,7 +70,8 @@ pub enum RightAction {
 }
 
 /// 左手装饰音——绰注吟猱等修饰指法。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
+#[ts(export_to = "Ornament.ts")]
 pub enum Ornament {
     /// 吟：在音准位置微微左右颤动（类似小提琴的揉弦）
     Yin,
@@ -97,7 +102,8 @@ pub enum Ornament {
 /// 反序列化非法值时**直接报错**，而不是让下游逻辑（`hui_to_ratio` 等）静默产出错误结果。
 ///
 /// 序列化对外透明为 `u8`（如 `{"hui":9}`），字段名不变，前端无需改动。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export_to = "Hui.ts")]
 pub struct Hui(u8);
 
 impl Hui {
@@ -131,7 +137,8 @@ impl<'de> Deserialize<'de> for Hui {
 /// 无需在 `describe`、前端渲染等下游反复做边界检查。
 ///
 /// 序列化对外透明为 `u8`（如 `{"string_number":5}`），字段名不变，前端无需改动。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export_to = "StringNumber.ts")]
 pub struct StringNumber(u8);
 
 impl StringNumber {
@@ -163,7 +170,8 @@ impl<'de> Deserialize<'de> for StringNumber {
 ///
 /// 琴面镶嵌的十三个徽位标记泛音位置，
 /// 按音时可在徽位之间。例如 9.6 徽 = 九徽六分。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+#[ts(export_to = "HuiPosition.ts")]
 pub struct HuiPosition {
     /// 第几徽（1..=13，由 `Hui` newtype 强制）。
     pub hui: Hui,
@@ -198,20 +206,24 @@ pub enum Tuning {
 /// 音色类型——决定左手的触弦方式。
 ///
 /// 古琴三种基本音色各有其独特的触弦技巧和音色特征。
-#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+#[ts(export_to = "NoteType.ts")]
 pub enum NoteType {
     /// 散音（空弦）。左手不按弦，弹奏空弦得声。
     /// 音色松沉旷远，是古琴最基本的音色。
     #[serde(rename = "散")]
+    #[ts(rename = "散")]
     SanYin,
     /// 泛音。左手轻触徽位，右手同时弹弦。
     /// 音色清亮空灵，古琴泛音有"天籁"之誉。
     #[serde(rename = "泛")]
+    #[ts(rename = "泛")]
     FanYin,
     /// 按音（走手音）。左手按弦得声，是最具表现力的音色。
     /// 按音弹法在减字谱中一般不另行注明，为默认音色。
     #[default]
     #[serde(rename = "按")]
+    #[ts(rename = "按")]
     AnYin,
 }
 
@@ -227,21 +239,25 @@ pub enum NoteType {
 /// | `Strict` | 入拍/入调 | 严格节拍，duration = 精确时值 |
 /// | `Free` | 散板/入乱 | 自由节奏，duration 仅指示相对长短 |
 /// | `Drop` | 跌宕 | 变换拍子，duration 近似但可浮动 |
-#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+#[ts(export_to = "RhythmMode.ts")]
 pub enum RhythmMode {
     /// 节拍模式。适用入拍、入调段落。
     /// duration 以四分音符=1.0 精确解释。
     #[default]
     #[serde(rename = "板")]
+    #[ts(rename = "板")]
     Strict,
     /// 散板/自由节奏。适用散起、入乱段落。
     /// duration 仅表示音符之间的相对长度关系（长/短），
     /// 演奏者按自然呼吸和气口处理。
     #[serde(rename = "散")]
+    #[ts(rename = "散")]
     Free,
     /// 跌宕/变换拍子。适用跌宕、入慢段落。
     /// duration 近似但允许弹性伸缩，在快慢交替中保持气韵流畅。
     #[serde(rename = "宕")]
+    #[ts(rename = "宕")]
     Drop,
 }
 
@@ -252,61 +268,80 @@ pub enum RhythmMode {
 ///
 /// 每个指法都配有传统"手势"名称（如"游鱼摆尾"=泼剌、"飞龙拿云"=撮），
 /// 用于教学传承。手势名称暂不纳入数据模型，属于教学元信息。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+#[ts(export_to = "CompoundAction.ts")]
 pub enum CompoundAction {
     /// 历：食指连挑两弦或三弦（节奏较快）
     #[serde(rename = "历")]
+    #[ts(rename = "历")]
     Li,
     /// 蠲：同一弦上急速抹勾，连续出二声
     #[serde(rename = "蠲")]
+    #[ts(rename = "蠲")]
     Juan,
     /// 轮：同一弦上急速摘剔挑，连续出三声
     #[serde(rename = "轮")]
+    #[ts(rename = "轮")]
     Lun,
     /// 半轮：与轮动作相同，但只用中指和无名指（摘剔）
     #[serde(rename = "半轮")]
+    #[ts(rename = "半轮")]
     BanLun,
     /// 背锁：同一弦上剔、抹、挑依次弹出，共三声
     #[serde(rename = "背锁")]
+    #[ts(rename = "背锁")]
     BeiSuo,
     /// 短锁：同一弦上先抹勾，再接背锁，共五声
     #[serde(rename = "短锁")]
+    #[ts(rename = "短锁")]
     DuanSuo,
     /// 长锁：同一弦上先抹挑抹勾，再接背锁
     #[serde(rename = "长锁")]
+    #[ts(rename = "长锁")]
     ChangSuo,
     /// 全扶：食中名三指各入一弦，同时弹奏出一声
     #[serde(rename = "全扶")]
+    #[ts(rename = "全扶")]
     QuanFu,
     /// 拨：食中名三指相并微屈，同时斜向左方快速拨入两根弦
     #[serde(rename = "拨")]
+    #[ts(rename = "拨")]
     Bo,
     /// 剌：与"拨"方向相反，向外弹出两根弦
     #[serde(rename = "剌")]
+    #[ts(rename = "剌")]
     La,
     /// 泼剌：先拨后剌的连作，是滚拂之外的另一种扫弦方式
     #[serde(rename = "泼剌")]
+    #[ts(rename = "泼剌")]
     PoLa,
     /// 撮：双音弹法。小撮（隔一或两根弦）和大撮（隔三或四根弦）
     #[serde(rename = "撮")]
+    #[ts(rename = "撮")]
     Cuo,
     /// 双弹：同一弦上依次迅速弹出两音，通常是抹勾
     #[serde(rename = "双弹")]
+    #[ts(rename = "双弹")]
     ShuangTan,
     /// 打圆：涉及两根弦发出七个音的复合指法
     #[serde(rename = "打圆")]
+    #[ts(rename = "打圆")]
     DaYuan,
     /// 索铃：左手依次轻滑过数弦，右手同时轻挑，双手动作严格平行
     #[serde(rename = "索铃")]
+    #[ts(rename = "索铃")]
     SuoLing,
     /// 滚：名指自内向外，连续摘四至七声，连成一片
     #[serde(rename = "滚")]
+    #[ts(rename = "滚")]
     Gun,
     /// 拂：食指自外向内，连续抹四至七声，连成一片
     #[serde(rename = "拂")]
+    #[ts(rename = "拂")]
     Fu,
     /// 如一：两根琴弦同时发声（和弦性质）
     #[serde(rename = "如一")]
+    #[ts(rename = "如一")]
     RuYi,
 }
 
@@ -346,7 +381,8 @@ pub enum CompoundAction {
 ///   `hui = None`, `right_action = 勾`, `string_number = 3`
 /// - **泛音挑五**：`note_type = FanYin`, `left_finger = Da`,
 ///   `hui = 10徽`, `right_action = 挑`, `string_number = 5`
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
+#[ts(export_to = "GuqinNote.ts")]
 pub struct GuqinNote {
     /// 音色类型（散/泛/按）。默认按音。
     #[serde(default)]

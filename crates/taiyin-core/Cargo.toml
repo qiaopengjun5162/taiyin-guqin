@@ -10,3 +10,9 @@ crate-type = ["cdylib", "rlib"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wasm-bindgen = "=0.2.100"
+# 从 Rust wire 类型生成前端 TS 类型，消除手工对齐、防止契约漂移。
+# 生成由 src/bin/gen_types.rs 触发（build.rs 在 lib 编译前运行、无法引用本 crate 类型），
+# 输出到 apps/web/src/lib/generated/。export 在 ts-rs v9 的 default features 中。
+# 注意：不启用 format 特性——其传递依赖 swc_common 与当前 serde 不兼容、无法编译；
+# 行尾空白改由 gen_types.rs 生成后统一去除（见 strip_trailing_whitespace）。
+ts-rs = "9"

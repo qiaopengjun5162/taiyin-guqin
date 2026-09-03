@@ -10,7 +10,7 @@ import {
   type ParsedJianpuNote,
   type ParsedJianpuItem,
 } from "@/lib/jianpu-parser";
-import type { WasmCandidate } from "./types";
+import type { JianziCandidate } from "@/lib/generated/taiyin";
 import { buildJianziState, candidateToNoteColumn } from "./candidate";
 import type { Tuning } from "./types";
 
@@ -25,7 +25,7 @@ export function SequenceMode({
 }) {
   const [input, setInput] = useState("");
   const [notes, setNotes] = useState<ParsedJianpuItem[]>([]);
-  const [candidatesPerNote, setCandidatesPerNote] = useState<WasmCandidate[][]>(
+  const [candidatesPerNote, setCandidatesPerNote] = useState<JianziCandidate[][]>(
     [],
   );
   const [selectedIndex, setSelectedIndex] = useState<number[]>([]);
@@ -58,7 +58,7 @@ export function SequenceMode({
           tuning,
         }),
       );
-      let parsedResult: { candidates_per_note?: WasmCandidate[][] } = {};
+      let parsedResult: { candidates_per_note?: JianziCandidate[][] } = {};
       try {
         parsedResult = JSON.parse(raw);
       } catch {
@@ -67,7 +67,7 @@ export function SequenceMode({
 
       const result = parsedResult.candidates_per_note ?? [];
       // 将可演奏音符的候选与休止符对齐：休止符位置用空数组填充。
-      const aligned: WasmCandidate[][] = [];
+      const aligned: JianziCandidate[][] = [];
       let resultIdx = 0;
       for (const n of parsed) {
         if (n.kind === "rest") {

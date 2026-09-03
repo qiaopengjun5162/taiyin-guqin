@@ -44,6 +44,17 @@ build-wasm:
     cp -r crates/taiyin-core/pkg apps/web/wasm
     cp -r crates/taiyin-core/pkg apps/web/public/wasm
 
+# 从 Rust wire 类型重新生成前端 TS 类型（见 crates/taiyin-core/src/bin/gen_types.rs）。
+# 生成结果落在 apps/web/src/lib/generated/，由前端直接 import，杜绝手工对齐。
+gen-types:
+    {{cargo}} run -p taiyin-core --bin gen_types
+
+# 检查生成的前端类型是否与 Rust 契约同步（CI / 提交前用；若 Rust 改了却忘了重新生成则失败）。
+# 做法：重新生成，再比对 git 工作树中的 generated 目录是否发生变化。
+check-types-fresh:
+    {{cargo}} run -p taiyin-core --bin gen_types
+    git diff --exit-code -- apps/web/src/lib/generated
+
 # ── 前端 ──────────────────────────────────────
 
 # 启动前端开发服务器
@@ -108,7 +119,7 @@ run-local: docker-up
     @echo "PostgreSQL/Redis 已启动，请另开终端运行 just dev"
 
 # 全量检查和测试（CI 用，需要数据库；见 .github/workflows/build.yml 的 postgres 服务）
-ci: fmt-check clippy test test-web
+ci: fmt-check clippy test test-web check-types-fresh
 
 # 单元测试（不含需要 DATABASE_URL 的集成测试，本地无需起库）
 test-lib *args="":
@@ -116,7 +127,8 @@ test-lib *args="":
 
 # 提交前本地快速检查（不依赖数据库，秒级）
 # 由 .githooks/pre-commit 调用；需要数据库的后端集成测试交给 CI。
-precommit: fmt-check clippy test-lib test-web
+# check-types-fresh 保证 Rust 契约改动后前端生成类型同步更新，防止契约漂移。
+precommit: fmt-check clippy test-lib test-web check-types-fresh
 
 # ── 覆盖率 ────────────────────────────────────
 

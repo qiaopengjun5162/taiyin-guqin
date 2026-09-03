@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { JianpuNumber, JianpuOctave, NoteColumn } from "@/lib/types";
 import { jianziToText } from "@/lib/jianzi";
 import { translateJianpuToJianzi } from "@/lib/taiyin-wasm";
-import type { WasmCandidate } from "./types";
+import type { JianziCandidate } from "@/lib/generated/taiyin";
 import { buildJianziState, candidateToNoteColumn } from "./candidate";
 import type { Tuning } from "./types";
 
@@ -19,7 +19,7 @@ export function SingleNoteMode({
 }) {
   const [number, setNumber] = useState<JianpuNumber | "">("");
   const [octave, setOctave] = useState<JianpuOctave>("");
-  const [candidates, setCandidates] = useState<WasmCandidate[]>([]);
+  const [candidates, setCandidates] = useState<JianziCandidate[]>([]);
   // 候选产生时的调式；与当前调式不一致时候选作废，防止跨调式确认
   const [candTuning, setCandTuning] = useState<Tuning | null>(null);
   const [loading, setLoading] = useState(false);
@@ -34,7 +34,7 @@ export function SingleNoteMode({
       const raw = await translateJianpuToJianzi(
         JSON.stringify({ number: parseInt(number, 10), octave: octaveValue, tuning }),
       );
-      let parsed: { candidates: WasmCandidate[] } = { candidates: [] };
+      let parsed: { candidates: JianziCandidate[] } = { candidates: [] };
       try {
         parsed = JSON.parse(raw);
       } catch {
@@ -49,7 +49,7 @@ export function SingleNoteMode({
     }
   }
 
-  function handleSelect(candidate: WasmCandidate) {
+  function handleSelect(candidate: JianziCandidate) {
     onSelect([
       candidateToNoteColumn(candidate, {
         kind: "note",

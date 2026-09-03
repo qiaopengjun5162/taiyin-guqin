@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{GuqinNote, Hui, HuiPosition, LeftFinger, RightAction, StringNumber};
+// ts-rs：从 Rust wire 类型生成前端 TS 类型（见 src/bin/gen_types.rs）。
+use ts_rs::TS;
 
 /// 简谱音符。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -236,7 +238,8 @@ pub const ZHENG_DIAO_PITCHES: [[Pitch; 10]; 7] = [
 ];
 
 /// 候选结果。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export_to = "taiyin.ts")]
 pub struct JianziCandidate {
     /// 舒适性评分，越高越优先。
     pub score: i32,

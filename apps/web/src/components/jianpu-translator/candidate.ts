@@ -1,11 +1,9 @@
 import type { JianpuNumber, NoteColumn } from "@/lib/types";
 import { createEmptyState } from "@/lib/jianzi";
 import type { ParsedJianpuNote } from "@/lib/jianpu-parser";
-import {
-  parseToneType,
-  toChineseNumber,
-  type WasmCandidate,
-} from "./types";
+import { parseToneType, toChineseNumber } from "./types";
+// 由 Rust wire 类型自动生成（见 crates/taiyin-core/src/bin/gen_types.rs），杜绝手工对齐。
+import type { JianziCandidate } from "@/lib/generated/taiyin";
 
 const LEFT_FINGER_MAP: Record<string, string> = {
   Da: "大",
@@ -32,7 +30,7 @@ const FEN_MAP: Record<number, string> = {
   8: "八分",
 };
 
-export function buildJianziState(candidate: WasmCandidate) {
+export function buildJianziState(candidate: JianziCandidate) {
   const note = candidate.note;
   const jianzi = createEmptyState();
   jianzi.toneType = parseToneType(note.note_type);
@@ -51,7 +49,7 @@ export function buildJianziState(candidate: WasmCandidate) {
 }
 
 export function candidateToNoteColumn(
-  candidate: WasmCandidate,
+  candidate: JianziCandidate,
   parsedNote: ParsedJianpuNote,
 ): NoteColumn {
   const jianzi = buildJianziState(candidate);

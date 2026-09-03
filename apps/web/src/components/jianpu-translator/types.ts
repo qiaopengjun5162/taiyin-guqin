@@ -1,18 +1,5 @@
 import type { NoteColumn } from "@/lib/types";
 
-export interface WasmCandidateNote {
-  note_type: string;
-  left_finger: string | null;
-  hui: { hui: number; fen: number | null } | null;
-  right_action: string;
-  string_number: number;
-}
-
-export interface WasmCandidate {
-  score: number;
-  note: WasmCandidateNote;
-}
-
 export interface JianpuTranslatorProps {
   onSelect: (columns: NoteColumn[]) => void;
 }

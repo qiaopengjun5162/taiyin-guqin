@@ -10,3 +10,6 @@ dist
 .claude
 .workbuddy/
 
+
+# ts-rs 自动测试可能写出的默认 bindings 目录（真实生成物在 apps/web/src/lib/generated/）
+bindings/
