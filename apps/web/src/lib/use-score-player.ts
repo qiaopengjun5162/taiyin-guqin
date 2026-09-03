@@ -94,11 +94,12 @@ export function useScorePlayer(notes: NoteColumn[]) {
   // 乐谱变更时自动停止播放，防止旧音频继续发声
   useEffect(() => {
     if (isPlaying) {
-      // 延迟一拍再 stop：避免在 effect 体内同步 setState（触发
-      // react-hooks/set-state-in-effect）。stop 本身是稳定 useCallback，
-      // 延后到下一 tick 执行，语义不变（乐谱一变就停旧播放）。
-      const id = setTimeout(stop, 0);
-      return () => clearTimeout(id);
+      // 此处同步调用 stop()（其内部 setIsPlaying/setPlayingIndex 属 setState），
+      // 会触发 react-hooks/set-state-in-effect 告警。但该 effect 由 notes 变更触发、
+      // 且以 isPlaying 守卫，不会循环触发级联渲染，属于「外部系统(AudioContext)
+      // 与 React 状态同步」的合法用法，故定向豁免而非改写语义。
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      stop();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notes]);
