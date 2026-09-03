@@ -131,6 +131,7 @@ jobs:
         run: |
           cd crates/taiyin-core
           wasm-pack build --target web
+          cd ../..
           rm -rf apps/web/wasm apps/web/public/wasm
           cp -r crates/taiyin-core/pkg apps/web/wasm
           cp -r crates/taiyin-core/pkg apps/web/public/wasm
