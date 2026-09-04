@@ -61,6 +61,7 @@ export default function Home() {
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   const [bpm, setBpm] = useState(120);
   const [linkMetronome, setLinkMetronome] = useState(true);
+  const [exportWithCountIn, setExportWithCountIn] = useState(true);
   const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score, bpm);
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -234,6 +235,7 @@ export default function Home() {
       const buffer = await renderScoreToBuffer(score, bpm, {
         beatsPerBar,
         withMetronome: linkMetronome,
+        leadInBars: exportWithCountIn ? 2 : 0,
       });
       downloadWav(buffer, `${scoreTitle || "taiyin-score"}.wav`);
     } catch {
@@ -320,6 +322,22 @@ export default function Home() {
         onUndo={undo}
         onRedo={redo}
       />
+
+      {/* ── 导出选项（仅在有音符时显示） ── */}
+      {score.length > 0 && (
+        <div className="no-print mt-2 w-full max-w-md flex flex-wrap items-center justify-end gap-3">
+          <label className="flex items-center gap-1.5 text-[10px] tracking-wider text-amber-600/50 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={exportWithCountIn}
+              onChange={(e) => setExportWithCountIn(e.target.checked)}
+              aria-label="导出音频时包含 2 小节预备拍"
+              className="accent-amber-600"
+            />
+            导出音频含预备拍
+          </label>
+        </div>
+      )}
 
       {/* ── 拍号选择 + 播放 ── */}
       <div className="no-print mt-2 w-full max-w-md flex flex-wrap items-center justify-end gap-2 gap-y-2">
