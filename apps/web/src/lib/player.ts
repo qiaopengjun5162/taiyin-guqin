@@ -6,7 +6,7 @@
  * 休止符（jianpuNumber "0"）与无简谱标注的音：静默但占位时值。
  */
 
-import type { NoteColumn } from "./types";
+import type { NoteColumn, NoteType } from "./types";
 import { durationToBeats } from "./jianzi";
 
 /** 简谱数字 → 相对 C 的半音数。 */
@@ -40,6 +40,8 @@ export interface ScheduledNote {
   duration: number;
   /** 频率；null 表示静默（休止/无简谱）。 */
   freq: number | null;
+  /** 音技法（散/泛/按）；null 表示未指定，播放时退回默认按音音色。 */
+  toneType: NoteType | null;
 }
 
 /**
@@ -55,6 +57,7 @@ export function buildSchedule(notes: NoteColumn[], beatMs: number): ScheduledNot
       start: cursor,
       duration,
       freq: jianpuToFrequency(note.jianpuNumber, note.jianpuOctave),
+      toneType: note.jianzi.toneType,
     });
     cursor += duration;
   }

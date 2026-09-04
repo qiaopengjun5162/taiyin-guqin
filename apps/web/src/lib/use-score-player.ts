@@ -1,28 +1,40 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { NoteColumn } from "./types";
+import type { NoteColumn, NoteType } from "./types";
 import { buildSchedule } from "./player";
 
 /**
  * Karplus-Strong 拨弦合成：噪声脉冲经带阻尼低通的反馈延迟线，
  * 音色接近拨弦而非电子音，适合古琴旋律参考。
  */
+
+/** 古琴三种基本音技法的合成参数。 */
+const TONE_PROFILE: Record<NoteType, { damping: number; tail: number }> = {
+  // 散音（空弦）：浑厚、余音长
+  "散": { damping: 0.9975, tail: 2.0 },
+  // 按音（按弦走手）：中等余音
+  "按": { damping: 0.996, tail: 0.5 },
+  // 泛音（徽位）：清亮、短促
+  "泛": { damping: 0.99, tail: 0.05 },
+};
+
 /**
- * 单音拨弦合成。缓冲长度跟随该音符自身时值 `durationSec`（最短 0.2s 保证可闻），
- * 整体平滑衰减到 0，缓冲播完即自动停止——避免短音 1.5s 拖尾糊入后续音符、
- * 也避免长音被固定缓冲硬切。
+ * 单音拨弦合成。缓冲长度 = 该音符时值（最短 0.2s 保证可闻）+ 音色尾长，
+ * 主体衰减交给 Karplus-Strong 阻尼（散音长、泛音短），缓冲播完即自动停止。
+ * 包络只做起音渐入 + 尾部淡出（防爆音），让音色差异由阻尼体现。
  */
 function schedulePluck(
   ctx: AudioContext,
   freq: number,
   time: number,
   durationSec: number,
+  toneType: NoteType | null,
 ): AudioBufferSourceNode {
   const sr = ctx.sampleRate;
   const period = Math.max(2, Math.round(sr / freq));
-  const dur = Math.max(durationSec, 0.2);
-  const length = Math.floor(sr * dur);
+  const profile = toneType ? TONE_PROFILE[toneType] : TONE_PROFILE["按"];
+  const length = Math.floor(sr * (Math.max(durationSec, 0.2) + profile.tail));
   const buffer = ctx.createBuffer(1, length, sr);
   const data = buffer.getChannelData(0);
 
@@ -32,11 +44,12 @@ function schedulePluck(
   let idx = 0;
   for (let i = 0; i < length; i++) {
     const current = ring[idx];
-    ring[idx] = 0.5 * (current + ring[(idx + 1) % period]) * 0.996;
+    ring[idx] = 0.5 * (current + ring[(idx + 1) % period]) * profile.damping;
     const t = i / length;
-    // 起音 10ms 渐入（避免起始直流爆音）+ 整体平滑衰减到 0（避免缓冲结尾爆音）
-    const env = t < 0.01 ? t / 0.01 : Math.pow(1 - (t - 0.01) / 0.99, 1.3);
-    data[i] = current * Math.max(0, env);
+    // 起音 10ms 渐入 + 尾部 30ms 淡出（防爆音），中间保持 1，衰减交给 KS 阻尼
+    const fadeIn = t < 0.01 ? t / 0.01 : 1;
+    const fadeOut = t > 1 - 0.03 ? Math.max(0, (1 - t) / 0.03) : 1;
+    data[i] = current * fadeIn * fadeOut;
     idx = (idx + 1) % period;
   }
 
@@ -94,14 +107,18 @@ export function useScorePlayer(notes: NoteColumn[], bpm: number = 120) {
     const t0 = ctx.currentTime + 0.05;
     sourcesRef.current = schedule
       .filter((s) => s.freq !== null)
-      .map((s) => schedulePluck(ctx, s.freq as number, t0 + s.start, s.duration));
+      .map((s) => schedulePluck(ctx, s.freq as number, t0 + s.start, s.duration, s.toneType));
 
     setIsPlaying(true);
     // 逐音高亮：与音频同一起点 t0 的墙上时钟偏移
     indexTimersRef.current = schedule.map((s, i) =>
       setTimeout(() => setPlayingIndex(i), (s.start + 0.05) * 1000),
     );
-    const total = schedule.reduce((end, s) => Math.max(end, s.start + s.duration), 0);
+    const total = schedule.reduce(
+      (end, s) =>
+        Math.max(end, s.start + s.duration + (s.toneType ? TONE_PROFILE[s.toneType].tail : TONE_PROFILE["按"].tail)),
+      0,
+    );
     timerRef.current = setTimeout(stop, total * 1000 + 100);
   }, [isPlaying, notes, stop, bpm]);
 
