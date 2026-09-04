@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { advanceBeat, isDownbeat } from "./metronome";
 
-/** 与旋律播放一致的拍速：500ms ≈ 120 BPM。 */
-const DEFAULT_BEAT_MS = 500;
 /** 调度间隔与前瞻窗口（WebAudio 节拍器标准做法）。 */
 const TICK_MS = 25;
 const LOOKAHEAD_SEC = 0.1;
@@ -23,17 +21,24 @@ function scheduleClick(ctx: AudioContext, time: number, accent: boolean): void {
 
 /**
  * 节拍器：按拍号给强拍加重音，lookahead 调度保证节奏稳定。
- * 运行中修改拍号即时生效（每拍实时读取最新 beatsPerBar）。
+ * 运行中修改拍号/速度即时生效（每拍实时读取最新 beatsPerBar / bpm）。
+ *
+ * @param bpm 速度（拍/分钟），默认 120；与旋律播放共享。
  */
-export function useMetronome(beatsPerBar: number) {
+export function useMetronome(beatsPerBar: number, bpm: number = 120) {
   const [isRunning, setIsRunning] = useState(false);
   const ctxRef = useRef<AudioContext | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const beatsPerBarRef = useRef(beatsPerBar);
+  const bpmRef = useRef(bpm);
 
   useEffect(() => {
     beatsPerBarRef.current = beatsPerBar;
   }, [beatsPerBar]);
+
+  useEffect(() => {
+    bpmRef.current = bpm;
+  }, [bpm]);
 
   const stop = useCallback(() => {
     if (intervalRef.current) {
@@ -52,11 +57,11 @@ export function useMetronome(beatsPerBar: number) {
       await ctx.resume();
     }
 
-    const beatSec = DEFAULT_BEAT_MS / 1000;
     let beatTime = ctx.currentTime + 0.05;
     let beatIndex = 0;
 
     intervalRef.current = setInterval(() => {
+      const beatSec = (60000 / bpmRef.current) / 1000;
       while (beatTime < ctx.currentTime + LOOKAHEAD_SEC) {
         scheduleClick(ctx, beatTime, isDownbeat(beatIndex, beatsPerBarRef.current));
         [beatTime, beatIndex] = advanceBeat(beatTime, beatIndex, beatSec);

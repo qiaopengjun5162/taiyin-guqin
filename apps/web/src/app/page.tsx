@@ -57,8 +57,9 @@ export default function Home() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [beatsPerBar, setBeatsPerBar] = useState(4);
-  const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score);
-  const metronome = useMetronome(beatsPerBar);
+  const [bpm, setBpm] = useState(120);
+  const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score, bpm);
+  const metronome = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { exportPng, isExporting } = useExportImage({
@@ -318,6 +319,23 @@ export default function Home() {
           <option value={4}>4/4</option>
           <option value={6}>6/8</option>
         </select>
+      </div>
+
+      {/* ── 速度（BPM）调节 ── */}
+      <div className="no-print mt-2 w-full max-w-md flex items-center gap-3">
+        <span className="text-[10px] tracking-wider text-amber-600/50 whitespace-nowrap">
+          速度 {bpm} BPM
+        </span>
+        <input
+          type="range"
+          min={40}
+          max={200}
+          step={1}
+          value={bpm}
+          onChange={(e) => setBpm(parseInt(e.target.value, 10))}
+          aria-label="播放速度（BPM）"
+          className="flex-1 accent-amber-600"
+        />
       </div>
 
       {/* ── 加载对话框 ── */}

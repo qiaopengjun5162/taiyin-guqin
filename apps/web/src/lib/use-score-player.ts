@@ -4,9 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { NoteColumn } from "./types";
 import { buildSchedule } from "./player";
 
-/** 默认一拍（四分音符）时长：500ms ≈ 120 BPM。 */
-const DEFAULT_BEAT_MS = 500;
-
 /**
  * Karplus-Strong 拨弦合成：噪声脉冲经带阻尼低通的反馈延迟线，
  * 音色接近拨弦而非电子音，适合古琴旋律参考。
@@ -53,8 +50,10 @@ function schedulePluck(
 /**
  * 乐谱流播放：把整首排程一次性交给 AudioContext，stop 时全部断开。
  * 休止符与无简谱标注的音静默但占位时值。
+ *
+ * @param bpm 速度（拍/分钟），默认 120；调速后下次播放生效。
  */
-export function useScorePlayer(notes: NoteColumn[]) {
+export function useScorePlayer(notes: NoteColumn[], bpm: number = 120) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -90,7 +89,8 @@ export function useScorePlayer(notes: NoteColumn[]) {
       await ctx.resume();
     }
 
-    const schedule = buildSchedule(notes, DEFAULT_BEAT_MS);
+    const beatMs = 60000 / bpm;
+    const schedule = buildSchedule(notes, beatMs);
     const t0 = ctx.currentTime + 0.05;
     sourcesRef.current = schedule
       .filter((s) => s.freq !== null)
@@ -103,7 +103,7 @@ export function useScorePlayer(notes: NoteColumn[]) {
     );
     const total = schedule.reduce((end, s) => Math.max(end, s.start + s.duration), 0);
     timerRef.current = setTimeout(stop, total * 1000 + 100);
-  }, [isPlaying, notes, stop]);
+  }, [isPlaying, notes, stop, bpm]);
 
   // 乐谱变更时自动停止播放，防止旧音频继续发声
   useEffect(() => {
