@@ -231,7 +231,10 @@ export default function Home() {
     if (score.length === 0) return;
     setIsExportingAudio(true);
     try {
-      const buffer = await renderScoreToBuffer(score, bpm);
+      const buffer = await renderScoreToBuffer(score, bpm, {
+        beatsPerBar,
+        withMetronome: linkMetronome,
+      });
       downloadWav(buffer, `${scoreTitle || "taiyin-score"}.wav`);
     } catch {
       showError("音频导出失败");

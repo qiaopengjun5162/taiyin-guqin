@@ -2,39 +2,65 @@
  * 旋律离线渲染为音频文件（WAV）。
  *
  * 用 OfflineAudioContext 跑一遍与实时播放完全相同的 Karplus-Strong 合成，
+ * 可选把节拍器点击声一起烘进音轨（带伴奏节拍的练习轨），
  * 再把渲染出的 AudioBuffer 编码为 16-bit PCM WAV（无损、无需额外依赖）。
  * MP3 需引入编码库，WAV 已足够作为可分享/二次剪辑的母带。
  */
 import type { NoteColumn, NoteType } from "./types";
 import { buildSchedule } from "./player";
-import { schedulePluck, TONE_PROFILE } from "./audio-synth";
+import { schedulePluck, scheduleClick, TONE_PROFILE } from "./audio-synth";
 
 function tailOf(toneType: NoteType | null): number {
   return toneType ? TONE_PROFILE[toneType].tail : TONE_PROFILE["按"].tail;
 }
 
+export interface RenderOptions {
+  /** 拍号（每小节拍数），用于烘入节拍点击声。 */
+  beatsPerBar?: number;
+  /** 是否把节拍器点击声烘进音轨，默认 false。 */
+  withMetronome?: boolean;
+  /** 采样率，默认 44100。 */
+  sampleRate?: number;
+}
+
 /**
  * 把乐谱离线渲染成 AudioBuffer。
- * @param sampleRate 采样率，默认 44100。
+ * 若 withMetronome 为真，会按 bpm/beatsPerBar 在每个拍点叠加点击声，
+ * 强拍（每小节第 1 拍）为低沉重音、其余为清亮轻拍。
  */
 export async function renderScoreToBuffer(
   notes: NoteColumn[],
   bpm: number,
-  sampleRate = 44100,
+  opts: RenderOptions = {},
 ): Promise<AudioBuffer> {
+  const { beatsPerBar = 4, withMetronome = false, sampleRate = 44100 } = opts;
   const beatMs = 60000 / bpm;
+  const beatOffset = 0.05; // 与实时播放一样的起拍前导
   const schedule = buildSchedule(notes, beatMs);
   const total = schedule.reduce(
     (end, s) => Math.max(end, s.start + s.duration + tailOf(s.toneType)),
     0,
   );
-  const length = Math.max(1, Math.ceil((total + 0.2) * sampleRate));
+  const length = Math.max(1, Math.ceil((total + 0.3) * sampleRate));
   const ctx = new OfflineAudioContext(1, length, sampleRate);
+
   for (const s of schedule) {
     if (s.freq !== null) {
       schedulePluck(ctx, s.freq, s.start, s.duration, s.toneType);
     }
   }
+
+  if (withMetronome && beatsPerBar > 0) {
+    const beatSec = beatMs / 1000;
+    const totalBeats = Math.ceil((total + 0.2) / beatSec);
+    for (let k = 0; k <= totalBeats; k++) {
+      const t = beatOffset + k * beatSec;
+      if (t < length / sampleRate) {
+        scheduleClick(ctx, t, k % beatsPerBar === 0);
+      }
+    }
+  }
+
   return ctx.startRendering();
 }
 

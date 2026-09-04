@@ -57,3 +57,39 @@ export function schedulePluck(
   src.start(time); // 缓冲播完自动停止，无需 src.stop()
   return src;
 }
+
+/**
+ * 节拍器点击声（木鱼/板鼓质感）：短促脉冲 + 快速指数衰减，
+ * 叠加少量噪声模拟敲击瞬态。强拍（accent）基音低沉、幅度大；弱拍清亮、轻。
+ * 同一函数供实时节拍器与离线导出共用，保证听感一致。
+ */
+export function scheduleClick(
+  ctx: BaseAudioContext,
+  time: number,
+  isAccent: boolean,
+): AudioBufferSourceNode {
+  const sr = ctx.sampleRate;
+  const length = Math.floor(sr * 0.04); // 40ms
+  const buffer = ctx.createBuffer(1, length, sr);
+  const data = buffer.getChannelData(0);
+  const freq = isAccent ? 1200 : 2000;
+  const amp = isAccent ? 0.9 : 0.5;
+  const decay = isAccent ? 26 : 34; // 弱拍衰减更快更"脆"
+  let seed = isAccent ? 1234 : 5678;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed / 0x7fffffff) * 2 - 1;
+  };
+  for (let i = 0; i < length; i++) {
+    const t = i / length;
+    const env = Math.exp(-t * decay);
+    const tone = Math.sin((2 * Math.PI * freq * i) / sr);
+    const noise = rand() * 0.4;
+    data[i] = (tone + noise) * env * amp;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  src.start(time);
+  return src;
+}
