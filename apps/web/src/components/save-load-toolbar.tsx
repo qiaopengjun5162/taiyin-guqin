@@ -8,6 +8,8 @@ interface SaveLoadToolbarProps {
   onLoad: () => void;
   onExportPng?: () => void;
   onExportText?: () => void;
+  onExportWav?: () => void;
+  isExportingAudio?: boolean;
   examples?: ExampleScore[];
   onLoadExample?: (id: string) => void;
   hasNotes: boolean;
@@ -27,6 +29,8 @@ export function SaveLoadToolbar({
   onLoad,
   onExportPng,
   onExportText,
+  onExportWav,
+  isExportingAudio,
   examples,
   onLoadExample,
   hasNotes,
@@ -124,6 +128,16 @@ export function SaveLoadToolbar({
           className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
         >
           导出文本
+        </button>
+      )}
+      {hasNotes && onExportWav && (
+        <button
+          onClick={onExportWav}
+          disabled={isExportingAudio}
+          aria-label="导出音频"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+        >
+          {isExportingAudio ? "导出中…" : "导出音频"}
         </button>
       )}
     </div>

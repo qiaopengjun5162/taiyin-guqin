@@ -14,6 +14,7 @@ import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
 import { useScorePlayer } from "@/lib/use-score-player";
 import { useMetronome } from "@/lib/use-metronome";
+import { renderScoreToBuffer, downloadWav } from "@/lib/audio-export";
 import * as api from "@/lib/api";
 
 /**
@@ -56,6 +57,7 @@ export default function Home() {
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isExportingAudio, setIsExportingAudio] = useState(false);
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   const [bpm, setBpm] = useState(120);
   const [linkMetronome, setLinkMetronome] = useState(true);
@@ -224,6 +226,20 @@ export default function Home() {
     downloadTextFile(text, `${scoreTitle || "taiyin-score"}.txt`);
   }
 
+  /** 导出旋律为 WAV 音频（离线渲染，与播放音色一致） */
+  async function handleExportWav() {
+    if (score.length === 0) return;
+    setIsExportingAudio(true);
+    try {
+      const buffer = await renderScoreToBuffer(score, bpm);
+      downloadWav(buffer, `${scoreTitle || "taiyin-score"}.wav`);
+    } catch {
+      showError("音频导出失败");
+    } finally {
+      setIsExportingAudio(false);
+    }
+  }
+
   return (
     <main className="flex flex-col items-center min-h-dvh py-10 px-4">
       {/* ── 品牌：朱砂印章（主视觉标识） ── */}
@@ -289,6 +305,8 @@ export default function Home() {
         onLoad={openLoadDialog}
         onExportPng={exportPng}
         onExportText={handleExportText}
+        onExportWav={handleExportWav}
+        isExportingAudio={isExportingAudio}
         examples={EXAMPLE_SCORES}
         onLoadExample={handleLoadExample}
         hasNotes={score.length > 0}
