@@ -322,7 +322,7 @@ export default function Home() {
       />
 
       {/* ── 拍号选择 + 播放 ── */}
-      <div className="no-print mt-2 w-full max-w-md flex items-center justify-end gap-2">
+      <div className="no-print mt-2 w-full max-w-md flex flex-wrap items-center justify-end gap-2 gap-y-2">
         <button
           onClick={toggleMetronome}
           aria-label={metronomeRunning ? "停止节拍器" : "启动节拍器"}
@@ -388,7 +388,7 @@ export default function Home() {
       )}
 
       {/* ── 速度（BPM）调节 ── */}
-      <div className="no-print mt-2 w-full max-w-md flex items-center gap-3">
+      <div className="no-print mt-2 w-full max-w-md flex items-center gap-3 py-1.5">
         <span className="text-[10px] tracking-wider text-amber-600/50 whitespace-nowrap">
           速度 {bpm} BPM
         </span>
@@ -400,7 +400,7 @@ export default function Home() {
           value={bpm}
           onChange={(e) => setBpm(parseInt(e.target.value, 10))}
           aria-label="播放速度（BPM）"
-          className="flex-1 accent-amber-600"
+          className="flex-1 accent-amber-600 h-2"
         />
       </div>
 
