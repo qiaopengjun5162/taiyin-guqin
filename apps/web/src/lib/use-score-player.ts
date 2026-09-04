@@ -11,10 +11,21 @@ const DEFAULT_BEAT_MS = 500;
  * Karplus-Strong 拨弦合成：噪声脉冲经带阻尼低通的反馈延迟线，
  * 音色接近拨弦而非电子音，适合古琴旋律参考。
  */
-function schedulePluck(ctx: AudioContext, freq: number, time: number): AudioBufferSourceNode {
+/**
+ * 单音拨弦合成。缓冲长度跟随该音符自身时值 `durationSec`（最短 0.2s 保证可闻），
+ * 整体平滑衰减到 0，缓冲播完即自动停止——避免短音 1.5s 拖尾糊入后续音符、
+ * 也避免长音被固定缓冲硬切。
+ */
+function schedulePluck(
+  ctx: AudioContext,
+  freq: number,
+  time: number,
+  durationSec: number,
+): AudioBufferSourceNode {
   const sr = ctx.sampleRate;
   const period = Math.max(2, Math.round(sr / freq));
-  const length = Math.floor(sr * 1.5);
+  const dur = Math.max(durationSec, 0.2);
+  const length = Math.floor(sr * dur);
   const buffer = ctx.createBuffer(1, length, sr);
   const data = buffer.getChannelData(0);
 
@@ -25,14 +36,17 @@ function schedulePluck(ctx: AudioContext, freq: number, time: number): AudioBuff
   for (let i = 0; i < length; i++) {
     const current = ring[idx];
     ring[idx] = 0.5 * (current + ring[(idx + 1) % period]) * 0.996;
-    data[i] = current;
+    const t = i / length;
+    // 起音 10ms 渐入（避免起始直流爆音）+ 整体平滑衰减到 0（避免缓冲结尾爆音）
+    const env = t < 0.01 ? t / 0.01 : Math.pow(1 - (t - 0.01) / 0.99, 1.3);
+    data[i] = current * Math.max(0, env);
     idx = (idx + 1) % period;
   }
 
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.connect(ctx.destination);
-  src.start(time);
+  src.start(time); // 缓冲播完自动停止，无需 src.stop()，不污染 stop() 的契约
   return src;
 }
 
@@ -80,7 +94,7 @@ export function useScorePlayer(notes: NoteColumn[]) {
     const t0 = ctx.currentTime + 0.05;
     sourcesRef.current = schedule
       .filter((s) => s.freq !== null)
-      .map((s) => schedulePluck(ctx, s.freq as number, t0 + s.start));
+      .map((s) => schedulePluck(ctx, s.freq as number, t0 + s.start, s.duration));
 
     setIsPlaying(true);
     // 逐音高亮：与音频同一起点 t0 的墙上时钟偏移
