@@ -116,9 +116,9 @@ describe("useScorePlayer", () => {
       });
       expect(result.current.playingIndex).toBe(1);
 
-      // 整首结束（0.5+0.25s + 余量）后复位
+      // 整首结束（音符时值 0.5+0.25s + 按音音色尾长 0.5s + 余量）后自动复位
       act(() => {
-        vi.advanceTimersByTime(500);
+        vi.advanceTimersByTime(900);
       });
       expect(result.current.playingIndex).toBeNull();
       expect(result.current.isPlaying).toBe(false);
