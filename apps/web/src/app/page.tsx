@@ -58,8 +58,9 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   const [bpm, setBpm] = useState(120);
+  const [linkMetronome, setLinkMetronome] = useState(true);
   const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score, bpm);
-  const metronome = useMetronome(beatsPerBar, bpm);
+  const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { exportPng, isExporting } = useExportImage({
@@ -130,6 +131,18 @@ export default function Home() {
     if (removedIdx >= 0 && editingIndex === removedIdx) {
       setEditingIndex(null);
     }
+  }
+
+  /** 播放：可联动启动节拍器（共享同速、重拍对齐乐谱小节） */
+  function handlePlay() {
+    void play();
+    if (linkMetronome && !metronomeRunning) void toggleMetronome();
+  }
+
+  /** 停止：可联动停止节拍器 */
+  function handleStop() {
+    stopPlayback();
+    if (linkMetronome && metronomeRunning) stopMetronome();
   }
 
   /** 保存曲谱到后端 */
@@ -290,10 +303,10 @@ export default function Home() {
       {/* ── 拍号选择 + 播放 ── */}
       <div className="no-print mt-2 w-full max-w-md flex items-center justify-end gap-2">
         <button
-          onClick={metronome.toggle}
-          aria-label={metronome.isRunning ? "停止节拍器" : "启动节拍器"}
+          onClick={toggleMetronome}
+          aria-label={metronomeRunning ? "停止节拍器" : "启动节拍器"}
           className={`px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border transition-all ${
-            metronome.isRunning
+            metronomeRunning
               ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
               : "border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50"
           }`}
@@ -301,13 +314,23 @@ export default function Home() {
           节拍
         </button>
         <button
-          onClick={isPlaying ? stopPlayback : play}
+          onClick={isPlaying ? handleStop : handlePlay}
           disabled={score.length === 0}
           aria-label={isPlaying ? "停止播放" : "播放"}
           className="px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isPlaying ? "停止" : "播放"}
         </button>
+        <label className="flex items-center gap-1.5 text-[10px] tracking-wider text-amber-600/50 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={linkMetronome}
+            onChange={(e) => setLinkMetronome(e.target.checked)}
+            className="accent-amber-600"
+            aria-label="播放时联动节拍器"
+          />
+          播放带节拍
+        </label>
         <span className="text-[10px] tracking-wider text-amber-600/50">拍号</span>
         <select
           value={beatsPerBar}
@@ -320,6 +343,28 @@ export default function Home() {
           <option value={6}>6/8</option>
         </select>
       </div>
+
+      {/* ── 拍点高亮（节拍器/联动播放时显示，重拍为朱砂色） ── */}
+      {metronomeRunning && (
+        <div className="no-print mt-2 w-full max-w-md flex items-center justify-center gap-2" aria-hidden>
+          {Array.from({ length: beatsPerBar }, (_, i) => {
+            const active = currentBeat === i;
+            const isDown = i === 0;
+            return (
+              <span
+                key={i}
+                className={`inline-block rounded-full transition-all duration-100 ${
+                  active
+                    ? isDown
+                      ? "w-3.5 h-3.5 bg-[var(--vermillion)] shadow-[0_0_10px_var(--vermillion)]"
+                      : "w-3 h-3 bg-amber-300 shadow-[0_0_6px_var(--vermillion)]"
+                    : "w-3 h-3 bg-amber-700/30"
+                }`}
+              />
+            );
+          })}
+        </div>
+      )}
 
       {/* ── 速度（BPM）调节 ── */}
       <div className="no-print mt-2 w-full max-w-md flex items-center gap-3">
