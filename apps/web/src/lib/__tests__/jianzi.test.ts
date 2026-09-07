@@ -143,6 +143,28 @@ describe("parseJianziText", () => {
     expect(parseJianziText("  ")).toBeNull();
   });
 
+  // 传统减字偏旁写法：亻 = 食指（取"食"左半）、夕 = 名指（取"名"左半）
+  it("parses archaic finger radical 亻 (index finger)", () => {
+    const r = parseJianziText("亻九勾三");
+    expect(r).not.toBeNull();
+    expect(r!.leftFinger).toBe("亻");
+    expect(r!.hui).toBe("九");
+    expect(r!.rightAction).toBe("勾");
+    expect(r!.stringNumber).toBe("三");
+  });
+
+  it("parses archaic finger radical 夕 (ring finger)", () => {
+    const r = parseJianziText("夕十勾三");
+    expect(r).not.toBeNull();
+    expect(r!.leftFinger).toBe("夕");
+    expect(r!.hui).toBe("十");
+  });
+
+  it("still parses full-form 食/名 alongside radicals", () => {
+    expect(parseJianziText("食九勾三")!.leftFinger).toBe("食");
+    expect(parseJianziText("名九勾三")!.leftFinger).toBe("名");
+  });
+
   it("parses hui 十一 and 十二", () => {
     expect(parseJianziText("大十一勾一")!.hui).toBe("十一");
     expect(parseJianziText("中十二勾一")!.hui).toBe("十二");

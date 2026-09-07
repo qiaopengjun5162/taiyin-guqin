@@ -138,7 +138,9 @@ export function parseJianziText(text: string): JianziState | null {
   }
 
   // 2. 左手指法
-  for (const name of ["大", "名", "中", "食", "跪"]) {
+  // 传统减字偏旁写法：亻 = 食指（取"食"左半）、夕 = 名指（取"名"左半）。
+  // 与全字写法（食/名）一并支持，粘贴传统谱本时才不会解析失败。
+  for (const name of ["大", "名", "夕", "中", "食", "亻", "跪"]) {
     if (remaining.startsWith(name)) {
       result.leftFinger = name;
       remaining = remaining.slice(name.length);
