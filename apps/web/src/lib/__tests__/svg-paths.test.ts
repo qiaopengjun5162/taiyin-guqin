@@ -7,12 +7,14 @@ const EXPECTED_KEYS = [
   "hui_1", "hui_2", "hui_3", "hui_4", "hui_5", "hui_6", "hui_7", "hui_8", "hui_9", "hui_10", "hui_11", "hui_12", "hui_13",
   "fen_ban", "fen_3", "fen_6", "fen_8",
   "rh_gou", "rh_tiao", "rh_mo", "rh_tuo", "rh_da", "rh_pi", "rh_zhai", "rh_ti",
+  // 复合指法（双指法连字）字形
+  "rh_motiao", "rh_gouti", "rh_mogou", "rh_dazhai",
   "str_1", "str_2", "str_3", "str_4", "str_5", "str_6", "str_7",
 ];
 
 describe("SVG_PATHS data integrity", () => {
-  it("has 38 entries", () => {
-    expect(Object.keys(SVG_PATHS).length).toBe(38);
+  it("has 42 entries", () => {
+    expect(Object.keys(SVG_PATHS).length).toBe(42);
   });
 
   it("contains all expected keys", () => {
