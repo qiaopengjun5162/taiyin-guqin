@@ -120,11 +120,13 @@ export function SvgJianziBlock({
       className="relative inline-flex items-center justify-center select-none"
       style={{ width: numPx, height: numPx * 1.4 }}
     >
-      {/* ── 顶帽（音色标记） ── */}
+      {/* ── 顶帽（音色标记） ──
+          原 44%×16% 是 1.96 的扁槽：「散」字形 1.95 撑满(99%)、「泛」1.02 只填 52%，
+          两者视觉大小差一倍。收窄加高到 1.43 后散/泛填充率约 73%/71%，大小趋一致。 */}
       {topEntry?.bbox && (
         <div
           className="absolute left-1/2 -translate-x-1/2"
-          style={{ top: "2%", width: "44%", height: "16%" }}
+          style={{ top: "2%", width: "38%", height: "19%" }}
         >
           <GlyphSVG d={topEntry.d} bbox={topEntry.bbox} />
         </div>
@@ -166,11 +168,13 @@ export function SvgJianziBlock({
         </div>
       )}
 
-      {/* ── 分位（徽位下方） ── */}
+      {/* ── 分位（徽位下方） ──
+          槽位宽高比需贴近字形本身（约 0.74 竖长）：原 26%×9% 是 2.06 的扁槽，
+          preserveAspectRatio=meet 等比缩放后填充率仅 38%，分位被压得极小。 */}
       {fenEntry?.bbox && (
         <div
           className="absolute"
-          style={{ top: "38%", right: "3%", width: "26%", height: "9%" }}
+          style={{ top: "38%", right: "3%", width: "11%", height: "12%" }}
         >
           <GlyphSVG d={fenEntry.d} bbox={fenEntry.bbox} />
         </div>

@@ -3,12 +3,15 @@
 太音 · 减字谱字形预览画廊（开发调试用）
 
 从 apps/web/src/lib/svg-paths.ts 提取字形数据，生成一份自包含 HTML：
-  1) 部件字形总览（全部 SVG_PATHS）
-  2) 完整减字拼合预览 —— 严格复刻 SvgJianziBlock 的四象限百分比布局，
-     用于在改字形/改布局后肉眼核对效果，无需起 dev server。
+  1) 完整减字拼合预览 —— 严格复刻 SvgJianziBlock 的四象限百分比布局
+  2) 部件字形总览（全部 SVG_PATHS）
+
+布局参数集中在 LAYOUT 一处，与 svg-jianzi-block.tsx 手动同步；
+改任一侧后跑 `--audit` 可核对各槽位填充率是否合理。
 
 用法：
-    python3 scripts/preview-jianzi-gallery.py [输出路径]
+    python3 scripts/preview-jianzi-gallery.py              # 生成 HTML
+    python3 scripts/preview-jianzi-gallery.py --audit      # 只打印填充率诊断
 默认输出：docs/preview/jianzi-gallery.html
 """
 
@@ -20,6 +23,29 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SVG_PATHS_TS = os.path.join(ROOT, "apps/web/src/lib/svg-paths.ts")
 DEFAULT_OUT = os.path.join(ROOT, "docs/preview/jianzi-gallery.html")
+
+# 容器高宽比（与 svg-jianzi-block.tsx 的 style={{ height: numPx * 1.4 }} 一致）
+ASPECT = 1.4
+
+# ── 槽位布局：与 svg-jianzi-block.tsx 保持同步 ──────────────
+# 槽位名 -> (宽%, 高%, CSS 定位片段)。高% 基于容器全高（含 1.4 倍系数）。
+LAYOUT = {
+    "top": ("38%", "19%", "top:2%;left:50%;transform:translateX(-50%)"),
+    "lh":  ("34%", "24%", "top:17%;left:3%"),
+    "hui": ("34%", "22%", "top:17%;right:3%"),
+    "fen": ("11%", "12%", "top:38%;right:3%"),
+    "rh":  ("100%", "56%", "bottom:1%;left:0"),
+    "str": ("28%", "20%", "bottom:19%;left:50%;transform:translateX(-50%)"),
+}
+# 字形键前缀 -> 槽位名
+PREFIX_SLOT = [
+    ("top_", "top"), ("lh_", "lh"), ("hui_", "hui"),
+    ("fen_", "fen"), ("rh_", "rh"), ("str_", "str"),
+]
+GROUP_LABEL = {
+    "top": "顶帽（音色）", "lh": "左手指法", "hui": "徽位",
+    "fen": "分位", "rh": "右手指法（半包围外壳）", "str": "弦序（内核）",
+}
 
 # ── 与 svg-jianzi-block.tsx 保持一致的映射 ──────────────────
 HUI_MAP = {
@@ -43,16 +69,6 @@ STRING_MAP = {
     "五": "str_5", "六": "str_6", "七": "str_7",
 }
 
-# 展示用分组标签
-GROUP_LABEL = {
-    "top_": "顶帽（音色）",
-    "lh_": "左手指法",
-    "hui_": "徽位",
-    "fen_": "分位",
-    "rh_": "右手指法（半包围外壳）",
-    "str_": "弦序（内核）",
-}
-
 
 def load_glyphs():
     src = open(SVG_PATHS_TS, encoding="utf-8").read()
@@ -68,7 +84,50 @@ def load_glyphs():
     return entries
 
 
-def glyph_svg(entries, key, px):
+def slot_of(key):
+    for prefix, name in PREFIX_SLOT:
+        if key.startswith(prefix):
+            return name
+    return None
+
+
+def audit(entries):
+    """打印各槽位填充率：字形宽高比 vs 槽位宽高比，meet 等比缩放后的面积占用。"""
+    print(f"{'glyph':10s} {'字形w:h':>9s} {'槽位w:h':>9s} {'填充':>6s}  判定")
+    print("-" * 52)
+    rows = []
+    for k in sorted(entries):
+        b = entries[k]["bbox"]
+        slot = slot_of(k)
+        if not b or not slot:
+            continue
+        gw, gh = b["xMax"] - b["xMin"], b["yMax"] - b["yMin"]
+        if gw <= 0 or gh <= 0:
+            continue
+        w_pct, h_pct, _ = LAYOUT[slot]
+        cw = float(w_pct.rstrip("%")) / 100
+        ch = float(h_pct.rstrip("%")) / 100 * ASPECT
+        gr, cr = gw / gh, cw / ch
+        if gr > cr:
+            dw, dh = cw, cw / gr
+        else:
+            dh, dw = ch, ch * gr
+        fill = (dw * dh) / (cw * ch)
+        rows.append((slot, fill))
+        flag = "留白多" if fill < 0.55 else "ok"
+        print(f"{k:10s} {gr:9.2f} {cr:9.2f} {fill:5.0%}  {flag}")
+
+    print("\n=== 各槽位平均填充率 ===")
+    by = {}
+    for slot, fill in rows:
+        by.setdefault(slot, []).append(fill)
+    for slot, v in sorted(by.items(), key=lambda x: sum(x[1]) / len(x[1])):
+        avg = sum(v) / len(v)
+        warn = "  <-- 偏低" if avg < 0.6 else ""
+        print(f"  {slot:5s} {GROUP_LABEL[slot]:14s} n={len(v):2d}  平均 {avg:.0%}  最低 {min(v):.0%}{warn}")
+
+
+def glyph_svg(entries, key):
     """复刻 GlyphSVG：字体坐标(y 向上) → SVG 坐标(y 向下)，y 翻转 + 平移。"""
     e = entries.get(key)
     if not e or not e.get("bbox"):
@@ -106,39 +165,43 @@ def render_jianzi(entries, state, px=72):
     if left_finger and not (lh_key and entries.get(lh_key)):
         text_finger = "食" if left_finger == "亻" else left_finger
 
-    W, H = px, px * 1.4
+    W, H = px, px * ASPECT
     parts = []
 
-    def box(style, inner):
+    def box(slot, inner):
         if inner:
-            parts.append(f'<div style="position:absolute;{style}">{inner}</div>')
+            w_pct, h_pct, pos = LAYOUT[slot]
+            parts.append(
+                f'<div style="position:absolute;{pos};width:{w_pct};height:{h_pct}">{inner}</div>'
+            )
 
-    box(f"top:2%;left:50%;transform:translateX(-50%);width:44%;height:16%",
-        glyph_svg(entries, top_key, px))
-    box(f"top:17%;left:3%;width:34%;height:24%", glyph_svg(entries, lh_key, px))
+    box("top", glyph_svg(entries, top_key))
+    box("lh", glyph_svg(entries, lh_key))
     if text_finger:
         parts.append(
             f'<div style="position:absolute;top:28%;left:18%;transform:translate(-50%,-50%);'
             f'font-size:{px*0.28:.0f}px;font-family:KaiTi,STKaiti,serif;color:#1c1b1a;line-height:1">'
             f"{text_finger}</div>"
         )
-    box(f"top:17%;right:3%;width:34%;height:22%", glyph_svg(entries, hui_key, px))
-    box(f"top:38%;right:3%;width:26%;height:9%", glyph_svg(entries, fen_key, px))
-    box(f"bottom:1%;left:0;width:100%;height:56%", glyph_svg(entries, act_key, px))
+    box("hui", glyph_svg(entries, hui_key))
+    box("fen", glyph_svg(entries, fen_key))
+    box("rh", glyph_svg(entries, act_key))
     if str_key:
         if act_key:
-            box(f"bottom:19%;left:50%;transform:translateX(-50%);width:28%;height:20%",
-                glyph_svg(entries, str_key, px))
-        else:
-            box(f"bottom:22%;left:50%;transform:translateX(-50%);width:38%;height:28%",
-                glyph_svg(entries, str_key, px))
+            box("str", glyph_svg(entries, str_key))
+        else:  # 无右手外壳时弦序略大、略高
+            parts.append(
+                f'<div style="position:absolute;bottom:22%;left:50%;'
+                f'transform:translateX(-50%);width:38%;height:28%">'
+                f"{glyph_svg(entries, str_key)}</div>"
+            )
 
     return f'<div style="position:relative;display:inline-block;width:{W}px;height:{H}px">{"".join(parts)}</div>'
 
 
 # 典型减字样例（覆盖各音色/降级分支）
 SAMPLES = [
-    {"label": "散勾五", "note": "散音·无顶帽降级分支外",
+    {"label": "散勾五", "note": "散音",
      "state": {"toneType": "散", "rightAction": "勾", "stringNumber": "五"}},
     {"label": "大九勾四", "note": "按音·标准四象限",
      "state": {"toneType": "按", "leftFinger": "大", "hui": "九", "rightAction": "勾", "stringNumber": "四"}},
@@ -146,6 +209,8 @@ SAMPLES = [
      "state": {"toneType": "泛", "leftFinger": "名", "hui": "十", "rightAction": "勾", "stringNumber": "三"}},
     {"label": "大七半勾二", "note": "带分位",
      "state": {"toneType": "按", "leftFinger": "大", "hui": "七", "fen": "半", "rightAction": "勾", "stringNumber": "二"}},
+    {"label": "大七三分勾二", "note": "带分位（三分）",
+     "state": {"toneType": "按", "leftFinger": "大", "hui": "七", "fen": "三分", "rightAction": "勾", "stringNumber": "二"}},
     {"label": "夕九挑七", "note": "名指偏旁·SVG 有 path",
      "state": {"toneType": "按", "leftFinger": "夕", "hui": "九", "rightAction": "挑", "stringNumber": "七"}},
     {"label": "亻九勾三", "note": "食指偏旁·字体无码位→楷体「食」",
@@ -158,25 +223,35 @@ SAMPLES = [
 
 
 def main():
-    out = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_OUT
     entries = load_glyphs()
+    if "--audit" in sys.argv:
+        audit(entries)
+        return
 
-    # 部件总览（按前缀分组）
+    out = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else DEFAULT_OUT
+
+    # 部件总览（按槽位分组）
     groups = {}
     for key in sorted(entries):
-        prefix = next((p for p in GROUP_LABEL if key.startswith(p)), "其他")
-        groups.setdefault(prefix, []).append(key)
+        slot = slot_of(key)
+        if slot:
+            groups.setdefault(slot, []).append(key)
 
     gallery = []
-    for prefix, keys in groups.items():
+    for slot in ["top", "lh", "hui", "fen", "rh", "str"]:
+        keys = groups.get(slot, [])
+        if not keys:
+            continue
+        w_pct, h_pct, _ = LAYOUT[slot]
         cells = "".join(
-            f'<div class="cell"><div class="thumb">{glyph_svg(entries, k, 56)}</div>'
+            f'<div class="cell"><div class="thumb">{glyph_svg(entries, k)}</div>'
             f'<div class="cap">{k}</div></div>'
             for k in keys
         )
         gallery.append(
-            f'<section><h2>{GROUP_LABEL.get(prefix, prefix)} '
-            f'<span class="cnt">{len(keys)}</span></h2><div class="grid">{cells}</div></section>'
+            f'<section><h2>{GROUP_LABEL[slot]} <span class="cnt">{len(keys)}</span>'
+            f'<span class="slot">槽位 {w_pct}×{h_pct}</span></h2>'
+            f'<div class="grid">{cells}</div></section>'
         )
 
     samples = "".join(
@@ -197,6 +272,7 @@ def main():
   h2{{font-size:13px;font-weight:600;letter-spacing:.1em;color:#5c574c;
       border-bottom:1px solid #e6e2d8;padding-bottom:7px;margin-bottom:14px}}
   .cnt{{font-weight:400;color:#a8a294;font-size:11px;margin-left:6px}}
+  .slot{{font-weight:400;color:#b9b3a5;font-size:10px;margin-left:8px}}
   .grid{{display:flex;flex-wrap:wrap;gap:10px}}
   .cell{{width:104px;background:#fff;border:1px solid #eae6dc;border-radius:7px;
          padding:9px 6px 8px;text-align:center}}
