@@ -17,6 +17,7 @@ export function ScoreView({
   beatsPerBar = 4,
   onRemove,
   onEdit,
+  onSeekLyric,
   editingIndex,
   playingIndex,
 }: {
@@ -24,6 +25,7 @@ export function ScoreView({
   beatsPerBar?: number;
   onRemove?: (id: string) => void;
   onEdit?: (index: number) => void;
+  onSeekLyric?: (index: number) => void;
   editingIndex?: number | null;
   playingIndex?: number | null;
 }) {
@@ -60,6 +62,7 @@ export function ScoreView({
         compact={sameTone}
         onRemove={onRemove}
         onEdit={onEdit}
+        onSeekLyric={onSeekLyric}
         isEditing={editingIndex === index}
         isPlaying={playingIndex === index}
       />,
@@ -107,6 +110,7 @@ function NoteColumnView({
   compact,
   onRemove,
   onEdit,
+  onSeekLyric,
   isEditing,
   isPlaying,
 }: {
@@ -115,6 +119,7 @@ function NoteColumnView({
   compact?: boolean;
   onRemove?: (id: string) => void;
   onEdit?: (index: number) => void;
+  onSeekLyric?: (index: number) => void;
   isEditing?: boolean;
   isPlaying?: boolean;
 }) {
@@ -151,7 +156,12 @@ function NoteColumnView({
       <div className="mt-0.5 min-h-[14px] flex items-center justify-center px-0.5">
         {note.lyric && (
           <span
-            className={`text-[11px] leading-none font-medium ${
+            onClick={(e) => {
+              e.stopPropagation();
+              onSeekLyric?.(index);
+            }}
+            title="点击从此音开始播放"
+            className={`text-[11px] leading-none font-medium cursor-pointer hover:text-rose-900 transition-colors ${
               isPlaying ? "text-rose-700" : "text-rose-700/70"
             }`}
           >

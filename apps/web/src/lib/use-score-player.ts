@@ -19,6 +19,8 @@ import { schedulePluck, TONE_PROFILE } from "./audio-synth";
 export function useScorePlayer(notes: NoteColumn[], bpm: number = 120) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  /** 同步追踪播放态，供 play 做重入 guard（不依赖 isPlaying 闭包，便于跳转重启） */
+  const playingRef = useRef(false);
   const ctxRef = useRef<AudioContext | null>(null);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -39,12 +41,18 @@ export function useScorePlayer(notes: NoteColumn[], bpm: number = 120) {
     }
     for (const t of indexTimersRef.current) clearTimeout(t);
     indexTimersRef.current = [];
+    playingRef.current = false;
     setIsPlaying(false);
     setPlayingIndex(null);
   }, []);
 
-  const play = useCallback(async () => {
-    if (isPlaying || notes.length === 0) return;
+  /**
+   * 从 startIndex 起播（默认 0）。用于点击歌词跳转：先 stop 再 play(index)。
+   * 用 playingRef 同步 guard 而非 isPlaying 闭包，使「停止后立即重启动」同 tick 内可行。
+   */
+  const play = useCallback(async (startIndex: number = 0) => {
+    if (playingRef.current || notes.length === 0) return;
+    if (startIndex < 0 || startIndex >= notes.length) return;
 
     ctxRef.current ??= new AudioContext();
     const ctx = ctxRef.current;
@@ -54,23 +62,35 @@ export function useScorePlayer(notes: NoteColumn[], bpm: number = 120) {
 
     const beatMs = 60000 / bpm;
     const schedule = buildSchedule(notes, beatMs);
+    // 起始音符的时间基准，用作整体左移偏移
+    const offset = schedule[startIndex]?.start ?? 0;
     const t0 = ctx.currentTime + 0.05;
-    sourcesRef.current = schedule
-      .filter((s) => s.freq !== null)
-      .map((s) => schedulePluck(ctx, s.freq as number, t0 + s.start, s.duration, s.toneType));
 
+    // 只排程 startIndex 及之后的有声音符，并保留原始索引用于高亮
+    sourcesRef.current = schedule
+      .map((s, i) => ({ s, i }))
+      .filter(({ i, s }) => i >= startIndex && s.freq !== null)
+      .map(({ s }) =>
+        schedulePluck(ctx, s.freq as number, t0 + (s.start - offset), s.duration, s.toneType),
+      );
+
+    playingRef.current = true;
     setIsPlaying(true);
-    // 逐音高亮：与音频同一起点 t0 的墙上时钟偏移
-    indexTimersRef.current = schedule.map((s, i) =>
-      setTimeout(() => setPlayingIndex(i), (s.start + 0.05) * 1000),
-    );
+    // 逐音高亮：跳过 startIndex 之前，并把时间基准整体左移 offset
+    indexTimersRef.current = schedule
+      .map((s, i) => ({ s, i }))
+      .filter(({ i }) => i >= startIndex)
+      .map(({ s, i }) =>
+        setTimeout(() => setPlayingIndex(i), (s.start - offset + 0.05) * 1000),
+      );
     const total = schedule.reduce(
       (end, s) =>
         Math.max(end, s.start + s.duration + (s.toneType ? TONE_PROFILE[s.toneType].tail : TONE_PROFILE["按"].tail)),
       0,
     );
-    timerRef.current = setTimeout(stop, total * 1000 + 100);
-  }, [isPlaying, notes, stop, bpm]);
+    const remaining = Math.max(0, total - offset);
+    timerRef.current = setTimeout(stop, remaining * 1000 + 100);
+  }, [notes, stop, bpm]);
 
   // 乐谱变更时自动停止播放，防止旧音频继续发声
   useEffect(() => {

@@ -154,5 +154,23 @@ describe("ScoreView", () => {
       const columns = container.firstElementChild!.children;
       expect(columns[1].textContent).not.toContain("花");
     });
+
+    it("fires onSeekLyric with the note index when its lyric is clicked, not onEdit", () => {
+      const onSeekLyric = vi.fn();
+      const onEdit = vi.fn();
+      const notes = [
+        makeNote({ id: "a", lyric: "花" }),
+        makeNote({ id: "b", lyric: "非" }),
+      ];
+      const { container } = render(
+        <ScoreView notes={notes} onSeekLyric={onSeekLyric} onEdit={onEdit} />,
+      );
+      const lyricSpans = Array.from(container.querySelectorAll("span"));
+      const target = lyricSpans.find((s) => s.textContent === "非")!;
+      expect(target).toBeTruthy();
+      fireEvent.click(target);
+      expect(onSeekLyric).toHaveBeenCalledWith(1);
+      expect(onEdit).not.toHaveBeenCalled();
+    });
   });
 });

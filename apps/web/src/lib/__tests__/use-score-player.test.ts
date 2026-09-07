@@ -142,4 +142,36 @@ describe("useScorePlayer", () => {
     rerender({ notes: [makeNote({ jianpuNumber: "6" })] });
     expect(result.current.isPlaying).toBe(false);
   });
+
+  it("starts playback from a given startIndex", async () => {
+    vi.useFakeTimers();
+    try {
+      const notes = [
+        makeNote({ jianpuNumber: "5", duration: "四分" }),
+        makeNote({ jianpuNumber: "6", duration: "四分" }),
+        makeNote({ jianpuNumber: "1", duration: "四分" }),
+      ];
+      const { result } = renderHook(() => useScorePlayer(notes));
+
+      await act(async () => {
+        await result.current.play(1);
+      });
+      expect(result.current.isPlaying).toBe(true);
+      // 从索引 1 起播，应跳过第一个有声音符，仅排程后两个
+      expect(startMock).toHaveBeenCalledTimes(2);
+
+      // 高亮应从索引 1 开始，而非 0
+      act(() => {
+        vi.advanceTimersByTime(60);
+      });
+      expect(result.current.playingIndex).toBe(1);
+
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(result.current.playingIndex).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

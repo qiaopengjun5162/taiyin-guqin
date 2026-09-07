@@ -148,6 +148,16 @@ export default function Home() {
     if (linkMetronome && metronomeRunning) stopMetronome();
   }
 
+  /** 点击歌词：从该音符起播（先停后播，联动节拍器则一并重启对齐） */
+  function handleSeekLyric(index: number) {
+    stopPlayback();
+    void play(index);
+    if (linkMetronome && metronomeRunning) {
+      stopMetronome();
+      void toggleMetronome();
+    }
+  }
+
   /** 保存曲谱到后端 */
   async function handleSave() {
     if (score.length === 0) return;
@@ -279,7 +289,7 @@ export default function Home() {
 
       {/* ── 乐谱流（导出截图目标） ── */}
       <div id="score-area" ref={exportRef} className="mt-8 w-full max-w-md">
-        <ScoreView notes={score} beatsPerBar={beatsPerBar} onRemove={handleRemove} onEdit={handleEdit} editingIndex={editingIndex} playingIndex={playingIndex} />
+        <ScoreView notes={score} beatsPerBar={beatsPerBar} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} editingIndex={editingIndex} playingIndex={playingIndex} />
         {score.length === 0 && (
           <div className="mt-4 text-center">
             <p className="text-[11px] tracking-wider text-amber-700/40">
