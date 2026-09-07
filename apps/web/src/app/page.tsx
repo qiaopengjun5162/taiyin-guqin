@@ -66,7 +66,7 @@ export default function Home() {
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { exportPng, isExporting } = useExportImage({
+  const { exportPng, exportSvg, isExporting } = useExportImage({
     containerRef: exportRef,
     title: scoreTitle,
   });
@@ -309,6 +309,7 @@ export default function Home() {
         onSave={handleSave}
         onLoad={openLoadDialog}
         onExportPng={exportPng}
+        onExportSvg={exportSvg}
         onExportText={handleExportText}
         onExportWav={handleExportWav}
         isExportingAudio={isExportingAudio}

@@ -7,6 +7,7 @@ interface SaveLoadToolbarProps {
   onSave: () => void;
   onLoad: () => void;
   onExportPng?: () => void;
+  onExportSvg?: () => void;
   onExportText?: () => void;
   onExportWav?: () => void;
   isExportingAudio?: boolean;
@@ -28,6 +29,7 @@ export function SaveLoadToolbar({
   onSave,
   onLoad,
   onExportPng,
+  onExportSvg,
   onExportText,
   onExportWav,
   isExportingAudio,
@@ -115,10 +117,22 @@ export function SaveLoadToolbar({
         <button
           onClick={onExportPng}
           disabled={isExporting}
-          aria-label="导出图片"
+          aria-label="导出图片（PNG）"
+          title="导出位图（PNG，适合分享）"
           className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
-          {isExporting ? "导出中…" : "导出"}
+          {isExporting ? "导出中…" : "PNG"}
+        </button>
+      )}
+      {hasNotes && onExportSvg && (
+        <button
+          onClick={onExportSvg}
+          disabled={isExporting}
+          aria-label="导出矢量图（SVG）"
+          title="导出矢量图（SVG，无损缩放，适合排谱）"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+        >
+          {isExporting ? "导出中…" : "SVG"}
         </button>
       )}
       {hasNotes && onExportText && (
