@@ -32,6 +32,7 @@ function makeNote(
   jianzi: JianziState,
   duration: Duration = "四分",
   jianpuDot: boolean = false,
+  lyric?: string,
 ): NoteColumn {
   return {
     id: crypto.randomUUID(),
@@ -40,6 +41,7 @@ function makeNote(
     jianpuDot,
     duration,
     jianzi,
+    lyric,
   };
 }
 
@@ -49,6 +51,24 @@ function makeNote(
  * 数据为展示用，优先保证减字渲染正确与旋律可辨识，
  * 不追求与某一流派指法完全一致。
  */
+/**
+ * 《花非花》歌词：白居易词句。示例数据为展示用，按字均匀铺到主歌音符下方，
+ * 前奏（引子+前奏，共 10 音）为器乐，不铺词。
+ */
+const HUAFEI_LYRIC = "花非花雾非雾夜半来天明去来如春梦不多时去似朝云无觅处";
+const HUAFEI_PRELUDE = 10;
+
+function assignHuafeihuaLyrics(notes: NoteColumn[]): NoteColumn[] {
+  const sung = notes.length - HUAFEI_PRELUDE;
+  if (sung <= 0) return notes;
+  return notes.map((n, i) => {
+    if (i < HUAFEI_PRELUDE) return n;
+    const pos = i - HUAFEI_PRELUDE;
+    const charIdx = Math.floor((pos * HUAFEI_LYRIC.length) / sung);
+    return { ...n, lyric: HUAFEI_LYRIC[charIdx] };
+  });
+}
+
 export const EXAMPLE_SCORES: ExampleScore[] = [
   {
     id: "canghaixiaoxiao",
@@ -90,7 +110,7 @@ export const EXAMPLE_SCORES: ExampleScore[] = [
       "词：[唐]白居易；曲：黄自；徐波编配。1=C、4/4、中慢速。" +
       "数据参考杨青《古琴弹奏经典歌曲三十首》（人民音乐出版社）。" +
       "按音指法取通用指法以保证可演奏性，不保证与原谱指法完全一致。",
-    notes: [
+    notes: assignHuafeihuaLyrics([
       // ── 引子（散板记谱，按 4 拍估时）──
       // (5)
       makeNote("5", "", makeJianzi("散", "勹", "六"), "全"),
@@ -163,7 +183,7 @@ export const EXAMPLE_SCORES: ExampleScore[] = [
       makeNote("2", "·", makeJianzi("按", "勹", "四", "大", "九")),
       makeNote("3", "·", makeJianzi("散", "木", "五")),
       makeNote("1", "·", makeJianzi("散", "勹", "五"), "二分"),
-    ],
+    ]),
   },
   {
     id: "fanyinlianxi",

@@ -140,4 +140,19 @@ describe("ScoreView", () => {
       expect(barLines).toHaveLength(1);
     });
   });
+
+  describe("lyric", () => {
+    it("renders lyric text under a note", () => {
+      const notes = [makeNote({ id: "a", lyric: "花" })];
+      const { container } = render(<ScoreView notes={notes} />);
+      expect(container.textContent).toContain("花");
+    });
+
+    it("does not render lyric for a note without one", () => {
+      const notes = [makeNote({ id: "a", lyric: "花" }), makeNote({ id: "b" })];
+      const { container } = render(<ScoreView notes={notes} />);
+      const columns = container.firstElementChild!.children;
+      expect(columns[1].textContent).not.toContain("花");
+    });
+  });
 });

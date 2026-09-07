@@ -31,4 +31,14 @@ describe("example-scores", () => {
     expect(findExampleScore(first.id)).toBe(first);
     expect(findExampleScore("not-exist")).toBeUndefined();
   });
+
+  it("花非花：主歌音符带歌词且前奏无词", () => {
+    const score = findExampleScore("huafeihua");
+    expect(score).toBeTruthy();
+    const lyrics = score!.notes.map((n) => n.lyric ?? "");
+    const withLyric = lyrics.filter(Boolean).length;
+    expect(withLyric).toBeGreaterThan(20);
+    // 前 10 音（引子+前奏）为器乐，无词
+    expect(lyrics.slice(0, 10).every((l) => l === "")).toBe(true);
+  });
 });

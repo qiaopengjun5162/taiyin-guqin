@@ -75,6 +75,8 @@ export interface NoteColumn {
   jianpuDot: boolean;
   duration: Duration;
   jianzi: JianziState;
+  /** 歌词字（可选，按字对齐到音符下方；器乐段留空） */
+  lyric?: string;
 }
 
 /** 默认简谱数字列表 */

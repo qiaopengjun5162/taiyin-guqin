@@ -147,6 +147,19 @@ function NoteColumnView({
       {/* ── 节奏线区域 ── */}
       <RhythmView duration={note.duration} />
 
+      {/* ── 歌词区域（按字对齐到音符下方；播放时高亮当前字） ── */}
+      <div className="mt-0.5 min-h-[14px] flex items-center justify-center px-0.5">
+        {note.lyric && (
+          <span
+            className={`text-[11px] leading-none font-medium ${
+              isPlaying ? "text-rose-700" : "text-rose-700/70"
+            }`}
+          >
+            {note.lyric}
+          </span>
+        )}
+      </div>
+
       {/*
        * stopPropagation 防止点击删除时触发外层 div 的 onClick（即进入编辑模式）。
        * 删除和编辑是互斥操作，用户期望点 × 只删除不编辑。
