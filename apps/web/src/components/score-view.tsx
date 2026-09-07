@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { NoteColumn, Duration } from "@/lib/types";
 import { getRhythmLineCount, durationToBeats } from "@/lib/jianzi";
 import { JianziBlock } from "./jianzi-block";
@@ -125,8 +126,20 @@ function NoteColumnView({
 }) {
   const { jianzi } = note;
 
+  // 播放时把当前音符列滚动进视野，长曲不跟丢（仅在浏览器支持 scrollIntoView 时）
+  const columnRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (
+      isPlaying &&
+      typeof columnRef.current?.scrollIntoView === "function"
+    ) {
+      columnRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [isPlaying]);
+
   return (
     <div
+      ref={columnRef}
       data-note-column
       data-playing={isPlaying || undefined}
       className={`group flex flex-col items-center w-[72px] select-none cursor-pointer rounded pt-1 transition-all duration-150 hover:bg-amber-50/50 ${

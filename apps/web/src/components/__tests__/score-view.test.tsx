@@ -100,6 +100,17 @@ describe("ScoreView", () => {
       expect(column.className).toContain("bg-emerald-50");
       expect(column.className).not.toContain("ring-amber");
     });
+
+    it("scrolls the playing column into view", () => {
+      const scrollMock = vi.fn();
+      (Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
+        scrollMock;
+      const notes = [makeNote({ id: "a" }), makeNote({ id: "b" })];
+      render(<ScoreView notes={notes} playingIndex={1} />);
+      expect(scrollMock).toHaveBeenCalledTimes(1);
+      (Element.prototype as unknown as { scrollIntoView?: () => void }).scrollIntoView =
+        undefined;
+    });
   });
 
   describe("empty state", () => {
