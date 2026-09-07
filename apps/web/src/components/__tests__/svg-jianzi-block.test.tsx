@@ -3,9 +3,11 @@
  */
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { SvgJianziBlock } from "../svg-jianzi-block";
+import { SvgJianziBlock, RIGHT_ACTION_MAP } from "../svg-jianzi-block";
 import type { JianziState } from "@/lib/types";
 import { createEmptyState } from "@/lib/jianzi";
+import { DEFAULT_KEYBOARD } from "@/lib/types";
+import { SVG_PATHS } from "@/lib/svg-paths";
 
 function make(overrides: Partial<JianziState> = {}): JianziState {
   return { ...createEmptyState(), ...overrides };
@@ -89,6 +91,32 @@ describe("SvgJianziBlock", () => {
       const s = make({ toneType: "散", rightAction: action, stringNumber: "一" });
       const { container } = render(<SvgJianziBlock state={s} />);
       expect(container.firstChild, `action ${action}`).not.toBeNull();
+    }
+  });
+
+  it("renders all 4 compound right actions (抹挑/勾剔/抹勾/打摘)", () => {
+    for (const action of ["抹挑", "勾剔", "抹勾", "打摘"]) {
+      const s = make({ toneType: "散", rightAction: action, stringNumber: "一" });
+      const { container } = render(<SvgJianziBlock state={s} />);
+      expect(container.firstChild, `action ${action}`).not.toBeNull();
+    }
+  });
+
+  /*
+   * 契约测试：键盘每个可选指法都必须有 SVG 映射且字形真实存在。
+   *
+   * 这是真实踩过的坑——复合指法早期只登记在解析器里，
+   * 字体 GSUB 分支（80% 场景）能渲染所以看不出问题，
+   * 但 SVG 降级分支（泛音 / 打摘）会静默渲染空白。
+   */
+  it("every keyboard right action has an existing SVG glyph", () => {
+    for (const action of DEFAULT_KEYBOARD.rightActions) {
+      const key = RIGHT_ACTION_MAP[action];
+      expect(key, `键盘指法「${action}」缺少 SVG 映射`).toBeTruthy();
+      expect(
+        SVG_PATHS[key as string],
+        `键盘指法「${action}」映射的 SVG 字形 ${key} 不存在`,
+      ).toBeTruthy();
     }
   });
 });

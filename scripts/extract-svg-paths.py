@@ -51,6 +51,14 @@ TARGET_GLYPHS = {
     "rh_zhai": "lg_zhai",
     "rh_ti": "lg_ti",
     "rh_mo": "lgw_mo",   # 抹（木）— 从复合连字 lgw_mo 提取
+    # 复合指法 —— 双指法连字（字体 GSUB 原生支持，见 lg_* 连字规则）
+    # 注意：本脚本为一次性产物，svg-paths.ts 中 22 个标准字符已被齊伋體
+    # 古体字形替换（见 extract-ancient-paths.py），全量重生成会覆盖它们。
+    # 新增字形请增量追加，勿直接跑全量。
+    "rh_motiao": "lg_motiao",   # 抹挑
+    "rh_gouti": "lg_gouti",     # 勾剔
+    "rh_mogou": "lg_mogou",     # 抹勾
+    "rh_dazhai": "lg_dazhai",   # 打摘
     # 弦序内核
     "str_1": "md_1", "str_2": "md_2", "str_3": "md_3",
     "str_4": "md_4", "str_5": "md_5", "str_6": "md_6",

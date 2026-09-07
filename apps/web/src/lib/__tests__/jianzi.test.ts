@@ -177,6 +177,22 @@ describe("parseJianziText", () => {
   it("parses 食 finger", () => {
     expect(parseJianziText("食九勾三")!.leftFinger).toBe("食");
   });
+
+  /*
+   * 复合指法：字体 GSUB 原生支持 抹挑/勾剔/抹勾/打摘（见 lg_* 连字），
+   * 解析时必须优先匹配双字，否则会被拆成单字「抹」。
+   */
+  it("parses compound right actions", () => {
+    expect(parseJianziText("大九抹挑四")!.rightAction).toBe("抹挑");
+    expect(parseJianziText("大七勾剔三")!.rightAction).toBe("勾剔");
+    expect(parseJianziText("大十抹勾五")!.rightAction).toBe("抹勾");
+    expect(parseJianziText("大九打摘二")!.rightAction).toBe("打摘");
+  });
+
+  it("keeps single-character action intact (not swallowed by compound)", () => {
+    expect(parseJianziText("大九抹四")!.rightAction).toBe("抹");
+    expect(parseJianziText("散勾五")!.rightAction).toBe("勾");
+  });
 });
 
 describe("getRhythmLineCount", () => {

@@ -23,7 +23,13 @@ const LEFT_FINGER_MAP: Record<string, string | null> = {
   "中": "lh_zhong", "亻": null, "跪": "lh_gui",
 };
 
-const RIGHT_ACTION_MAP: Record<string, string | null> = {
+/**
+ * 右手指法 → SVG 字形键。
+ *
+ * 导出供契约测试使用：键盘新增指法时若忘记在此登记，
+ * 字体 GSUB 分支仍能渲染，但 SVG 降级分支（泛音等）会静默渲染空白。
+ */
+export const RIGHT_ACTION_MAP: Record<string, string | null> = {
   "勾": "rh_gou", "勹": "rh_gou",
   "挑": "rh_tiao", "乚": "rh_tiao",
   "抹": "rh_mo", "木": "rh_mo",
@@ -32,6 +38,11 @@ const RIGHT_ACTION_MAP: Record<string, string | null> = {
   "擘": "rh_pi", "劈": "rh_pi", "尸": "rh_pi",
   "摘": "rh_zhai", "倽": "rh_zhai",
   "剔": "rh_ti",
+  // 复合指法（双指法连字）——字体 GSUB 原生支持，SVG 降级时同样可渲染
+  "抹挑": "rh_motiao",
+  "勾剔": "rh_gouti",
+  "抹勾": "rh_mogou",
+  "打摘": "rh_dazhai",
 };
 
 const STRING_MAP: Record<string, string> = {

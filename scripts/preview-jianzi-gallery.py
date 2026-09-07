@@ -63,6 +63,9 @@ RIGHT_ACTION_MAP = {
     "抹": "rh_mo", "木": "rh_mo", "托": "rh_tuo", "乇": "rh_tuo",
     "打": "rh_da", "丁": "rh_da", "擘": "rh_pi", "劈": "rh_pi", "尸": "rh_pi",
     "摘": "rh_zhai", "倽": "rh_zhai", "剔": "rh_ti",
+    # 复合指法（双指法连字）
+    "抹挑": "rh_motiao", "勾剔": "rh_gouti",
+    "抹勾": "rh_mogou", "打摘": "rh_dazhai",
 }
 STRING_MAP = {
     "一": "str_1", "二": "str_2", "三": "str_3", "四": "str_4",
@@ -219,6 +222,14 @@ SAMPLES = [
      "state": {"toneType": "按", "leftFinger": "大", "rightAction": "打", "stringNumber": "七"}},
     {"label": "中十剔六", "note": "中指 + 剔",
      "state": {"toneType": "按", "leftFinger": "中", "hui": "十", "rightAction": "剔", "stringNumber": "六"}},
+    {"label": "大九抹挑四", "note": "复合指法·抹挑（字体 GSUB 连字）",
+     "state": {"toneType": "按", "leftFinger": "大", "hui": "九", "rightAction": "抹挑", "stringNumber": "四"}},
+    {"label": "大七勾剔三", "note": "复合指法·勾剔",
+     "state": {"toneType": "按", "leftFinger": "大", "hui": "七", "rightAction": "勾剔", "stringNumber": "三"}},
+    {"label": "泛 大十抹勾五", "note": "泛音 + 复合·触发 SVG 降级",
+     "state": {"toneType": "泛", "leftFinger": "大", "hui": "十", "rightAction": "抹勾", "stringNumber": "五"}},
+    {"label": "大九打摘二", "note": "复合指法·打摘",
+     "state": {"toneType": "按", "leftFinger": "大", "hui": "九", "rightAction": "打摘", "stringNumber": "二"}},
 ]
 
 
