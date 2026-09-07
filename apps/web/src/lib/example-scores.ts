@@ -31,12 +31,13 @@ function makeNote(
   jianpuOctave: JianpuOctave,
   jianzi: JianziState,
   duration: Duration = "四分",
+  jianpuDot: boolean = false,
 ): NoteColumn {
   return {
     id: crypto.randomUUID(),
     jianpuNumber,
     jianpuOctave,
-    jianpuDot: false,
+    jianpuDot,
     duration,
     jianzi,
   };
@@ -80,6 +81,88 @@ export const EXAMPLE_SCORES: ExampleScore[] = [
       makeNote("3", "", makeJianzi("散", "乚", "五")),
       makeNote("5", "", makeJianzi("散", "勾", "六")),
       makeNote("5", "", makeJianzi("散", "乚", "六")),
+    ],
+  },
+  {
+    id: "huafeihua",
+    title: "花非花（片段）",
+    description:
+      "词：[唐]白居易；曲：黄自；徐波编配。1=C、4/4、中慢速。" +
+      "数据参考杨青《古琴弹奏经典歌曲三十首》（人民音乐出版社）。" +
+      "按音指法取通用指法以保证可演奏性，不保证与原谱指法完全一致。",
+    notes: [
+      // ── 引子（散板记谱，按 4 拍估时）──
+      // (5)
+      makeNote("5", "", makeJianzi("散", "勹", "六"), "全"),
+
+      // ── 前奏 ──
+      // (6 5 3)
+      makeNote("6", "", makeJianzi("按", "乚", "一", "大", "七")),
+      makeNote("5", "", makeJianzi("散", "勹", "六")),
+      makeNote("3", "", makeJianzi("散", "乚", "五")),
+      // (2 5)
+      makeNote("2", "", makeJianzi("按", "勹", "四", "大", "九")),
+      makeNote("5", "", makeJianzi("散", "勹", "六")),
+      // (6)
+      makeNote("6", "", makeJianzi("散", "勹", "二")),
+      // (2 3 1 -)
+      makeNote("2", "", makeJianzi("按", "勹", "四", "大", "九")),
+      makeNote("3", "", makeJianzi("散", "乚", "五")),
+      makeNote("1", "", makeJianzi("散", "勹", "五"), "二分"),
+
+      // ── 第一段歌词：花非花 雾非雾 ──
+      // (6 5 5 3)
+      makeNote("6", "", makeJianzi("按", "乚", "一", "大", "七")),
+      makeNote("5", "", makeJianzi("散", "木", "六")),
+      makeNote("5", "", makeJianzi("散", "乚", "六")),
+      makeNote("3", "", makeJianzi("散", "木", "五")),
+      // (1 5 2 1 6 -)
+      makeNote("1", "·", makeJianzi("按", "乚", "五", "大", "九")),
+      makeNote("5", "·", makeJianzi("散", "乚", "六")),
+      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "九")),
+      makeNote("1", "·", makeJianzi("散", "勹", "五")),
+      makeNote("6", "·", makeJianzi("散", "勹", "二")),
+      makeNote("5", "", makeJianzi("散", "乚", "六"), "二分"),
+
+      // ── 第二段歌词：夜半来 天明去 ──
+      // (5 5 1 6. 5)
+      makeNote("5", "", makeJianzi("散", "乚", "六")),
+      makeNote("5", "", makeJianzi("散", "乚", "六")),
+      makeNote("1", "·", makeJianzi("按", "乚", "五", "大", "九")),
+      makeNote("6", "·", makeJianzi("散", "勹", "二"), "四分", true),
+      makeNote("5", "·", makeJianzi("散", "勹", "六")),
+      // (3 2 1 2 -)
+      makeNote("3", "", makeJianzi("散", "勹", "五")),
+      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "九")),
+      makeNote("1", "·", makeJianzi("散", "勹", "五")),
+      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "九")),
+      makeNote("1", "·", makeJianzi("散", "勹", "五"), "二分"),
+
+      // ── 第三段：来如春梦 不多时 去似朝云 无觅处 ──
+      // (2 3 5 6 5)
+      makeNote("2", "", makeJianzi("按", "勹", "四", "大", "九")),
+      makeNote("3", "", makeJianzi("散", "丁", "五")),
+      makeNote("5", "", makeJianzi("散", "乚", "六")),
+      makeNote("6", "", makeJianzi("散", "勹", "二")),
+      makeNote("5", "", makeJianzi("散", "勹", "六")),
+      // (5 2 1 6 -)
+      makeNote("5", "", makeJianzi("散", "勹", "六")),
+      makeNote("2", "·", makeJianzi("按", "勹", "四", "大", "九")),
+      makeNote("1", "·", makeJianzi("散", "勹", "五")),
+      makeNote("6", "·", makeJianzi("散", "勹", "二")),
+      makeNote("5", "·", makeJianzi("散", "勹", "六"), "二分"),
+      // (1 5 3 1 5 2)
+      makeNote("1", "·", makeJianzi("按", "乚", "五", "大", "九")),
+      makeNote("5", "·", makeJianzi("散", "乚", "六")),
+      makeNote("3", "·", makeJianzi("散", "乚", "五")),
+      makeNote("1", "·", makeJianzi("散", "勹", "五")),
+      makeNote("5", "·", makeJianzi("散", "乚", "六")),
+      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "九")),
+      // (6 2 3 1 -)
+      makeNote("6", "·", makeJianzi("散", "勹", "二")),
+      makeNote("2", "·", makeJianzi("按", "勹", "四", "大", "九")),
+      makeNote("3", "·", makeJianzi("散", "木", "五")),
+      makeNote("1", "·", makeJianzi("散", "勹", "五"), "二分"),
     ],
   },
   {
