@@ -127,7 +127,7 @@ describe("SaveLoadToolbar", () => {
     expect(onLoad).toHaveBeenCalledTimes(1);
   });
 
-  it("shows export button when hasNotes and onExportPng provided", () => {
+  it("shows PNG export button when hasNotes and onExportPng provided", () => {
     const onExportPng = vi.fn();
     const { getByText } = render(
       <SaveLoadToolbar
@@ -140,8 +140,25 @@ describe("SaveLoadToolbar", () => {
         onExportPng={onExportPng}
       />,
     );
-    fireEvent.click(getByText("导出"));
+    fireEvent.click(getByText("PNG"));
     expect(onExportPng).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows SVG export button when onExportSvg provided and calls it", () => {
+    const onExportSvg = vi.fn();
+    const { getByText } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        hasNotes
+        saveStatus="idle"
+        onExportSvg={onExportSvg}
+      />,
+    );
+    fireEvent.click(getByText("SVG"));
+    expect(onExportSvg).toHaveBeenCalledTimes(1);
   });
 
   it("hides export button when hasNotes is false", () => {
