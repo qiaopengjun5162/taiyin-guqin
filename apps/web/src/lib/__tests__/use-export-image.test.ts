@@ -4,10 +4,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useExportImage } from "../use-export-image";
+import * as htmlToImage from "html-to-image";
 
-const toPng = vi.fn();
-const toSvg = vi.fn();
-vi.mock("html-to-image", () => ({ toPng, toSvg }));
+// 自动 mock 整个模块（无工厂，避免引用 hoist 前的外部变量）；
+// 用 vi.mocked 取得带 mock 方法的强类型引用
+vi.mock("html-to-image");
+const toPng = vi.mocked(htmlToImage.toPng);
+const toSvg = vi.mocked(htmlToImage.toSvg);
 
 function setupContainer() {
   // 容器内放一个真实 DOM 节点作为截图目标
