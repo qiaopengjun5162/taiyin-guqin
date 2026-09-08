@@ -110,6 +110,33 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [undo, redo]);
 
+  /** 空格键播放/停止：焦点在输入框/按钮等交互元素上时交给原生行为，避免误触与页面滚动 */
+  useEffect(() => {
+    function handleSpace(e: KeyboardEvent) {
+      if (e.code !== "Space" && e.key !== " ") return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const tag = target.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        tag === "BUTTON" ||
+        tag === "A" ||
+        tag === "OPTION" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+      if (isPlaying) handleStop();
+      else handlePlay();
+    }
+    window.addEventListener("keydown", handleSpace);
+    return () => window.removeEventListener("keydown", handleSpace);
+  }, [isPlaying, handlePlay, handleStop]);
+
   /** 点击乐谱流音符 → 键盘回填数据 + 滚动到键盘区 */
   function handleEdit(index: number) {
     setEditingIndex(index);
@@ -367,6 +394,7 @@ export default function Home() {
           onClick={isPlaying ? handleStop : handlePlay}
           disabled={score.length === 0}
           aria-label={isPlaying ? "停止播放" : "播放"}
+          title="空格键播放 / 停止"
           className="px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isPlaying ? "停止" : "播放"}
