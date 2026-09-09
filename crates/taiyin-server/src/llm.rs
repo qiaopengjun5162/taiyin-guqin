@@ -638,7 +638,8 @@ mod tests {
 
     #[test]
     fn test_parse_recognition_empty_glyph_becomes_none() {
-        let r = parse_recognition("{\"glyph\":\"  \",\"explanation\":\"看不清\",\"confidence\":0.1}");
+        let r =
+            parse_recognition("{\"glyph\":\"  \",\"explanation\":\"看不清\",\"confidence\":0.1}");
         assert_eq!(r.glyph, None);
         assert_eq!(r.explanation.as_deref(), Some("看不清"));
     }
