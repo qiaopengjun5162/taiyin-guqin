@@ -25,7 +25,8 @@ function fileToBase64(file: File): Promise<string> {
  * 整页减字谱识别面板（P1：对标 udywang「琴与人的交互 1 号」5×7 字阵）。
  *
  * 上传一整页减字谱图片 → 后端 Claude 多模态识别为若干按网格坐标排布的字格 →
- * 前端重排为可读网格、每个减字可点听（正调空弦近似音）→ 可一键按阅读顺序导入为可演奏曲谱。
+ * 前端重排为可读网格，每格：① 可点听（按减字精确推算音高）；② 下方输入框可校正误读
+ * （实时重解析、重渲染、重推音高）；③ 按阅读顺序（同排从右到左）一键导入为可演奏曲谱。
  */
 export function JianziSheetRecognizer({
   onImport,
@@ -39,6 +40,7 @@ export function JianziSheetRecognizer({
     | null
   >(null);
   const [importedMsg, setImportedMsg] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, string>>({});
   const ctxRef = useRef<AudioContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,6 +48,7 @@ export function JianziSheetRecognizer({
     setError(null);
     setCells(null);
     setImportedMsg(null);
+    setEdits({});
     setLoading(true);
     try {
       const base64 = await fileToBase64(f);
@@ -95,8 +98,9 @@ export function JianziSheetRecognizer({
     if (!grid) return;
     const notes: NoteColumn[] = [];
     for (const c of grid.readingOrder) {
-      if (!c.glyph) continue;
-      const parsed = parseJianziText(c.glyph);
+      const glyph = edits[`${c.row}-${c.col}`] ?? c.glyph;
+      if (!glyph) continue;
+      const parsed = parseJianziText(glyph);
       if (!parsed) continue;
       const jp = jianziToJianpu(parsed);
       notes.push({
@@ -119,7 +123,7 @@ export function JianziSheetRecognizer({
   return (
     <div className="mt-3">
       <p className="mb-2 text-[10px] leading-relaxed tracking-wider text-amber-600/60">
-        整页识别：上传一张含多行多列减字的整页谱图（如字格阵列），AI 按坐标识别每个减字，可逐个点听、可一键导入曲谱。
+        整页识别：上传一张含多行多列减字的整页谱图（如字格阵列），AI 按坐标识别每个减字；每格下方可校正误读、可点听、可一键按阅读顺序导入曲谱。
       </p>
 
       <input
@@ -166,31 +170,44 @@ export function JianziSheetRecognizer({
           >
             {Array.from({ length: grid.maxRow + 1 }, (_, r) =>
               Array.from({ length: grid.maxCol + 1 }, (_, c) => {
-                const cell = grid.at[`${r}-${c}`];
-                const parsed = cell?.glyph ? parseJianziText(cell.glyph) : null;
+                const key = `${r}-${c}`;
+                const cell = grid.at[key];
+                const glyph = edits[key] ?? cell?.glyph ?? null;
+                const parsed = glyph ? parseJianziText(glyph) : null;
+                const edited = key in edits;
                 return (
                   <div
-                    key={`${r}-${c}`}
-                    title={cell?.explanation ?? cell?.glyph ?? undefined}
+                    key={key}
+                    title={cell?.explanation ?? glyph ?? undefined}
                     onClick={() => parsed && handlePlay(parsed)}
-                    className={`flex flex-col items-center justify-center gap-0.5 aspect-square rounded border border-amber-700/15 bg-[var(--paper)] ${
+                    className={`flex flex-col items-center justify-center gap-0.5 min-h-[96px] rounded border border-amber-700/15 bg-[var(--paper)] ${
                       parsed
                         ? "cursor-pointer hover:border-amber-500/50"
-                        : "opacity-40"
+                        : "opacity-60"
                     } transition-all`}
                   >
                     {parsed ? (
-                      <>
-                        <SvgJianziBlock state={parsed} fontSize="34px" />
-                        {cell?.confidence !== null && cell?.confidence !== undefined && (
-                          <span className="text-[8px] tracking-wider text-amber-700/40">
-                            {(cell.confidence! * 100).toFixed(0)}%
-                          </span>
-                        )}
-                      </>
+                      <SvgJianziBlock state={parsed} fontSize="30px" />
                     ) : (
                       <span className="text-[10px] text-amber-700/30">·</span>
                     )}
+                    {!edited && cell?.confidence !== null && cell?.confidence !== undefined && (
+                      <span className="text-[8px] tracking-wider text-amber-700/40">
+                        {(cell.confidence! * 100).toFixed(0)}%
+                      </span>
+                    )}
+                    {edited && (
+                      <span className="text-[8px] tracking-wider text-amber-300/70">已校正</span>
+                    )}
+                    <input
+                      aria-label={`校正减字 ${key}`}
+                      value={glyph ?? ""}
+                      onChange={(e) =>
+                        setEdits((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
+                      placeholder="校正"
+                      className="w-[88%] mt-0.5 px-1 py-0.5 text-[9px] text-center rounded bg-black/20 text-amber-100/90 border border-amber-700/20 focus:border-amber-500/60 outline-none placeholder:text-amber-700/30"
+                    />
                   </div>
                 );
               }),

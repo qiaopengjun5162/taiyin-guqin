@@ -72,4 +72,37 @@ describe("JianziSheetRecognizer", () => {
 
     await waitFor(() => expect(screen.getByText(/未启用 AI 识别/)).toBeTruthy());
   });
+
+  it("lets the user correct a misrecognized glyph before importing", async () => {
+    vi.mocked(recognizeJianziSheet).mockResolvedValue({
+      method: "llm",
+      cells: [
+        { row: 0, col: 0, glyph: "大九勾四", explanation: "x", confidence: 0.8 },
+        // 故意把「散勾一」误识别为「散挑一」，用户需校正
+        { row: 0, col: 1, glyph: "散挑一", explanation: "x", confidence: 0.9 },
+      ],
+    });
+
+    const onImport = vi.fn();
+    const { container } = render(<JianziSheetRecognizer onImport={onImport} />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "sheet.png", { type: "image/png" })] } });
+
+    await waitFor(() => expect(screen.getByText(/识别 2 格/)).toBeTruthy());
+
+    // 校正 col 1 的「散挑一」→「散勾一」
+    const editInputs = screen.getAllByLabelText(/校正减字/) as HTMLInputElement[];
+    // 渲染为 row-major：index 0 = (0,0)，index 1 = (0,1)
+    fireEvent.change(editInputs[1], { target: { value: "散勾一" } });
+
+    fireEvent.click(screen.getByText("导入为曲谱"));
+    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
+    const notes = onImport.mock.calls[0][0];
+    expect(notes).toHaveLength(2);
+    // 阅读顺序同排从右到左：col1(散勾一) 先，col0(大九勾四) 后
+    expect(notes[0].jianzi.rightAction).toBe("勾");
+    expect(notes[0].jianzi.stringNumber).toBe("一");
+    expect(notes[1].jianzi.rightAction).toBe("勾");
+    expect(notes[1].jianzi.stringNumber).toBe("四");
+  });
 });
