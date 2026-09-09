@@ -22,6 +22,13 @@ describe("parseJianpuString", () => {
     expect(result[2]).toEqual({ kind: "note", number: 3, octave: -1, duration: "四分", dotted: false, raw: "3," });
   });
 
+  it("parses double-octave markers (±2)", () => {
+    const result = parseJianpuString("1·· 2,,");
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ kind: "note", number: 1, octave: 2, duration: "四分", dotted: false, raw: "1··" });
+    expect(result[1]).toEqual({ kind: "note", number: 2, octave: -2, duration: "四分", dotted: false, raw: "2,," });
+  });
+
   it("treats bar lines and spaces as separators", () => {
     const result = parseJianpuString("5 6 | 1 2 | 3 5");
     expect(result).toHaveLength(6);

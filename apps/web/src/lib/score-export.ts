@@ -10,7 +10,9 @@ export interface TextExportOptions {
 
 function jianpuToAscii(number: string | null, octave: string): string {
   if (!number) return "-";
+  if (octave === "··") return `${number}··`;
   if (octave === "·") return `${number}·`;
+  if (octave === ",,") return `${number},,`;
   if (octave === ",") return `${number},`;
   return number;
 }

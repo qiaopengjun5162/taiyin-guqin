@@ -57,7 +57,15 @@ export function candidateToNoteColumn(
     id: crypto.randomUUID(),
     jianpuNumber: String(parsedNote.number) as JianpuNumber,
     jianpuOctave:
-      parsedNote.octave === 1 ? "·" : parsedNote.octave === -1 ? "," : "",
+      parsedNote.octave === 2
+        ? "··"
+        : parsedNote.octave === 1
+          ? "·"
+          : parsedNote.octave === -1
+            ? ","
+            : parsedNote.octave === -2
+              ? ",,"
+              : "",
     jianpuDot: parsedNote.dotted,
     duration: parsedNote.duration,
     jianzi,

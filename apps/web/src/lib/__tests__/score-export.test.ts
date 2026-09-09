@@ -72,6 +72,16 @@ describe("formatScoreAsText", () => {
     expect(text).toContain("5·");
     expect(text).toContain("3,");
   });
+
+  it("renders double-octave markers", () => {
+    const notes = [
+      makeNote({ jianpuNumber: "1", jianpuOctave: "··" }),
+      makeNote({ jianpuNumber: "1", jianpuOctave: ",," }),
+    ];
+    const text = formatScoreAsText(notes);
+    expect(text).toContain("1··");
+    expect(text).toContain("1,,");
+  });
 });
 
 describe("downloadTextFile", () => {

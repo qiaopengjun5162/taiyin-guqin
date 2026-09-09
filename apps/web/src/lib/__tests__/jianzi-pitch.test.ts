@@ -106,6 +106,13 @@ describe("frequencyToJianpu", () => {
   it("maps G4 to 5 (无八度)", () => {
     expect(frequencyToJianpu(392.0)).toEqual({ number: "5", octave: "" });
   });
+  it("maps C5 to 1· 与 C6 到 1·· (高两个八度范围)", () => {
+    expect(frequencyToJianpu(523.25)).toEqual({ number: "1", octave: "·" });
+    expect(frequencyToJianpu(1046.5)).toEqual({ number: "1", octave: "··" });
+  });
+  it("maps 一弦空弦 C2 到 1,, (低两个八度，不再上移)", () => {
+    expect(frequencyToJianpu(65.41)).toEqual({ number: "1", octave: ",," });
+  });
   it("returns null for non-positive frequency", () => {
     expect(frequencyToJianpu(0)).toBeNull();
     expect(frequencyToJianpu(-1)).toBeNull();
@@ -118,6 +125,17 @@ describe("jianziToJianpu", () => {
       number: "1",
       octave: ",",
     });
+  });
+  it("derives 低二八度 for 一弦空弦 C2", () => {
+    // 一弦空弦为 C2，应落于低两个八度（",,"），验证不再被上移八度
+    expect(jianziToJianpu(state({ toneType: "散", stringNumber: "一" }))).toEqual({
+      number: "1",
+      octave: ",,"
+    });
+    expect(jianziToFrequency(state({ toneType: "散", stringNumber: "一" }))).toBeCloseTo(
+      65.41,
+      1,
+    );
   });
   it("derives 简谱 for 七徽按音 (C4)", () => {
     expect(

@@ -112,14 +112,18 @@ function tokenize(input: string): string[] {
 }
 
 function parseNoteToken(token: string): ParsedJianpuNote | undefined {
-  const match = token.match(/^(\d)([·',]?)(_{0,2})(\.?)$/);
+  const match = token.match(/^(\d)([·',]{0,2})(_{0,2})(\.?)$/);
   if (!match) return undefined;
 
   const number = parseInt(match[1], 10);
   if (number < 1 || number > 7) return undefined;
 
   const octaveMarker = match[2];
-  const octave = octaveMarker === "·" || octaveMarker === "'" ? 1 : octaveMarker === "," ? -1 : 0;
+  let octave = 0;
+  for (const ch of octaveMarker) {
+    if (ch === "·" || ch === "'") octave += 1;
+    else if (ch === ",") octave -= 1;
+  }
 
   const mapped = durationFromModifiers(match[3].length, match[4] === ".");
   if (!mapped) return undefined;

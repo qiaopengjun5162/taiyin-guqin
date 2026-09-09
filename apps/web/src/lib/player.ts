@@ -28,7 +28,8 @@ export function jianpuToFrequency(
   if (!number || number === "0") return null;
   const semitone = SEMITONES[number];
   if (semitone === undefined) return null;
-  const octaveOffset = octave === "·" ? 12 : octave === "," ? -12 : 0;
+  const octaveOffset =
+    octave === "·" ? 12 : octave === "··" ? 24 : octave === "," ? -12 : octave === ",," ? -24 : 0;
   const midi = 60 + semitone + octaveOffset;
   return 440 * Math.pow(2, (midi - 69) / 12);
 }

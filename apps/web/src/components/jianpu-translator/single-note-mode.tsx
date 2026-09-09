@@ -30,7 +30,8 @@ export function SingleNoteMode({
     setLoading(true);
     setError(null);
     try {
-      const octaveValue = octave === "·" ? 1 : octave === "," ? -1 : 0;
+      const octaveValue =
+        octave === "··" ? 2 : octave === "·" ? 1 : octave === ",," ? -2 : octave === "," ? -1 : 0;
       const raw = await translateJianpuToJianzi(
         JSON.stringify({ number: parseInt(number, 10), octave: octaveValue, tuning }),
       );
@@ -54,7 +55,8 @@ export function SingleNoteMode({
       candidateToNoteColumn(candidate, {
         kind: "note",
         number: parseInt(number || "1", 10),
-        octave: octave === "·" ? 1 : octave === "," ? -1 : 0,
+        octave:
+          octave === "··" ? 2 : octave === "·" ? 1 : octave === ",," ? -2 : octave === "," ? -1 : 0,
         duration: "四分",
         dotted: false,
         raw: `${number}${octave}`,
@@ -81,8 +83,10 @@ export function SingleNoteMode({
           className="px-2 py-1 rounded border border-amber-700/20 bg-transparent text-amber-100/70"
         >
           <option value="">八度</option>
+          <option value="··">高两个八度</option>
           <option value="·">高八度</option>
           <option value=",">低八度</option>
+          <option value=",,">低两个八度</option>
         </select>
         <button
           onClick={handleTranslate}

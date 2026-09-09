@@ -32,6 +32,11 @@ describe("jianpuToFrequency", () => {
     expect(jianpuToFrequency("1", ",")).toBeCloseTo(130.81, 1);
   });
 
+  it("applies double-octave offsets (±2)", () => {
+    expect(jianpuToFrequency("1", "··")).toBeCloseTo(1046.5, 1);
+    expect(jianpuToFrequency("1", ",,")).toBeCloseTo(65.41, 1);
+  });
+
   it("returns null for rests and missing numbers", () => {
     expect(jianpuToFrequency("0", "")).toBeNull();
     expect(jianpuToFrequency(null, "")).toBeNull();

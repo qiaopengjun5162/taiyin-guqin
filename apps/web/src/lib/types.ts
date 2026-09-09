@@ -65,7 +65,7 @@ export type JianpuNumber = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7";
 export type Duration = "全" | "二分" | "四分" | "八分" | "十六分";
 
 /** 简谱八度标记：· 高八度，, 低八度 */
-export type JianpuOctave = "" | "·" | ",";
+export type JianpuOctave = "" | "·" | "··" | "," | ",,";
 
 /** 单个复合音符列 —— 简谱 + 减字 + 时值的垂直组合 */
 export interface NoteColumn {

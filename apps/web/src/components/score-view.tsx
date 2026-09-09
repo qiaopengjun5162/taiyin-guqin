@@ -221,18 +221,18 @@ function JianpuView({ note }: { note: NoteColumn }) {
 
   return (
     <div className="relative h-6 flex items-center justify-center">
-      {jianpuOctave === "·" && (
-        <span className="absolute -top-0.5 text-sm leading-none text-stone-800 font-bold">
-          ·
+      {jianpuOctave.startsWith("·") && (
+        <span className="absolute -top-1 text-sm leading-none text-stone-800 font-bold">
+          {jianpuOctave}
         </span>
       )}
       <span className="text-base font-bold leading-none text-stone-800">
         {jianpuNumber}
         {jianpuDot && <span className="ml-px">·</span>}
       </span>
-      {jianpuOctave === "," && (
-        <span className="absolute -bottom-0.5 text-sm leading-none text-stone-800 font-bold">
-          ,
+      {jianpuOctave.startsWith(",") && (
+        <span className="absolute -bottom-1 text-sm leading-none text-stone-800 font-bold">
+          {jianpuOctave}
         </span>
       )}
     </div>

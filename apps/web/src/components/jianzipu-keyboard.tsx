@@ -220,7 +220,7 @@ export function JianzipuKeyboard({
                     八度
                   </p>
                   <div className="flex gap-1.5">
-                    {(["·", "", ","] as JianpuOctave[]).map((oct) => (
+                    {(["··", "·", "", ",", ",,"] as JianpuOctave[]).map((oct) => (
                       <button
                         key={oct || "mid"}
                         onClick={() => setJianpuOctave(jianpuOctave === oct ? "" : oct)}
@@ -230,7 +230,7 @@ export function JianzipuKeyboard({
                             : "border-stone-300/50 text-stone-600 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-800"
                         }`}
                       >
-                        {oct === "·" ? "高" : oct === "," ? "低" : "中"}
+                        {oct === "··" ? "高二" : oct === "·" ? "高" : oct === "," ? "低" : oct === ",," ? "低二" : "中"}
                       </button>
                     ))}
                   </div>

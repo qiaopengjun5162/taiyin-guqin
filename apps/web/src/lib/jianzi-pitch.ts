@@ -143,16 +143,16 @@ export function jianziToFrequency(state: JianziState): number | null {
 }
 
 /**
- * 频率 → 最接近的可表示简谱唱名（±1 八度范围，以 1=C4 为基准）。
- * 古琴低音区（一～五弦空弦及低按音）超出该范围时，取误差最小的邻近唱名，
- * 故导入后极低音可能被上移八度，可在编辑器内手动修正。
+ * 频率 → 最接近的可表示简谱唱名（±2 八度范围，以 1=C4 为基准）。
+ * 古琴低音区（一～五弦空弦及低按音）现可正确落于低二八度（",,"），
+ * 不再被上移八度；高音区（高徽按音/泛音）可落于高二八度（"··"）。
  */
 export function frequencyToJianpu(
   freq: number,
 ): { number: JianpuNumber; octave: JianpuOctave } | null {
   if (!isFinite(freq) || freq <= 0) return null;
   const targetMidi = 69 + 12 * Math.log2(freq / 440);
-  const offsets: JianpuOctave[] = ["", "·", ","];
+  const offsets: JianpuOctave[] = ["", "·", "··", ",", ",,"];
   const degrees: [JianpuNumber, number][] = [
     ["1", 0], ["2", 2], ["3", 4], ["4", 5], ["5", 7], ["6", 9], ["7", 11],
   ];
@@ -161,7 +161,8 @@ export function frequencyToJianpu(
   let bestErr = Infinity;
   for (const [num, s] of degrees) {
     for (const o of offsets) {
-      const off = o === "·" ? 12 : o === "," ? -12 : 0;
+      const off =
+        o === "·" ? 12 : o === "··" ? 24 : o === "," ? -12 : o === ",," ? -24 : 0;
       const err = Math.abs(targetMidi - (60 + s + off));
       if (err < bestErr) {
         bestErr = err;
