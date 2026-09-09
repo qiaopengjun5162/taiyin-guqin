@@ -282,6 +282,183 @@ struct ApiMessage<'a> {
     content: &'a str,
 }
 
+// ── 减字谱单字图像识别（多模态） ───────────────────────────────
+//
+// 复用 Anthropic Messages API，但 content 改为多块数组：一张 base64 图片
+// + 一段文本指令。下面这组结构即对应官方多模态消息格式。
+
+#[derive(Serialize)]
+struct ImageSource<'a> {
+    #[serde(rename = "type")]
+    source_type: &'static str, // "base64"
+    media_type: &'a str,
+    data: &'a str,
+}
+
+#[derive(Serialize)]
+struct ContentBlock<'a> {
+    #[serde(rename = "type")]
+    block_type: &'static str, // "image" | "text"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<ImageSource<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct RecognizeMessage<'a> {
+    role: &'static str,
+    content: Vec<ContentBlock<'a>>,
+}
+
+#[derive(Serialize)]
+struct RecognizeApiRequest<'a> {
+    model: &'a str,
+    max_tokens: u32,
+    system: &'a str,
+    messages: Vec<RecognizeMessage<'a>>,
+}
+
+/// `POST /api/v1/jianzi/recognize` 请求体。
+#[derive(Debug, Deserialize)]
+pub struct RecognizeRequest {
+    /// 图片原始 base64（不含 data URL 前缀）。
+    pub image_base64: String,
+    /// 图片 MIME 类型，仅允许 image/jpeg|png|webp，否则路由层拒绝。
+    #[serde(default = "default_media_type")]
+    pub media_type: String,
+}
+
+fn default_media_type() -> String {
+    "image/jpeg".to_string()
+}
+
+/// `POST /api/v1/jianzi/recognize` 响应体。
+///
+/// `method` 为 `"llm"`（识别成功）或 `"unavailable"`（未配置密钥）。
+/// `glyph` 为模型给出的规范减字文本（如「散挑一」「大九勾四」），
+/// 前端再用 `parseJianziText` 解析为可视化状态；`explanation` 提供识别依据，
+/// 对应白皮书强调的"可解释性"。
+#[derive(Debug, Serialize)]
+pub struct RecognizeResponse {
+    pub method: &'static str,
+    pub glyph: Option<String>,
+    pub explanation: Option<String>,
+    pub confidence: Option<f32>,
+}
+
+/// 构造识别系统提示词。
+pub fn build_recognize_system() -> String {
+    "你是古琴减字谱识别专家。给定一张古琴减字谱单字图片，识别其减字（指法谱字）并输出规范文本。\
+     减字从左到右/上到下的组成顺序为：音色前缀（散/泛/按，按音常省略不写）、左手指法（大/名/中/食/跪，可用偏旁亻/夕）、\
+     徽位（一~十三，可带分如三分）、右手指法（勾/挑/抹/托/剔/打/摘/劈/擘，复合如勾剔/抹挑/打摘/抹勾）、弦序（一~七）。\
+     只输出 JSON，不要输出其他任何文字。"
+        .to_string()
+}
+
+/// 构造识别用户指令（含图片块，由调用方拼入）。
+pub fn build_recognize_user() -> String {
+    "请识别这张减字谱单字图片，输出 JSON：\
+     {\"glyph\": \"规范减字文本，如 散挑一 / 大九勾四\", \
+      \"explanation\": \"识别依据（哪部分对应哪个部件）\", \
+      \"confidence\": 0到1的置信度}"
+        .to_string()
+}
+
+/// 解析模型输出：容忍 ```json 代码围栏；空 glyph 归为 None。
+pub fn parse_recognition(text: &str) -> RecognizeResponse {
+    let cleaned = text
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    #[derive(Deserialize)]
+    struct RawRecognition {
+        glyph: Option<String>,
+        #[serde(default)]
+        explanation: Option<String>,
+        #[serde(default)]
+        confidence: Option<f32>,
+    }
+
+    let raw: RawRecognition = serde_json::from_str(cleaned).unwrap_or(RawRecognition {
+        glyph: None,
+        explanation: None,
+        confidence: None,
+    });
+
+    RecognizeResponse {
+        method: "llm",
+        glyph: raw.glyph.filter(|g| !g.trim().is_empty()),
+        explanation: raw.explanation,
+        confidence: raw.confidence,
+    }
+}
+
+/// 调用 Anthropic Messages API 做多模态减字谱识别；未配置密钥时返回 `Ok(None)`。
+pub async fn recognize_jianzi_with_llm(
+    config: &LlmConfig,
+    image_base64: &str,
+    media_type: &str,
+) -> anyhow::Result<Option<RecognizeResponse>> {
+    let Some(api_key) = config.api_key.as_deref() else {
+        return Ok(None);
+    };
+
+    let system = build_recognize_system();
+    let user = build_recognize_user();
+    let body = RecognizeApiRequest {
+        model: &config.model,
+        max_tokens: 512,
+        system: &system,
+        messages: vec![RecognizeMessage {
+            role: "user",
+            content: vec![
+                ContentBlock {
+                    block_type: "image",
+                    source: Some(ImageSource {
+                        source_type: "base64",
+                        media_type,
+                        data: image_base64,
+                    }),
+                    text: None,
+                },
+                ContentBlock {
+                    block_type: "text",
+                    source: None,
+                    text: Some(&user),
+                },
+            ],
+        }],
+    };
+
+    let resp = config
+        .client
+        .post(ANTHROPIC_URL)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("anthropic api {status}: {text}");
+    }
+
+    let api_resp: ApiResponse = resp.json().await?;
+    let text = api_resp
+        .content
+        .first()
+        .map(|c| c.text.as_str())
+        .unwrap_or("");
+
+    Ok(Some(parse_recognition(text)))
+}
+
 #[derive(Deserialize)]
 struct ApiResponse {
     content: Vec<ApiContent>,
@@ -430,6 +607,53 @@ mod tests {
         let notes = [JianpuNote::new(5, 0)];
         let cands = vec![vec![open(1)]];
         let result = select_with_llm(&config, &notes, Tuning::ZhengDiao, &cands)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    // ── 减字谱图像识别（多模态） ──
+
+    #[test]
+    fn test_build_recognize_prompt_covers_parts() {
+        let system = build_recognize_system();
+        let user = build_recognize_user();
+        assert!(system.contains("古琴减字谱识别专家"));
+        assert!(system.contains("徽位"));
+        assert!(system.contains("弦序"));
+        assert!(system.contains("只输出 JSON"));
+        assert!(user.contains("glyph"));
+        assert!(user.contains("confidence"));
+    }
+
+    #[test]
+    fn test_parse_recognition_strips_fences_and_parses() {
+        let text = "```json\n{\"glyph\":\"大九勾四\",\"explanation\":\"左手指大、徽位九、右手指勾、弦四\",\"confidence\":0.82}\n```";
+        let r = parse_recognition(text);
+        assert_eq!(r.method, "llm");
+        assert_eq!(r.glyph.as_deref(), Some("大九勾四"));
+        assert!(r.explanation.as_deref().unwrap().contains("徽位九"));
+        assert_eq!(r.confidence, Some(0.82));
+    }
+
+    #[test]
+    fn test_parse_recognition_empty_glyph_becomes_none() {
+        let r = parse_recognition("{\"glyph\":\"  \",\"explanation\":\"看不清\",\"confidence\":0.1}");
+        assert_eq!(r.glyph, None);
+        assert_eq!(r.explanation.as_deref(), Some("看不清"));
+    }
+
+    #[test]
+    fn test_parse_recognition_invalid_json_falls_back() {
+        let r = parse_recognition("模型拒绝回答");
+        assert_eq!(r.glyph, None);
+        assert_eq!(r.method, "llm");
+    }
+
+    #[tokio::test]
+    async fn test_recognize_without_key_returns_none() {
+        let config = LlmConfig::default();
+        let result = recognize_jianzi_with_llm(&config, "AAAA", "image/jpeg")
             .await
             .unwrap();
         assert!(result.is_none());

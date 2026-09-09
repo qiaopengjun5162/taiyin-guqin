@@ -128,3 +128,29 @@ export async function selectCandidates(
   });
   return handleResponse(res);
 }
+
+export interface RecognizeJianziResponse {
+  method: "llm" | "unavailable";
+  /** 模型给出的规范减字文本，如「散挑一」「大九勾四」；为空表示识别失败 */
+  glyph: string | null;
+  /** 识别依据（可解释性） */
+  explanation: string | null;
+  /** 0~1 置信度 */
+  confidence: number | null;
+}
+
+/**
+ * 减字谱单字图像识别：base64 图片 → Claude 多模态 → 规范减字文本。
+ * 后端未配置 ANTHROPIC_API_KEY 时返回 method="unavailable" + 503。
+ */
+export async function recognizeJianzi(
+  imageBase64: string,
+  mediaType: string,
+): Promise<RecognizeJianziResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/api/v1/jianzi/recognize`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ image_base64: imageBase64, media_type: mediaType }),
+  });
+  return handleResponse(res);
+}

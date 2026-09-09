@@ -21,7 +21,10 @@ use crate::auth::require_api_key;
 use crate::config::ServerConfig;
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
-use crate::llm::{SelectRequest, SelectResponse, heuristic_selections, select_with_llm};
+use crate::llm::{
+    RecognizeRequest, RecognizeResponse, SelectRequest, SelectResponse, heuristic_selections,
+    recognize_jianzi_with_llm, select_with_llm,
+};
 use crate::models::{CreateScoreRequest, Score, ScoreListItem, UpdateScoreRequest};
 
 const MAX_TITLE_LENGTH: usize = 200;
@@ -71,6 +74,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
 
     let translate_routes = Router::new()
         .route("/api/v1/translate/select", post(select_candidates))
+        .route("/api/v1/jianzi/recognize", post(recognize_jianzi))
         .route_layer(GovernorLayer::new(translate_limiter))
         .route_layer(from_fn_with_state(translate_key, require_api_key));
 
@@ -130,6 +134,34 @@ async fn select_candidates(
         };
 
     Ok(Json(SelectResponse { method, selections }))
+}
+
+/// 减字谱单字图像识别：图片经 Claude 多模态识别为规范减字文本；未配置密钥时返回 503。
+async fn recognize_jianzi(
+    State(state): State<AppState>,
+    Json(req): Json<RecognizeRequest>,
+) -> AppResult<Json<RecognizeResponse>> {
+    // 仅放行常见图片类型，避免向 Anthropic 透传任意 media_type。
+    let media_type = req.media_type.as_str();
+    if !matches!(media_type, "image/jpeg" | "image/png" | "image/webp") {
+        return Err(AppError::Validation(
+            "不支持的图片类型，仅支持 jpeg/png/webp".into(),
+        ));
+    }
+    if req.image_base64.is_empty() {
+        return Err(AppError::Validation("缺少图片数据".into()));
+    }
+
+    match recognize_jianzi_with_llm(&state.llm, &req.image_base64, media_type).await {
+        Ok(Some(resp)) => Ok(Json(resp)),
+        Ok(None) => Err(AppError::ServiceUnavailable(
+            "LLM 未配置（缺少 ANTHROPIC_API_KEY）".into(),
+        )),
+        Err(e) => {
+            tracing::warn!("jianzi recognition failed: {e}");
+            Err(AppError::ServiceUnavailable(format!("识别失败：{e}")))
+        }
+    }
 }
 
 async fn create_score(

@@ -15,6 +15,9 @@ pub enum AppError {
 
     #[error("{0}")]
     Validation(String),
+
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailable(String),
 }
 
 impl IntoResponse for AppError {
@@ -29,6 +32,7 @@ impl IntoResponse for AppError {
             }
             Self::NotFound => (StatusCode::NOT_FOUND, "Not found".into()),
             Self::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
+            Self::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
         };
 
         (status, Json(json!({"error": message}))).into_response()

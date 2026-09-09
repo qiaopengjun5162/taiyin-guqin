@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
+import { JianziRecognizer } from "@/components/jianzi-recognizer";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog } from "@/components/load-dialog";
 import { ExportFooter } from "@/components/export-footer";
@@ -62,6 +63,7 @@ export default function Home() {
   const [bpm, setBpm] = useState(120);
   const [linkMetronome, setLinkMetronome] = useState(true);
   const [exportWithCountIn, setExportWithCountIn] = useState(true);
+  const [showRecognizer, setShowRecognizer] = useState(false);
   const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score, bpm);
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -514,6 +516,20 @@ export default function Home() {
             defaultNote={editingIndex !== null ? score[editingIndex] : undefined}
             onAppend={handleAppend}
           />
+        </div>
+      </div>
+
+      {/* ── 减字谱单字 AI 识别（对标 udywang「琴与人的交互 1 号」） ── */}
+      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+        <div className="p-5">
+          <button
+            onClick={() => setShowRecognizer((v) => !v)}
+            className="text-[10px] tracking-wider text-amber-600/60 hover:text-amber-100/80 transition-colors"
+          >
+            {showRecognizer ? "收起 AI 识别" : "＋ 用 AI 识别减字图片"}
+          </button>
+          {showRecognizer && <JianziRecognizer />}
         </div>
       </div>
 
