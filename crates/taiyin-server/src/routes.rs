@@ -22,8 +22,8 @@ use crate::config::ServerConfig;
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
 use crate::llm::{
-    RecognizeRequest, RecognizeResponse, SelectRequest, SelectResponse, heuristic_selections,
-    recognize_jianzi_with_llm, select_with_llm,
+    RecognizeRequest, RecognizeResponse, RecognizeSheetResponse, SelectRequest, SelectResponse,
+    heuristic_selections, recognize_jianzi_with_llm, recognize_sheet_with_llm, select_with_llm,
 };
 use crate::models::{CreateScoreRequest, Score, ScoreListItem, UpdateScoreRequest};
 
@@ -75,6 +75,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
     let translate_routes = Router::new()
         .route("/api/v1/translate/select", post(select_candidates))
         .route("/api/v1/jianzi/recognize", post(recognize_jianzi))
+        .route("/api/v1/jianzi/recognize-sheet", post(recognize_sheet))
         .route_layer(GovernorLayer::new(translate_limiter))
         .route_layer(from_fn_with_state(translate_key, require_api_key));
 
@@ -159,6 +160,34 @@ async fn recognize_jianzi(
         )),
         Err(e) => {
             tracing::warn!("jianzi recognition failed: {e}");
+            Err(AppError::ServiceUnavailable(format!("识别失败：{e}")))
+        }
+    }
+}
+
+/// 整页减字谱图像识别：图片经 Claude 多模态识别为若干减字文本（按网格坐标排布）；未配置密钥时返回 503。
+async fn recognize_sheet(
+    State(state): State<AppState>,
+    Json(req): Json<RecognizeRequest>,
+) -> AppResult<Json<RecognizeSheetResponse>> {
+    // 与单字识别一致的媒体类型/空数据校验
+    let media_type = req.media_type.as_str();
+    if !matches!(media_type, "image/jpeg" | "image/png" | "image/webp") {
+        return Err(AppError::Validation(
+            "不支持的图片类型，仅支持 jpeg/png/webp".into(),
+        ));
+    }
+    if req.image_base64.is_empty() {
+        return Err(AppError::Validation("缺少图片数据".into()));
+    }
+
+    match recognize_sheet_with_llm(&state.llm, &req.image_base64, media_type).await {
+        Ok(Some(resp)) => Ok(Json(resp)),
+        Ok(None) => Err(AppError::ServiceUnavailable(
+            "LLM 未配置（缺少 ANTHROPIC_API_KEY）".into(),
+        )),
+        Err(e) => {
+            tracing::warn!("jianzi sheet recognition failed: {e}");
             Err(AppError::ServiceUnavailable(format!("识别失败：{e}")))
         }
     }

@@ -5,6 +5,7 @@ import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
 import { JianziRecognizer } from "@/components/jianzi-recognizer";
+import { JianziSheetRecognizer } from "@/components/jianzi-sheet-recognizer";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog } from "@/components/load-dialog";
 import { ExportFooter } from "@/components/export-footer";
@@ -64,6 +65,7 @@ export default function Home() {
   const [linkMetronome, setLinkMetronome] = useState(true);
   const [exportWithCountIn, setExportWithCountIn] = useState(true);
   const [showRecognizer, setShowRecognizer] = useState(false);
+  const [recognizerTab, setRecognizerTab] = useState<"single" | "sheet">("single");
   const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score, bpm);
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -519,7 +521,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── 减字谱单字 AI 识别（对标 udywang「琴与人的交互 1 号」） ── */}
+      {/* ── 减字谱 AI 识别（对标 udywang「琴与人的交互 1 号」） ── */}
       <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
@@ -529,7 +531,39 @@ export default function Home() {
           >
             {showRecognizer ? "收起 AI 识别" : "＋ 用 AI 识别减字图片"}
           </button>
-          {showRecognizer && <JianziRecognizer />}
+          {showRecognizer && (
+            <div className="mt-3">
+              <div className="mb-3 flex items-center gap-2">
+                <button
+                  onClick={() => setRecognizerTab("single")}
+                  className={`px-2 py-1 text-[10px] tracking-wider rounded border transition-all ${
+                    recognizerTab === "single"
+                      ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
+                      : "border-amber-700/30 text-stone-500 hover:text-stone-300"
+                  }`}
+                >
+                  单字
+                </button>
+                <button
+                  onClick={() => setRecognizerTab("sheet")}
+                  className={`px-2 py-1 text-[10px] tracking-wider rounded border transition-all ${
+                    recognizerTab === "sheet"
+                      ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
+                      : "border-amber-700/30 text-stone-500 hover:text-stone-300"
+                  }`}
+                >
+                  整页
+                </button>
+              </div>
+              {recognizerTab === "single" ? (
+                <JianziRecognizer />
+              ) : (
+                <JianziSheetRecognizer
+                  onImport={(notes) => commitScore((prev) => [...prev, ...notes])}
+                />
+              )}
+            </div>
+          )}
         </div>
       </div>
 

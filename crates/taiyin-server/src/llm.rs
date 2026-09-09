@@ -459,6 +459,162 @@ pub async fn recognize_jianzi_with_llm(
     Ok(Some(parse_recognition(text)))
 }
 
+/// 整页减字谱识别：单个字格的识别结果。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RecognizeSheetCell {
+    /// 行号：从上到下，首行 = 0
+    pub row: usize,
+    /// 列号：从左到右，最左列 = 0（减字谱实际阅读顺序为同排从右到左，前端导入时按此换算）
+    pub col: usize,
+    /// 规范减字文本；看不清为 null
+    pub glyph: Option<String>,
+    /// 识别依据（可解释性）
+    pub explanation: Option<String>,
+    /// 0~1 置信度
+    pub confidence: Option<f32>,
+}
+
+/// `POST /api/v1/jianzi/recognize-sheet` 响应体。
+///
+/// `method` 为 `"llm"`（识别成功）或 `"unavailable"`（未配置密钥）。
+#[derive(Debug, Serialize)]
+pub struct RecognizeSheetResponse {
+    pub method: &'static str,
+    pub cells: Vec<RecognizeSheetCell>,
+}
+
+/// 构造整页识别系统提示词。
+pub fn build_recognize_sheet_system() -> String {
+    "你是古琴减字谱识别专家。给定一张整页减字谱图片（可能含多行多列的字格），\
+     识别其中每一个减字谱字。减字谱传统上从右往左、自上而下阅读。\
+     请输出每个字格的网格坐标：row 为从上到下的行号（首行=0），col 为从左到右的列号（最左列=0）。\
+     减字组成同单字：音色前缀（散/泛/按）+ 左手指法（大/名/中/食/跪）+ 徽位（一~十三，可带分）\
+     + 右手指法（勾/挑/抹/托/剔/打/摘/劈/擘，复合如勾剔/抹挑/打摘/抹勾）+ 弦序（一~七）。\
+     只输出 JSON，不要输出其他任何文字。"
+        .to_string()
+}
+
+/// 构造整页识别用户指令（含图片块，由调用方拼入）。
+pub fn build_recognize_sheet_user() -> String {
+    "请识别这张整页减字谱，输出 JSON 数组，每个元素：\
+     {\"row\": 行号(从0起，上→下), \"col\": 列号(从0起，左→右), \
+      \"glyph\": \"规范减字文本如 散挑一/大九勾四\", \
+      \"explanation\": \"识别依据\", \"confidence\": 0到1}。\
+     若某字格看不清，glyph 设为 null。请尽量给出准确坐标。"
+        .to_string()
+}
+
+/// 解析整页识别模型输出：容忍 ```json 围栏；接受顶层数组或 `{"cells":[...]}`；
+/// 越界坐标归零、空 glyph 归为 None。
+pub fn parse_sheet_recognition(text: &str) -> RecognizeSheetResponse {
+    let cleaned = text
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    #[derive(Deserialize)]
+    struct RawCell {
+        row: Option<usize>,
+        col: Option<usize>,
+        glyph: Option<String>,
+        #[serde(default)]
+        explanation: Option<String>,
+        #[serde(default)]
+        confidence: Option<f32>,
+    }
+
+    #[derive(Deserialize)]
+    struct RawSheet {
+        cells: Option<Vec<RawCell>>,
+    }
+
+    let raw_cells: Vec<RawCell> = if let Ok(arr) = serde_json::from_str::<Vec<RawCell>>(cleaned) {
+        arr
+    } else if let Ok(obj) = serde_json::from_str::<RawSheet>(cleaned) {
+        obj.cells.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let cells = raw_cells
+        .into_iter()
+        .map(|c| RecognizeSheetCell {
+            row: c.row.unwrap_or(0),
+            col: c.col.unwrap_or(0),
+            glyph: c.glyph.filter(|g| !g.trim().is_empty()),
+            explanation: c.explanation,
+            confidence: c.confidence,
+        })
+        .collect();
+
+    RecognizeSheetResponse { method: "llm", cells }
+}
+
+/// 调用 Anthropic Messages API 做整页减字谱识别；未配置密钥时返回 `Ok(None)`。
+pub async fn recognize_sheet_with_llm(
+    config: &LlmConfig,
+    image_base64: &str,
+    media_type: &str,
+) -> anyhow::Result<Option<RecognizeSheetResponse>> {
+    let Some(api_key) = config.api_key.as_deref() else {
+        return Ok(None);
+    };
+
+    let system = build_recognize_sheet_system();
+    let user = build_recognize_sheet_user();
+    let body = RecognizeApiRequest {
+        model: &config.model,
+        // 整页可能含数十个减字，给足输出预算
+        max_tokens: 4096,
+        system: &system,
+        messages: vec![RecognizeMessage {
+            role: "user",
+            content: vec![
+                ContentBlock {
+                    block_type: "image",
+                    source: Some(ImageSource {
+                        source_type: "base64",
+                        media_type,
+                        data: image_base64,
+                    }),
+                    text: None,
+                },
+                ContentBlock {
+                    block_type: "text",
+                    source: None,
+                    text: Some(&user),
+                },
+            ],
+        }],
+    };
+
+    let resp = config
+        .client
+        .post(ANTHROPIC_URL)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("anthropic api {status}: {text}");
+    }
+
+    let api_resp: ApiResponse = resp.json().await?;
+    let text = api_resp
+        .content
+        .first()
+        .map(|c| c.text.as_str())
+        .unwrap_or("");
+
+    Ok(Some(parse_sheet_recognition(text)))
+}
+
 #[derive(Deserialize)]
 struct ApiResponse {
     content: Vec<ApiContent>,
@@ -655,6 +811,65 @@ mod tests {
     async fn test_recognize_without_key_returns_none() {
         let config = LlmConfig::default();
         let result = recognize_jianzi_with_llm(&config, "AAAA", "image/jpeg")
+            .await
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    // ── 整页减字谱图像识别（多模态） ──
+
+    #[test]
+    fn test_build_recognize_sheet_prompt_covers_grid() {
+        let system = build_recognize_sheet_system();
+        let user = build_recognize_sheet_user();
+        assert!(system.contains("整页减字谱"));
+        assert!(system.contains("从右往左"));
+        assert!(user.contains("\"row\""));
+        assert!(user.contains("\"col\""));
+        assert!(user.contains("glyph"));
+    }
+
+    #[test]
+    fn test_parse_sheet_recognition_strips_fences() {
+        let text = "```json\n[{\"row\":0,\"col\":2,\"glyph\":\"散挑一\",\"confidence\":0.9},{\"row\":0,\"col\":1,\"glyph\":\"大九勾四\"}]\n```";
+        let r = parse_sheet_recognition(text);
+        assert_eq!(r.method, "llm");
+        assert_eq!(r.cells.len(), 2);
+        assert_eq!(r.cells[0].row, 0);
+        assert_eq!(r.cells[0].col, 2);
+        assert_eq!(r.cells[0].glyph.as_deref(), Some("散挑一"));
+        assert_eq!(r.cells[1].glyph.as_deref(), Some("大九勾四"));
+    }
+
+    #[test]
+    fn test_parse_sheet_recognition_accepts_cells_object() {
+        let text = "{\"cells\":[{\"row\":1,\"col\":0,\"glyph\":null,\"explanation\":\"看不清\"}]}";
+        let r = parse_sheet_recognition(text);
+        assert_eq!(r.cells.len(), 1);
+        assert_eq!(r.cells[0].row, 1);
+        assert_eq!(r.cells[0].glyph, None);
+        assert_eq!(r.cells[0].explanation.as_deref(), Some("看不清"));
+    }
+
+    #[test]
+    fn test_parse_sheet_recognition_empty_glyph_becomes_none() {
+        let text = "[{\"row\":0,\"col\":0,\"glyph\":\"  \",\"confidence\":0.1}]";
+        let r = parse_sheet_recognition(text);
+        assert_eq!(r.cells.len(), 1);
+        assert_eq!(r.cells[0].glyph, None);
+    }
+
+    #[test]
+    fn test_parse_sheet_recognition_invalid_json_empty() {
+        let r = parse_sheet_recognition("模型拒绝回答");
+        assert_eq!(r.method, "llm");
+        assert!(r.cells.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_recognize_sheet_without_key_returns_none() {
+        let config = LlmConfig::default();
+        let result = recognize_sheet_with_llm(&config, "AAAA", "image/jpeg")
             .await
             .unwrap();
         assert!(result.is_none());

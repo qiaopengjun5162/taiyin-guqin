@@ -154,3 +154,39 @@ export async function recognizeJianzi(
   });
   return handleResponse(res);
 }
+
+/** 整页识别中的单个字格。 */
+export interface RecognizeSheetCell {
+  /** 行号：从上到下，首行 = 0 */
+  row: number;
+  /** 列号：从左到右，最左列 = 0（减字谱实际阅读为同排从右到左，前端导入时换算） */
+  col: number;
+  /** 规范减字文本；看不清为 null */
+  glyph: string | null;
+  /** 识别依据（可解释性） */
+  explanation: string | null;
+  /** 0~1 置信度 */
+  confidence: number | null;
+}
+
+export interface RecognizeSheetResponse {
+  method: "llm" | "unavailable";
+  /** 识别出的所有字格（坐标可能非连续，前端按 row/col 重排为网格） */
+  cells: RecognizeSheetCell[];
+}
+
+/**
+ * 整页减字谱图像识别：base64 图片 → Claude 多模态 → 按网格坐标排布的各减字文本。
+ * 后端未配置 ANTHROPIC_API_KEY 时返回 method="unavailable" + 503。
+ */
+export async function recognizeJianziSheet(
+  imageBase64: string,
+  mediaType: string,
+): Promise<RecognizeSheetResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/api/v1/jianzi/recognize-sheet`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ image_base64: imageBase64, media_type: mediaType }),
+  });
+  return handleResponse(res);
+}
