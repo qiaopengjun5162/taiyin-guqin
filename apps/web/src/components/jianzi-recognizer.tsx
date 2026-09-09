@@ -36,6 +36,7 @@ export function JianziRecognizer() {
   const [glyph, setGlyph] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
+  const [edit, setEdit] = useState<string | null>(null);
   const [state, setState] = useState<JianziState | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,6 +46,7 @@ export function JianziRecognizer() {
     setGlyph(null);
     setExplanation(null);
     setConfidence(null);
+    setEdit(null);
     setState(null);
     setLoading(true);
     try {
@@ -74,6 +76,12 @@ export function JianziRecognizer() {
     if (ctx.state === "suspended") void ctx.resume();
     const tone = state.toneType === "散" ? "散" : state.toneType === "泛" ? "泛" : "按";
     schedulePluck(ctx, freq, ctx.currentTime + 0.05, 1.2, tone);
+  }
+
+  // 校正：用户直接改字（含 AI 漏识补录），实时重解析并反推音高
+  function handleEdit(value: string) {
+    setEdit(value);
+    setState(value.trim() ? parseJianziText(value) : null);
   }
 
   return (
@@ -135,11 +143,25 @@ export function JianziRecognizer() {
 
           <div className="flex-1 min-w-0">
             {glyph && (
-              <p className="text-[11px] tracking-wider text-amber-100/80">
-                识别为：<span className="font-medium">{glyph}</span>
+              <label className="block mb-1 text-[10px] tracking-wider text-amber-700/50">
+                {edit === null ? "识别为（可校正）" : "减字（已校正）"}
+              </label>
+            )}
+            {glyph && (
+              <input
+                aria-label="减字校正框"
+                value={edit ?? glyph}
+                onChange={(e) => handleEdit(e.target.value)}
+                placeholder="如：大九勾四"
+                className="w-full px-2 py-1 text-[11px] tracking-wider rounded border border-amber-700/30 bg-black/20 text-amber-100/90 focus:outline-none focus:border-amber-500/50"
+              />
+            )}
+            {edit !== null && glyph != null && (
+              <p className="mt-0.5 text-[10px] tracking-wider text-amber-500/60">
+                已校正（原：{glyph}）
               </p>
             )}
-            {confidence !== null && (
+            {confidence !== null && edit === null && (
               <p className="mt-0.5 text-[10px] tracking-wider text-amber-700/50">
                 置信度：{(confidence * 100).toFixed(0)}%
               </p>

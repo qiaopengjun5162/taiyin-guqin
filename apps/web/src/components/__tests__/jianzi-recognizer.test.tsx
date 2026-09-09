@@ -38,11 +38,43 @@ describe("JianziRecognizer", () => {
     const file = new File(["x"], "jianzi.png", { type: "image/png" });
     fireEvent.change(input, { target: { files: [file] } });
 
-    await waitFor(() => expect(screen.getByText(/大九勾四/)).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        (container.querySelector('input[aria-label="减字校正框"]') as HTMLInputElement)
+          .value,
+      ).toBe("大九勾四"),
+    );
     expect(screen.getByText(/置信度/)).toBeTruthy();
     expect(screen.getByText(/左手指大/)).toBeTruthy();
     // 解析出的减字应触发可点听按钮
     expect(screen.getByText("试听")).toBeTruthy();
+  });
+
+  it("allows correcting the recognized glyph and re-parses live", async () => {
+    vi.mocked(recognizeJianzi).mockResolvedValue({
+      method: "llm",
+      glyph: "大九勾四",
+      explanation: "左手指大、徽位九、右手指勾、弦四",
+      confidence: 0.82,
+    });
+
+    const { container } = render(<JianziRecognizer />);
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["x"], "jianzi.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    const editInput = await waitFor(() =>
+      container.querySelector('input[aria-label="减字校正框"]') as HTMLInputElement,
+    );
+    expect(editInput.value).toBe("大九勾四");
+
+    fireEvent.change(editInput, { target: { value: "散勾一" } });
+    expect(editInput.value).toBe("散勾一");
+    // 校正后应标出「已校正」，且仍保留原识别结果供对照
+    expect(screen.getByText(/已校正/)).toBeTruthy();
+    expect(screen.getByText(/原：大九勾四/)).toBeTruthy();
   });
 
   it("shows message when backend AI is unavailable", async () => {
