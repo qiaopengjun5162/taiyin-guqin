@@ -6,16 +6,7 @@ import { parseJianziText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "@/components/svg-jianzi-block";
 import { recognizeJianziSheet, ApiError } from "@/lib/api";
 import { schedulePluck } from "@/lib/audio-synth";
-
-const OPEN_STRING_FREQ: Record<string, number> = {
-  "一": 65.41, // C2
-  "二": 73.42, // D2
-  "三": 87.31, // F2
-  "四": 98.0, // G2
-  "五": 110.0, // A2
-  "六": 130.81, // C3
-  "七": 146.83, // D3
-};
+import { jianziToFrequency, jianziToJianpu } from "@/lib/jianzi-pitch";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -92,8 +83,8 @@ export function JianziSheetRecognizer({
   const readableCount = cells ? cells.filter((c) => c.glyph).length : 0;
 
   function handlePlay(state: JianziState) {
-    if (!state.stringNumber) return;
-    const freq = OPEN_STRING_FREQ[state.stringNumber] ?? 110.0;
+    const freq = jianziToFrequency(state);
+    if (freq == null) return;
     const ctx = ctxRef.current ??= new AudioContext();
     if (ctx.state === "suspended") void ctx.resume();
     const tone = state.toneType === "散" ? "散" : state.toneType === "泛" ? "泛" : "按";
@@ -107,10 +98,11 @@ export function JianziSheetRecognizer({
       if (!c.glyph) continue;
       const parsed = parseJianziText(c.glyph);
       if (!parsed) continue;
+      const jp = jianziToJianpu(parsed);
       notes.push({
         id: crypto.randomUUID(),
-        jianpuNumber: null,
-        jianpuOctave: "",
+        jianpuNumber: jp?.number ?? null,
+        jianpuOctave: jp?.octave ?? "",
         jianpuDot: false,
         duration: "四分",
         jianzi: parsed,

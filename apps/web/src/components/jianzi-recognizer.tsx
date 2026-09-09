@@ -6,16 +6,7 @@ import { parseJianziText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "@/components/svg-jianzi-block";
 import { recognizeJianzi } from "@/lib/api";
 import { schedulePluck } from "@/lib/audio-synth";
-
-const OPEN_STRING_FREQ: Record<string, number> = {
-  "一": 65.41, // C2
-  "二": 73.42, // D2
-  "三": 87.31, // F2
-  "四": 98.0, // G2
-  "五": 110.0, // A2
-  "六": 130.81, // C3
-  "七": 146.83, // D3
-};
+import { jianziToFrequency, jianziToJianpu } from "@/lib/jianzi-pitch";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -76,8 +67,9 @@ export function JianziRecognizer() {
   }
 
   function handlePlay() {
-    if (!state || !state.stringNumber) return;
-    const freq = OPEN_STRING_FREQ[state.stringNumber] ?? 110.0;
+    if (!state) return;
+    const freq = jianziToFrequency(state);
+    if (freq == null) return;
     const ctx = ctxRef.current ??= new AudioContext();
     if (ctx.state === "suspended") void ctx.resume();
     const tone = state.toneType === "散" ? "散" : state.toneType === "泛" ? "泛" : "按";
@@ -132,8 +124,8 @@ export function JianziRecognizer() {
             {state && (
               <button
                 onClick={handlePlay}
-                disabled={!state.stringNumber}
-                title="试听（正调空弦近似音）"
+                disabled={jianziToFrequency(state) == null}
+                title="试听（按减字精确推算音高）"
                 className="px-2 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-400 hover:text-stone-200 hover:border-amber-600/50 disabled:opacity-40 transition-all"
               >
                 试听
@@ -157,11 +149,22 @@ export function JianziRecognizer() {
                 {explanation}
               </p>
             )}
-            {state && (
-              <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
-                试听为「{state.stringNumber}弦」空弦近似音
-              </p>
-            )}
+            {state && (() => {
+              const jp = jianziToJianpu(state);
+              const freq = jianziToFrequency(state);
+              if (!jp || freq == null) {
+                return (
+                  <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
+                    暂无法推算音高（按/泛音需给出徽位）
+                  </p>
+                );
+              }
+              return (
+                <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
+                  试听为「{state.stringNumber}弦」{state.toneType}音 · 约简谱 {jp.number}{jp.octave}（{freq.toFixed(1)}Hz）
+                </p>
+              );
+            })()}
           </div>
         </div>
       )}
