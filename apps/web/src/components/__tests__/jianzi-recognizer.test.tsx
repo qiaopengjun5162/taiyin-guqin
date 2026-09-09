@@ -10,6 +10,16 @@ import { recognizeJianzi } from "@/lib/api";
 
 beforeEach(() => {
   vi.mocked(recognizeJianzi).mockReset();
+  // jsdom 的 FileReader 不会为 File 触发 onload，mock 掉以驱动测试
+  global.FileReader = class {
+    result: string | ArrayBuffer | null = null;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    readAsDataURL() {
+      this.result = "data:image/png;base64,QUJD"; // 前缀会被 fileToBase64 截掉
+      this.onload?.();
+    }
+  } as unknown as typeof FileReader;
 });
 
 describe("JianziRecognizer", () => {
