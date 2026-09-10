@@ -549,7 +549,10 @@ pub fn parse_sheet_recognition(text: &str) -> RecognizeSheetResponse {
         })
         .collect();
 
-    RecognizeSheetResponse { method: "llm", cells }
+    RecognizeSheetResponse {
+        method: "llm",
+        cells,
+    }
 }
 
 /// 调用 Anthropic Messages API 做整页减字谱识别；未配置密钥时返回 `Ok(None)`。

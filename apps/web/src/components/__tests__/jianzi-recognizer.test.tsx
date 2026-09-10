@@ -65,15 +65,23 @@ describe("JianziRecognizer", () => {
     const file = new File(["x"], "jianzi.png", { type: "image/png" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    const editInput = await waitFor(() =>
-      container.querySelector('input[aria-label="减字校正框"]') as HTMLInputElement,
+    // waitFor 只有在回调抛错时才会重试；直接返回 null 会立刻以 null 解析，
+    // 因此这里先用 expect(...).not.toBeNull() 等待识别完成。
+    await waitFor(() =>
+      expect(
+        container.querySelector('input[aria-label="减字校正框"]'),
+      ).not.toBeNull(),
     );
+    const editInput = container.querySelector(
+      'input[aria-label="减字校正框"]',
+    ) as HTMLInputElement;
     expect(editInput.value).toBe("大九勾四");
 
     fireEvent.change(editInput, { target: { value: "散勾一" } });
     expect(editInput.value).toBe("散勾一");
-    // 校正后应标出「已校正」，且仍保留原识别结果供对照
-    expect(screen.getByText(/已校正/)).toBeTruthy();
+    // 校正后：输入框标签变为「减字（已校正）」，并保留原识别结果供对照。
+    // 注意「已校正」同时出现在标签与说明文案里，故用更精确的文案断言。
+    expect(screen.getByText("减字（已校正）")).toBeTruthy();
     expect(screen.getByText(/原：大九勾四/)).toBeTruthy();
   });
 
