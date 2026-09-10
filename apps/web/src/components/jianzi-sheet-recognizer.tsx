@@ -27,6 +27,9 @@ function fileToBase64(file: File): Promise<string> {
  * 上传一整页减字谱图片 → 后端 Claude 多模态识别为若干按网格坐标排布的字格 →
  * 前端重排为可读网格，每格：① 可点听（按减字精确推算音高）；② 下方输入框可校正误读
  * （实时重解析、重渲染、重推音高）；③ 按阅读顺序（同排从右到左）一键导入为可演奏曲谱。
+ *
+ * 导入诊断：把每格按「有效减字」分为 可解析 / 有字但解析失败（标「无法解析」，需校正）/
+ * 无字 三类，导入后如实报告成功与跳过数量，避免「识别到了但解析不出来」被静默丢弃。
  */
 export function JianziSheetRecognizer({
   onImport,
@@ -83,7 +86,28 @@ export function JianziSheetRecognizer({
     return { maxRow, maxCol, at, readingOrder };
   }, [cells]);
 
-  const readableCount = cells ? cells.filter((c) => c.glyph).length : 0;
+  /**
+   * 导入诊断：按「有效减字（edits 覆盖识别结果）」把每格分为
+   * ok（可解析）/ unparsed（有字但解析失败，需校正）/ empty（无字），
+   * 让「识别到了但解析不出来」不再与「没识别到」混为一谈、也不再静默丢弃。
+   */
+  const stats = useMemo(() => {
+    if (!grid) return null;
+    let ok = 0;
+    let empty = 0;
+    const unparsedSet = new Set<string>();
+    for (const c of grid.readingOrder) {
+      const key = `${c.row}-${c.col}`;
+      const glyph = (edits[key] ?? c.glyph)?.trim();
+      if (!glyph) {
+        empty += 1;
+        continue;
+      }
+      if (parseJianziText(glyph)) ok += 1;
+      else unparsedSet.add(key);
+    }
+    return { ok, empty, unparsed: unparsedSet.size, unparsedSet };
+  }, [grid, edits]);
 
   function handlePlay(state: JianziState) {
     const freq = jianziToFrequency(state);
@@ -97,11 +121,19 @@ export function JianziSheetRecognizer({
   function handleImport() {
     if (!grid) return;
     const notes: NoteColumn[] = [];
+    let empty = 0;
+    let unparsed = 0;
     for (const c of grid.readingOrder) {
-      const glyph = edits[`${c.row}-${c.col}`] ?? c.glyph;
-      if (!glyph) continue;
+      const glyph = (edits[`${c.row}-${c.col}`] ?? c.glyph)?.trim();
+      if (!glyph) {
+        empty += 1;
+        continue;
+      }
       const parsed = parseJianziText(glyph);
-      if (!parsed) continue;
+      if (!parsed) {
+        unparsed += 1;
+        continue;
+      }
       const jp = jianziToJianpu(parsed);
       notes.push({
         id: crypto.randomUUID(),
@@ -117,7 +149,12 @@ export function JianziSheetRecognizer({
       return;
     }
     onImport(notes);
-    setImportedMsg(`已按阅读顺序导入 ${notes.length} 个减字到曲谱`);
+    const skipped = empty + unparsed;
+    setImportedMsg(
+      skipped === 0
+        ? `已按阅读顺序导入 ${notes.length} 个减字到曲谱`
+        : `已导入 ${notes.length} 个减字；跳过 ${skipped} 个（未识别 ${empty}、无法解析 ${unparsed}），可在对应格子校正后重新导入`,
+    );
   }
 
   return (
@@ -173,21 +210,29 @@ export function JianziSheetRecognizer({
                 const key = `${r}-${c}`;
                 const cell = grid.at[key];
                 const glyph = edits[key] ?? cell?.glyph ?? null;
-                const parsed = glyph ? parseJianziText(glyph) : null;
+                const parsed = glyph?.trim() ? parseJianziText(glyph.trim()) : null;
                 const edited = key in edits;
+                // 有字但解析不出来 ≠ 没识别到，需单独标记引导校正
+                const needsFix = !!glyph?.trim() && !parsed;
                 return (
                   <div
                     key={key}
                     title={cell?.explanation ?? glyph ?? undefined}
                     onClick={() => parsed && handlePlay(parsed)}
-                    className={`flex flex-col items-center justify-center gap-0.5 min-h-[96px] rounded border border-amber-700/15 bg-[var(--paper)] ${
+                    className={`flex flex-col items-center justify-center gap-0.5 min-h-[96px] rounded border bg-[var(--paper)] ${
                       parsed
-                        ? "cursor-pointer hover:border-amber-500/50"
-                        : "opacity-60"
+                        ? "border-amber-700/15 cursor-pointer hover:border-amber-500/50"
+                        : needsFix
+                          ? "border-amber-500/70 bg-amber-900/20"
+                          : "border-amber-700/15 opacity-60"
                     } transition-all`}
                   >
                     {parsed ? (
                       <SvgJianziBlock state={parsed} fontSize="30px" />
+                    ) : needsFix ? (
+                      <span className="text-[9px] tracking-wider text-amber-300/80">
+                        无法解析
+                      </span>
                     ) : (
                       <span className="text-[10px] text-amber-700/30">·</span>
                     )}
@@ -216,11 +261,15 @@ export function JianziSheetRecognizer({
 
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <p className="text-[10px] tracking-wider text-amber-700/50">
-              识别 {cells!.length} 格 · 可读 {readableCount} 字
+              识别 {cells!.length} 格 · 可导入 {stats?.ok ?? 0} 字
+              {(stats?.unparsed ?? 0) > 0 && (
+                <span className="text-amber-300/80"> · 待校正 {stats!.unparsed} 字</span>
+              )}
+              {(stats?.empty ?? 0) > 0 && ` · 空格 ${stats!.empty}`}
             </p>
             <button
               onClick={handleImport}
-              disabled={readableCount === 0}
+              disabled={(stats?.ok ?? 0) === 0}
               className="px-3 py-1.5 min-h-[38px] text-[10px] tracking-wider rounded border border-amber-600/40 text-amber-100/80 hover:bg-amber-800/30 hover:border-amber-500/60 disabled:opacity-30 transition-all"
             >
               导入为曲谱
