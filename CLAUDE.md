@@ -331,3 +331,4 @@ export https_proxy=http://127.0.0.1:7890
 - 任何端点改动不得把服务端密钥（`ANTHROPIC_API_KEY` 等）暴露给前端；前端只可持有 `TRANSLATE_API_KEY` 这类非机密的闸门 key（详见「服务端安全配置」）。
 - CORS 仅放行 `ALLOWED_ORIGINS` 已知来源，禁止 `CorsLayer::permissive()`。
 - 昂贵 LLM 端点必须叠加 per-IP 限流（`SmartIpKeyExtractor`）。
+- 协作分工与快速确认协议见 [VERIFICATION.md](./VERIFICATION.md)（人 / Claude 职责双栏 + 验证机制清单 + 反模式）。
