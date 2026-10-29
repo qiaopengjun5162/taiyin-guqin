@@ -73,7 +73,10 @@ jobs:
         run: cargo nextest run --all-features
 
   coverage:
-    # 非阻塞：覆盖率仅作可视化与基线追踪，任何步骤失败都不应让整体 CI 变红。
+    # 覆盖率闸门：低于阈值直接让 CI 变红，防止「加了代码没加测试」悄悄腐烂。
+    # 阈值 = 2026-10-29 实测 --lib 基线（行 74.7%）略降，只用于防退步，不追求刷高。
+    # 口径说明：--lib 不含 tests/ 下的集成测试，故 routes.rs 在此口径下为 0%；
+    # 集成测试由 rust job 的 nextest 守着，别用这里的数字误判整体质量。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,24 +85,18 @@ jobs:
           submodules: recursive
       - name: Install Rust
         run: rustup toolchain install stable --component llvm-tools-preview
-        continue-on-error: true
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-        continue-on-error: true
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-        continue-on-error: true
-      - name: Generate coverage (lcov)
-        # 仅 --lib（不依赖数据库）；软目标 taiyin-core 行覆盖 ≥ 90%（2026-08-02 实测 96.8%）。
-        run: cargo llvm-cov nextest --lib --lcov --output-path lcov.info
-        continue-on-error: true
+      - name: "Generate coverage (gate: lines >= 70%)"
+        run: cargo llvm-cov nextest --lib --fail-under-lines 70 --lcov --output-path lcov.info
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-lcov
           path: lcov.info
-        continue-on-error: true
 
   web:
     runs-on: ubuntu-latest
@@ -146,6 +143,6 @@ jobs:
       - name: Type check
         run: pnpm --filter web exec tsc --noEmit
       - name: Test
-        run: pnpm --filter web test
+        run: pnpm --filter web exec vitest run --coverage
       - name: Build
         run: pnpm --filter web build

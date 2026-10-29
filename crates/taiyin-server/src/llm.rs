@@ -1085,4 +1085,252 @@ mod tests {
             .unwrap();
         assert!(result.is_none());
     }
+
+    // ------------------------------------------------------------------
+    // OpenAI 兼容路径：用本地假端点验证「真实发出什么、收到什么」。
+    // 这些分支（thinking 重试 / 空内容报错 / 非 2xx）坏了会静默失败，
+    // 只测 parse_* 是测不到的。
+    // ------------------------------------------------------------------
+
+    /// 在本地起一个按脚本依次应答的假 chat/completions 端点。
+    ///
+    /// 返回 (完整 URL, 捕获到的原始请求列表)。捕获的是「头 + 体」的原始文本，
+    /// 便于同时断言鉴权头与 JSON 载荷。
+    fn spawn_mock_openai(
+        responses: Vec<(u16, String)>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::{Arc, Mutex};
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
+        let addr = listener.local_addr().expect("local addr");
+        let url = format!("http://{addr}/v1/chat/completions");
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&captured);
+
+        std::thread::spawn(move || {
+            for (status, body) in responses {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                // 读到请求体完整为止（按 Content-Length）。
+                let mut raw = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let n = stream.read(&mut chunk).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    raw.extend_from_slice(&chunk[..n]);
+                    let Some(head_end) = raw.windows(4).position(|w| w == b"\r\n\r\n") else {
+                        continue;
+                    };
+                    let head = String::from_utf8_lossy(&raw[..head_end]).to_lowercase();
+                    let len = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if raw.len() >= head_end + 4 + len {
+                        break;
+                    }
+                }
+                sink.lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&raw).to_string());
+
+                let response = format!(
+                    "HTTP/1.1 {status} MOCK\r\nContent-Type: application/json\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        (url, captured)
+    }
+
+    /// OpenAI 风格的成功响应体；`content` 是模型回的文本（通常是 JSON 字符串）。
+    fn mock_chat_body(content: &str, finish_reason: &str) -> String {
+        serde_json::json!({
+            "choices": [{
+                "message": { "content": content },
+                "finish_reason": finish_reason
+            }]
+        })
+        .to_string()
+    }
+
+    /// 取出请求体（去掉 HTTP 头）并解析为 JSON。
+    fn captured_body(raw: &str) -> serde_json::Value {
+        let idx = raw.find("\r\n\r\n").expect("request should have headers");
+        serde_json::from_str(&raw[idx + 4..]).expect("request body should be JSON")
+    }
+
+    fn openai_config(url: &str) -> LlmConfig {
+        LlmConfig {
+            api_style: ApiStyle::OpenAi,
+            openai_api_key: Some("test-key".into()),
+            openai_base_url: url.into(),
+            openai_model: "test-vision-model".into(),
+            openai_disable_thinking: true,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_openai_recognize_sends_image_model_and_bearer_auth() {
+        let glyph_json = r#"{"glyph":"散挑一","explanation":"左散右挑下弦一","confidence":0.9}"#;
+        let (url, captured) = spawn_mock_openai(vec![(200, mock_chat_body(glyph_json, "stop"))]);
+
+        let result = recognize_jianzi_with_llm(&openai_config(&url), "QUJD", "image/png")
+            .await
+            .unwrap()
+            .expect("should return a recognition");
+
+        // 1) 识别结果被正确解析
+        assert_eq!(result.glyph.as_deref(), Some("散挑一"));
+        assert_eq!(result.method, "llm");
+
+        // 2) 请求真的带上了 Bearer 鉴权
+        let raw = captured.lock().unwrap()[0].clone();
+        let lower = raw.to_lowercase();
+        assert!(
+            lower.contains("authorization: bearer test-key"),
+            "缺少 Bearer 鉴权头: {}",
+            &raw[..raw.len().min(300)]
+        );
+
+        // 3) 载荷形状：模型名 / 图文两块 / data URL / 关思考 / 输出预算
+        let body = captured_body(&raw);
+        assert_eq!(body["model"], "test-vision-model");
+        assert_eq!(body["max_tokens"], 2048);
+        assert_eq!(body["thinking"]["type"], "disabled");
+        let content = &body["messages"][1]["content"];
+        assert_eq!(content[0]["type"], "image_url");
+        assert_eq!(content[0]["image_url"]["url"], "data:image/png;base64,QUJD");
+        assert_eq!(content[1]["type"], "text");
+    }
+
+    #[tokio::test]
+    async fn test_openai_retries_without_thinking_when_gateway_rejects_it() {
+        let glyph_json = r#"{"glyph":"大九勾四","confidence":0.8}"#;
+        let reject = r#"{"error":{"message":"Unrecognized field: thinking"}}"#.to_string();
+        let (url, captured) = spawn_mock_openai(vec![
+            (400, reject),
+            (200, mock_chat_body(glyph_json, "stop")),
+        ]);
+
+        let result = recognize_jianzi_with_llm(&openai_config(&url), "QUJD", "image/png")
+            .await
+            .unwrap()
+            .expect("retry should succeed");
+
+        assert_eq!(result.glyph.as_deref(), Some("大九勾四"));
+        let requests = captured.lock().unwrap();
+        assert_eq!(requests.len(), 2, "400 提到 thinking 时应重试一次");
+        let first = captured_body(&requests[0]);
+        let second = captured_body(&requests[1]);
+        assert_eq!(first["thinking"]["type"], "disabled");
+        assert!(
+            second.get("thinking").is_none(),
+            "重试请求必须去掉 thinking 字段"
+        );
+        // 重试不能丢掉原请求的关键内容
+        assert_eq!(second["model"], "test-vision-model");
+    }
+
+    #[tokio::test]
+    async fn test_openai_does_not_retry_on_unrelated_400() {
+        let (url, captured) = spawn_mock_openai(vec![(
+            400,
+            r#"{"error":{"message":"context length exceeded"}}"#.to_string(),
+        )]);
+
+        let err = recognize_jianzi_with_llm(&openai_config(&url), "QUJD", "image/png")
+            .await
+            .expect_err("无关的 400 应直接失败");
+
+        assert!(err.to_string().contains("400"), "错误应包含状态码: {err}");
+        assert_eq!(
+            captured.lock().unwrap().len(),
+            1,
+            "只在 thinking 相关 400 时才重试，不能盲目重试"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_openai_empty_content_is_an_error_not_a_fake_success() {
+        // 复现真实踩坑：推理型模型把预算烧在 thinking 上，content 为空、
+        // finish_reason=length。这里必须报错，而不是返回 glyph:null 的 200。
+        let (url, _captured) = spawn_mock_openai(vec![(200, mock_chat_body("", "length"))]);
+
+        let err = recognize_jianzi_with_llm(&openai_config(&url), "QUJD", "image/png")
+            .await
+            .expect_err("空内容必须是错误");
+
+        let msg = err.to_string();
+        assert!(msg.contains("空内容"), "错误应说明空内容: {msg}");
+        assert!(msg.contains("length"), "错误应带上 finish_reason: {msg}");
+    }
+
+    #[tokio::test]
+    async fn test_openai_non_2xx_surfaces_status_and_body() {
+        let (url, _captured) = spawn_mock_openai(vec![(500, "upstream boom".to_string())]);
+
+        let err = recognize_jianzi_with_llm(&openai_config(&url), "QUJD", "image/png")
+            .await
+            .expect_err("500 应失败");
+
+        let msg = err.to_string();
+        assert!(msg.contains("500"), "应包含状态码: {msg}");
+        assert!(msg.contains("upstream boom"), "应带上上游响应体: {msg}");
+    }
+
+    #[tokio::test]
+    async fn test_openai_disabled_thinking_omits_field() {
+        let glyph_json = r#"{"glyph":"挑七","confidence":0.9}"#;
+        let (url, captured) = spawn_mock_openai(vec![(200, mock_chat_body(glyph_json, "stop"))]);
+        let mut config = openai_config(&url);
+        config.openai_disable_thinking = false;
+
+        recognize_jianzi_with_llm(&config, "QUJD", "image/png")
+            .await
+            .unwrap();
+
+        let body = captured_body(&captured.lock().unwrap()[0]);
+        assert!(
+            body.get("thinking").is_none(),
+            "OPENAI_DISABLE_THINKING=false 时不应发送 thinking 字段"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_openai_sheet_recognition_uses_bigger_budget_and_keeps_grid() {
+        let cells = serde_json::json!({
+            "cells": [
+                {"row": 0, "col": 0, "glyph": "散挑一", "explanation": "散音挑一弦", "confidence": 0.9},
+                {"row": 0, "col": 1, "glyph": null, "explanation": "看不清", "confidence": 0.2}
+            ]
+        })
+        .to_string();
+        let (url, captured) = spawn_mock_openai(vec![(200, mock_chat_body(&cells, "stop"))]);
+
+        let result = recognize_sheet_with_llm(&openai_config(&url), "QUJD", "image/png")
+            .await
+            .unwrap()
+            .expect("should return a sheet");
+
+        assert_eq!(result.cells.len(), 2);
+        assert_eq!(result.cells[0].glyph.as_deref(), Some("散挑一"));
+        assert_eq!((result.cells[1].row, result.cells[1].col), (0, 1));
+        assert_eq!(result.cells[1].glyph, None);
+
+        // 整页输出预算必须远大于单字（否则几十个格子会被截断）
+        let body = captured_body(&captured.lock().unwrap()[0]);
+        assert_eq!(body["max_tokens"], 4096);
+    }
 }

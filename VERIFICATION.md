@@ -43,10 +43,35 @@
 |------|------|------------------|
 | 格式门 | `cargo fmt` 检查（CI + pre-commit） | `LlmConfig` base_url 单行格式不符 rustfmt |
 | 安全门 | `cargo audit` + `.cargo/audit.toml` 豁免政策（ADR-0003） | 2026-10-28 新披露的 11 个 advisory（quinn-proto / rustls / tokio 链） |
-| 构建 / 测试门 | `cargo nextest` + 前端 `vitest`（jianzi-pitch / player / parser / recognizer 等） | `waitFor` 不重试、`getByText` 多命中这类交互 bug |
+| 构建 / 测试门 | `cargo nextest`（69 条）+ 前端 `vitest`（207 条 / 21 文件） | `waitFor` 不重试、`getByText` 多命中这类交互 bug |
+| 覆盖率门 | Rust `cargo llvm-cov --fail-under-lines 70`；前端 `vitest --coverage` 阈值（行 68 / 分支 58 / 函数 55 / 语句 66） | 2026-10-29 之前这两个数字**只上传 artifact、全程 `continue-on-error`**，等于没设防 |
 | 部署门 | 前端静态导出 → GitHub Pages 构建 | 保证线上产物可构建 |
 | 流程门 | `build` + `Deploy` 两个 workflow **都绿** | 防止「只推了就说 CI 兜底」的假确认 |
 | 运行探针（手动） | `/health`、`/translate/select` 启发式兜底、曲谱 CRUD 冒烟 | 确认连库、持久化、端到端真通 |
+
+### 3.1 覆盖率基线（2026-10-29 实测，可复现）
+
+| 范围 | 行 | 分支 | 函数 | 语句 | 复现命令 |
+|------|----|------|------|------|----------|
+| Rust `--lib`（CI 闸门口径） | 74.74% | – | 78.51% | – | `cargo llvm-cov nextest --lib --summary-only` |
+| Rust `--workspace`（含 tests/ 集成测试） | 78.76% | – | 84.40% | – | `cargo llvm-cov nextest --workspace --summary-only` |
+| 前端 `src/{lib,components,app}` | 71.94% | 62.58% | 62.62% | 69.32% | `pnpm --filter web exec vitest run --coverage` |
+
+单文件要点（同为 2026-10-29 实测，`--workspace` 口径）：
+`taiyin-core/jianpu.rs` 98.23%、`taiyin-core/lib.rs` 94.68%、`auth.rs` 100%、
+`llm.rs` 78.05%（补测前 59.80%）、`routes.rs` 63.18%、`config.rs` 58.24%。
+
+**这两个数字必须能自己跑出来，不能靠人转述。** 阈值设在基线略下方，用途是「防退步」而非「刷高分」：加了业务代码却没加测试，CI 会红，逼迫补测或在 PR 里显式说明为何调整阈值。
+
+**已知盲区（按优先级，不是「以后再说」而是「知道自己在裸奔」）**：
+
+本轮补测后 `lib/api.ts` 从 **0% → 100% 行 / 88.88% 分支**（14 条用例：各端点 URL/方法/载荷、`ApiError` 状态与消息映射、错误体非 JSON 的 `statusText` 兜底、503 语义保留、`x-api-key` 有无两态、10s 超时中止）。这些用例都用变异验证确认过「改坏会红」。
+
+- `components/jianzipu-keyboard.tsx`（525 行）**24.1% 行** —— 主输入键盘。页面冒烟测试只覆盖到「渲染 + 默认状态」，成谱的按键交互（选弦/选指法/徽位/复合指法）仍未自动化验证。
+- `lib/audio-export.ts`（130 行）**0%** —— WAV 导出整条链路只被手动点过；主页面测试里该模块被替身。
+- `app/page.tsx`（576 行）**27.1% 行** —— 从 0% 提到 27%，靠 4 条冒烟（渲染 / 载入示例 / 导出选项显隐 / 播放初态）。播放、节拍器联动、保存加载、PNG/SVG 导出等交互仍未测。
+- `lib/audio-synth.ts` **51.1%**、`lib/pinyin-dict.ts` **18.2%**。
+- Rust `routes.rs` 在 `--lib` 口径下是 0%（集成测试不在 lib target），别拿 CI 那个数字误判它没测；`--workspace` 口径下是 63.18%。
 
 **缺失的闸（已搭骨架，待放量）**：识别准确率 eval harness。骨架已落地在 `tools/eval-jianzi/`（标注格式 + `score.py` 计分 + HTML 报告模板 + 离线自测），指标含 `exact_match` / `detection_rate` / `mean_cer` / `component P·R·F1` / 置信度分桶准确率。现在：**离线评分与 `--self-check` 已可跑**；在线放量仍卡在 `ANTHROPIC_API_KEY`——一旦到位，填真实图片 + 真值即可跑，让 AI 识别进入「跑 eval → 过了就推」的节奏。详见该目录 `README.md`。
 
@@ -57,10 +82,13 @@
 3. **「过了」的定义**：相关信号全绿 **且** diff 仅含预期改动。
 4. **红灯归因三分类**：eval / env / model（代码），再决定动哪、是否需人裁定豁免。
 5. **eval 全过即收口**：不无限小步迭代（「一直在路上」）。
+6. **新测试必须亲手看它红一次**（变异验证）：写完断言后，故意把被测逻辑改坏（`if (!res.ok)` → `if (false)`、去掉 `content.trim().is_empty()` 守卫），确认测试**确实变红**，再改回来。理由很朴素——**一条从没红过的测试，等于没测**；绿得心安理得，往往是因为断言根本没碰到代码。这步 30 秒，比事后写复盘便宜得多。
 
 ## 5. 反模式（Anti-patterns）
 
 - **假确认**：以为 push 了就 CI 绿（必须看 run 结论）。
+- **假闸门**：步骤挂着 `continue-on-error: true`，看着有 job、实际永不失败（本项目 coverage job 曾如此）。
+- **从没红过的测试**：断言写得很漂亮，改坏实现它照样绿——说明没测到真东西。
 - **橡皮章豁免**：`ignore all` 让 CI 绿但掩风险（须按 ADR-0003 逐项裁定）。
 - **跳过规划 / 设计思考**：因 Agent 能写代码就不在架构与边界上认真判断。
 - **把「快速确认」当成「不确认」**：信号没看就推进。
