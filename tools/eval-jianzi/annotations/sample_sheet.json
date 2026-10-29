@@ -1,0 +1,23 @@
+{
+  "mode": "sheet",
+  "items": [
+    {
+      "id": "p1",
+      "image": "images/page1.png",
+      "media_type": "image/png",
+      "grid": [
+        {"row": 0, "col": 0, "ground_truth_glyph": "散挑一"},
+        {"row": 0, "col": 1, "ground_truth_glyph": "大九勾四"},
+        {"row": 1, "col": 0, "ground_truth_glyph": "七徽挑六"},
+        {"row": 1, "col": 1, "ground_truth_glyph": "泛起三"}
+      ],
+      "predicted_cells": [
+        {"row": 0, "col": 0, "glyph": "散挑一", "confidence": 0.91},
+        {"row": 0, "col": 1, "glyph": "大九勾四", "confidence": 0.88},
+        {"row": 1, "col": 0, "glyph": "七徽挑六", "confidence": 0.62},
+        {"row": 1, "col": 1, "glyph": "泛七三", "confidence": 0.40}
+      ],
+      "note": "整页示例：前两格正确，后两格有误（其一低置信度）"
+    }
+  ]
+}

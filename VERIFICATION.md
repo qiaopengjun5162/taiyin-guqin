@@ -48,7 +48,7 @@
 | 流程门 | `build` + `Deploy` 两个 workflow **都绿** | 防止「只推了就说 CI 兜底」的假确认 |
 | 运行探针（手动） | `/health`、`/translate/select` 启发式兜底、曲谱 CRUD 冒烟 | 确认连库、持久化、端到端真通 |
 
-**缺失的闸**：识别准确率 eval harness（带标注图片 → precision / recall）。这是「快速确认 AI 识别质量」的前置条件，目前仍靠人工抽测——一旦 `ANTHROPIC_API_KEY` 到位即应补建。
+**缺失的闸（已搭骨架，待放量）**：识别准确率 eval harness。骨架已落地在 `tools/eval-jianzi/`（标注格式 + `score.py` 计分 + HTML 报告模板 + 离线自测），指标含 `exact_match` / `detection_rate` / `mean_cer` / `component P·R·F1` / 置信度分桶准确率。现在：**离线评分与 `--self-check` 已可跑**；在线放量仍卡在 `ANTHROPIC_API_KEY`——一旦到位，填真实图片 + 真值即可跑，让 AI 识别进入「跑 eval → 过了就推」的节奏。详见该目录 `README.md`。
 
 ## 4. 快速确认协议（Quick-Confirm Protocol）
 

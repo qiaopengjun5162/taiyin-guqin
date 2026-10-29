@@ -1,0 +1,37 @@
+{
+  "mode": "single",
+  "items": [
+    {
+      "id": "s1",
+      "image": "images/大九勾四.png",
+      "media_type": "image/png",
+      "ground_truth_glyph": "大九勾四",
+      "predicted": "大九勾四",
+      "note": "完全正确"
+    },
+    {
+      "id": "s2",
+      "image": "images/散挑一.png",
+      "media_type": "image/png",
+      "ground_truth_glyph": "散挑一",
+      "predicted": "散桃一",
+      "note": "右手指法 挑→桃 形近误识"
+    },
+    {
+      "id": "s3",
+      "image": "images/七徽挑六.png",
+      "media_type": "image/png",
+      "ground_truth_glyph": "七徽挑六",
+      "predicted": null,
+      "note": "模型放弃（置信度低返回 null）"
+    },
+    {
+      "id": "s4",
+      "image": "images/泛起三.png",
+      "media_type": "image/png",
+      "ground_truth_glyph": "泛起三",
+      "predicted": "泛七三",
+      "note": "徽位 起→七 误识 + 缺右手指法"
+    }
+  ]
+}

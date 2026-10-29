@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>减字谱识别评估 {{RUN_ID}}</title>
+<style>
+  body { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; margin: 2rem; color: #222; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; margin-top: .5rem; font-size: .9rem; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+  th { background: #f3f3f3; }
+  .ok { color: #0a7d28; }
+  .bad { color: #c0392b; }
+  code { background: #f3f3f3; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <h1>减字谱识别准确率评估</h1>
+  <p>运行ID: <code>{{RUN_ID}}</code> · 模式: <code>{{MODE}}</code> · 后端: <code>{{BACKEND}}</code> · 时间: {{TIMESTAMP}}</p>
+
+  <h2>汇总指标</h2>
+  {{SUMMARY_TABLE}}
+
+  <h2>置信度分桶准确率（如响应含 confidence）</h2>
+  {{CONF_BUCKETS}}
+
+  <h2>逐样本明细</h2>
+  {{CELL_ROWS}}
+
+  <p style="margin-top:2rem;color:#888;font-size:.8rem">
+    指标定义见 <code>score.py</code> 顶部文档。exact_match=单元格规范减字完全相等；
+    CER=编辑距离/真值长度；component F1=减字字符多重集的 token 级 F1；
+    detection_rate=模型给出非空 glyph 的比例。
+  </p>
+</body>
+</html>
