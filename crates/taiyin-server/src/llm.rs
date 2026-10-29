@@ -11,6 +11,19 @@ use taiyin_core::{GuqinNote, LeftFinger, NoteType, RightAction};
 const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
 
+/// LLM 后端风格。
+///
+/// - `Anthropic`（默认）：调用 Anthropic Messages API（多模态），鉴权用 `x-api-key`。
+/// - `OpenAi`：调用 OpenAI 兼容的 chat/completions（多模态），鉴权用
+///   `Authorization: Bearer`。便于复用第三方便捷/自建网关（如 DeepSeek、
+///   OpenRouter、各类 Claude 兼容代理），而无需 Anthropic 官方 key。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ApiStyle {
+    #[default]
+    Anthropic,
+    OpenAi,
+}
+
 /// LLM 配置（注入 AppState）。
 #[derive(Clone)]
 pub struct LlmConfig {
@@ -20,6 +33,25 @@ pub struct LlmConfig {
     /// 覆盖为兼容的代理（如自建 / 第三方 Claude 兼容网关）。
     pub base_url: String,
     pub client: reqwest::Client,
+    /// 后端风格：`anthropic`（默认）或 `openai`。由 `LLM_API_STYLE` 控制。
+    pub api_style: ApiStyle,
+    /// OpenAI 兼容模式下的 key（Bearer 鉴权）。
+    pub openai_api_key: Option<String>,
+    /// OpenAI 兼容端点（完整 chat/completions URL）。默认 DeepSeek。
+    pub openai_base_url: String,
+    /// OpenAI 兼容模式下的模型名。默认 `deepseek-flash`。
+    ///
+    /// ⚠️ 必须选 `input_modalities` 含 `image` 的型号。DeepSeek 端点上
+    /// `deepseek-flash` 支持图文输入，而 `deepseek-v4-pro` **只支持文本**——
+    /// 选错不会报错，只会得到「看不到这张图」的空识别，是典型的静默失败。
+    pub openai_model: String,
+    /// 是否在请求里显式关闭「思考」（`thinking: {"type":"disabled"}`）。
+    ///
+    /// 推理型模型（如 `deepseek-flash`）默认会把 `max_tokens` 全烧在思考上，
+    /// 导致 `content` 为空、`finish_reason=length`。关闭思考后可稳定拿到 JSON。
+    /// 由 `OPENAI_DISABLE_THINKING` 控制，默认 `true`；遇到不认识该字段的网关
+    /// 会自动去掉字段重试一次。
+    pub openai_disable_thinking: bool,
 }
 
 impl Default for LlmConfig {
@@ -29,22 +61,48 @@ impl Default for LlmConfig {
             model: DEFAULT_MODEL.into(),
             base_url: ANTHROPIC_URL.into(),
             client: reqwest::Client::new(),
+            api_style: ApiStyle::Anthropic,
+            openai_api_key: None,
+            openai_base_url: "https://api.deepseek.com/v1/chat/completions".into(),
+            openai_model: "deepseek-flash".into(),
+            openai_disable_thinking: true,
         }
     }
 }
 
 impl LlmConfig {
-    /// 从环境变量读取配置；`ANTHROPIC_API_KEY` 缺省或为空则禁用 LLM。
+    /// 从环境变量读取配置；相关 key 缺省或为空则对应能力禁用（识别回退 / 编配回退启发式）。
     pub fn from_env() -> Self {
         let api_key = std::env::var("ANTHROPIC_API_KEY")
             .ok()
             .filter(|k| !k.is_empty());
         let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into());
         let base_url = std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| ANTHROPIC_URL.into());
+        let api_style = match std::env::var("LLM_API_STYLE").as_deref() {
+            Ok("openai") => ApiStyle::OpenAi,
+            _ => ApiStyle::Anthropic,
+        };
+        let openai_api_key = std::env::var("OPENAI_API_KEY")
+            .ok()
+            .filter(|k| !k.is_empty());
+        let openai_base_url = std::env::var("OPENAI_BASE_URL")
+            .unwrap_or_else(|_| "https://api.deepseek.com/v1/chat/completions".into());
+        let openai_model =
+            std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "deepseek-flash".into());
+        // 默认关闭思考：推理型视觉模型若开着思考，会把 token 全烧在推理上、
+        // content 恒为空（实测 finish_reason=length）。显式设 0/false 可恢复。
+        let openai_disable_thinking = std::env::var("OPENAI_DISABLE_THINKING")
+            .map(|v| !matches!(v.as_str(), "0" | "false" | "no" | "off"))
+            .unwrap_or(true);
         Self {
             api_key,
             model,
             base_url,
+            api_style,
+            openai_api_key,
+            openai_base_url,
+            openai_model,
+            openai_disable_thinking,
             ..Default::default()
         }
     }
@@ -409,6 +467,9 @@ pub async fn recognize_jianzi_with_llm(
     image_base64: &str,
     media_type: &str,
 ) -> anyhow::Result<Option<RecognizeResponse>> {
+    if let ApiStyle::OpenAi = config.api_style {
+        return recognize_jianzi_openai(config, image_base64, media_type).await;
+    }
     let Some(api_key) = config.api_key.as_deref() else {
         return Ok(None);
     };
@@ -463,6 +524,127 @@ pub async fn recognize_jianzi_with_llm(
         .unwrap_or("");
 
     Ok(Some(parse_recognition(text)))
+}
+
+/// OpenAI 兼容模式下的单字识别：把图片作为 `image_url` 多模态消息发出，
+/// 解析 `choices[].message.content` 后复用与 Anthropic 相同的 `parse_recognition`。
+async fn recognize_jianzi_openai(
+    config: &LlmConfig,
+    image_base64: &str,
+    media_type: &str,
+) -> anyhow::Result<Option<RecognizeResponse>> {
+    if config.openai_api_key.is_none() {
+        return Ok(None);
+    }
+    let system = build_recognize_system();
+    let user = build_recognize_user();
+    // 单字输出虽短，但推理型模型思考很费 token；给足预算避免 finish_reason=length。
+    let text = call_openai_vision(config, &system, &user, image_base64, media_type, 2048).await?;
+    Ok(Some(parse_recognition(&text)))
+}
+
+/// 调用 OpenAI 兼容的多模态 chat/completions，返回助手文本。
+///
+/// 与 Anthropic 路径的区别仅在请求/响应信封：图片走 `image_url` 内容块、
+/// 鉴权走 `Authorization: Bearer`、文本取自 `choices[0].message.content`。
+///
+/// 两处刻意的「不静默」处理：
+/// 1. 默认带 `thinking: {"type": "disabled"}`——推理型模型开着思考会把
+///    `max_tokens` 全烧在推理上，`content` 恒为空；网关不认识该字段则去掉重试。
+/// 2. `content` 为空直接报错，而不是让上游 `parse_recognition` 把它悄悄
+///    解析成 `glyph: null`（那会得到一个假的 HTTP 200 绿灯）。
+async fn call_openai_vision(
+    config: &LlmConfig,
+    system: &str,
+    user_text: &str,
+    image_base64: &str,
+    media_type: &str,
+    max_tokens: u32,
+) -> anyhow::Result<String> {
+    let key = config.openai_api_key.clone().unwrap_or_default();
+    let data_url = format!("data:{media_type};base64,{image_base64}");
+    let mut body = serde_json::json!({
+        "model": config.openai_model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": data_url}},
+                {"type": "text", "text": user_text},
+            ]},
+        ],
+    });
+    if config.openai_disable_thinking {
+        body["thinking"] = serde_json::json!({"type": "disabled"});
+    }
+
+    let mut resp = send_openai_request(config, &key, &body).await?;
+
+    // 少数 OpenAI 兼容网关不认识 `thinking` 会直接 400；去掉该字段重试一次，
+    // 让「关思考」成为零成本的默认增强，而不是兼容性负担。
+    if resp.status().as_u16() == 400 && config.openai_disable_thinking {
+        let text = resp.text().await.unwrap_or_default();
+        let lower = text.to_lowercase();
+        if !(lower.contains("thinking") || lower.contains("unrecognized")) {
+            anyhow::bail!("openai api 400: {text}");
+        }
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("thinking");
+        }
+        resp = send_openai_request(config, &key, &body).await?;
+    }
+
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("openai api {status}: {text}");
+    }
+
+    let api: OpenAIChatResponse = resp.json().await?;
+    let (content, finish) = match api.choices.into_iter().next() {
+        Some(c) => (c.message.content.unwrap_or_default(), c.finish_reason),
+        None => (String::new(), None),
+    };
+
+    if content.trim().is_empty() {
+        anyhow::bail!(
+            "模型返回空内容（finish_reason={finish:?}）。\
+             常见原因：推理型模型把 max_tokens 耗尽在思考上 —— 设 \
+             OPENAI_DISABLE_THINKING=true，或换用非推理的视觉模型 / 调大 max_tokens"
+        );
+    }
+    Ok(content)
+}
+
+async fn send_openai_request(
+    config: &LlmConfig,
+    key: &str,
+    body: &serde_json::Value,
+) -> anyhow::Result<reqwest::Response> {
+    Ok(config
+        .client
+        .post(&config.openai_base_url)
+        .bearer_auth(key)
+        .json(body)
+        .send()
+        .await?)
+}
+
+#[derive(Deserialize)]
+struct OpenAIChatResponse {
+    choices: Vec<OpenAIChoice>,
+}
+
+#[derive(Deserialize)]
+struct OpenAIChoice {
+    message: OpenAIMessageContent,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OpenAIMessageContent {
+    content: Option<String>,
 }
 
 /// 整页减字谱识别：单个字格的识别结果。
@@ -567,6 +749,9 @@ pub async fn recognize_sheet_with_llm(
     image_base64: &str,
     media_type: &str,
 ) -> anyhow::Result<Option<RecognizeSheetResponse>> {
+    if let ApiStyle::OpenAi = config.api_style {
+        return recognize_sheet_openai(config, image_base64, media_type).await;
+    }
     let Some(api_key) = config.api_key.as_deref() else {
         return Ok(None);
     };
@@ -622,6 +807,23 @@ pub async fn recognize_sheet_with_llm(
         .unwrap_or("");
 
     Ok(Some(parse_sheet_recognition(text)))
+}
+
+/// OpenAI 兼容模式下的整页识别：与单字同样走 `call_openai_vision`，
+/// 仅 system/user 提示词与输出预算不同，解析复用 `parse_sheet_recognition`。
+async fn recognize_sheet_openai(
+    config: &LlmConfig,
+    image_base64: &str,
+    media_type: &str,
+) -> anyhow::Result<Option<RecognizeSheetResponse>> {
+    if config.openai_api_key.is_none() {
+        return Ok(None);
+    }
+    let system = build_recognize_sheet_system();
+    let user = build_recognize_sheet_user();
+    // 整页可能含数十个减字，给足输出预算
+    let text = call_openai_vision(config, &system, &user, image_base64, media_type, 4096).await?;
+    Ok(Some(parse_sheet_recognition(&text)))
 }
 
 #[derive(Deserialize)]

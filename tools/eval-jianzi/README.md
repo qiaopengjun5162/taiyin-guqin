@@ -42,7 +42,11 @@
 }
 ```
 
-- `image`：相对标注文件的图片路径，或内联 `image_base64`。
+- `image`：图片路径，或内联 `image_base64`。相对路径按以下顺序解析，取第一个存在的：
+  1. 标注文件所在目录（`annotations/xxx.json` 里写 `images/a.png`）
+  2. harness 根目录（`annotations/` 与 `images/` 同级，**最常见**）
+  3. 当前工作目录
+  三处都没有时，报错会列出所有尝试过的绝对路径。
 - `ground_truth_glyph`：人工标注的规范减字文本（真值）。
 - `predicted` / `predicted_cells`：**仅离线模式需要**，用于不调后端时直接计分。
 
@@ -85,9 +89,12 @@ cd tools/eval-jianzi
 EVAL_BACKEND=http://127.0.0.1:3001 ./run.sh --annotations annotations/your_set.json --report out.html
 ```
 
-> ⚠️ **硬约束**：在线识别需要后端 `ANTHROPIC_API_KEY`（且 `LlmConfig` 的
-> `ANTHROPIC_URL` 默认指向官方域名，可用 `ANTHROPIC_BASE_URL` 改走兼容代理）。
-> 未配置时端点返回 **HTTP 503** `{"error":"LLM 未配置…"}`，脚本会干净地报错退出
+> ⚠️ **在线识别需要「能看图的模型」**，两种接法：
+> - **Anthropic 官方**：`ANTHROPIC_API_KEY`（`ANTHROPIC_BASE_URL` 可改走兼容网关）。
+> - **OpenAI 兼容网关**：`LLM_API_STYLE=openai` + `OPENAI_API_KEY` + `OPENAI_BASE_URL`
+>   + `OPENAI_MODEL`（如 DeepSeek）；见 `gen_font_cases.py` 下方两个必踩的坑。
+>
+> 都没配置时端点返回 **HTTP 503** `{"error":"LLM 未配置…"}`，脚本会干净地报错退出
 > （提示需配 key 或加 `--offline`），不会假装通过。
 
 ### 无 key 也能验证管线：确定性 mock + 端到端冒烟
@@ -117,6 +124,58 @@ EVAL_BACKEND=http://127.0.0.1:3099 \
 并故意把个别样本真值改错，制造「红行」与 <100% 汇总，以验证打分/着色逻辑。
 生成的 `images/` 与 `annotations/smoke_*.json` 均为可再生产物（已在 .gitignore 忽略）。
 
+## 真减字数据集：从字体渲染，零人工标注
+
+`gen_font_cases.py` 直接读项目自带字体 `TaiYinJianZiPuKaiTi.ttf`，按**字形名**取轮廓
+渲染成 PNG，真值就是该字形对应的文本。好处是：真值来自字体本身（不靠人眼看图写），
+样本可无限扩、完全可复现。
+
+```bash
+# 依赖 fontTools + ImageMagick（macOS: brew install imagemagick）
+python3 gen_font_cases.py               # 渲染内置 10 个用例
+python3 gen_font_cases.py --limit 3     # 快速冒烟
+# 产出 images/<glyph>.png + annotations/font_cases.json（不含 predicted = 在线跑）
+```
+
+内置用例覆盖弦序 `md_1..md_7`（一弦…七弦）与整字连字 `lg_yangtuo`(仰托)、
+`lgw_quanfu`(全扶)、`xl_santan`(散弹)。要加样本就在脚本的 `CASES` 里加一行
+`字形名: (真值文本, 说明)`——字形名可以从 GSUB 连字表里查到。
+
+## 基线结果（2026-10-29，真实测量）
+
+后端 `LLM_API_STYLE=openai` + DeepSeek `deepseek-flash`（视觉），跑上面 10 条字体真字：
+
+| 指标 | 数值 |
+|---|---|
+| `detection_rate` | **100%**（10/10 都给出了非空结果） |
+| `exact_match` | **0%**（0/10） |
+| `mean_cer` | 1.050 |
+| `component F1` | 23.8%（P 22.7% / R 25.0%） |
+| 置信度 0.8–1.0 桶 | 5 条，exact 仍为 **0%** |
+
+结论与归因（按 eval / env / model 三分法）：
+
+- **管线/环境侧：已通过。** 100% 有输出、响应 1.4–1.6s、JSON 可解析，说明
+  「图片→HTTP→解析→打分→报告」全链路正常，失败不在管线。
+- **模型侧：精度不足，且置信度不可信。** 弦序类能读出数字（`md_5→五`、`md_6→六`），
+  但常丢掉「弦」部件；整字连字基本靠猜（`仰托→散挑一`、`全扶→散挑一`），
+  而这两条的 `confidence` 分别 0.78 / **0.98** —— 高置信度错答，**不能用 confidence 做阈值过滤**。
+- 因此当前结论是：通义/DeepSeek 这类通用视觉模型**未针对减字谱训练**，可跑通链路但
+  不能作为准确率来源；要提升需要专门的减字数据微调，或改走「字体 GSUB 反查」这类
+  非视觉路径（对电子谱面天然更准）。
+
+> 复现：`python3 gen_font_cases.py && ./run.sh --annotations annotations/font_cases.json --backend http://127.0.0.1:3001`
+
+### 两个必踩的坑（换模型时对照检查）
+
+1. **模型必须支持图片输入。** 查端点 `GET /v1/models` 的 `input_modalities`：
+   DeepSeek 上 `deepseek-flash` 是 `["text","image"]` ✅，而 `deepseek-v4-pro` 是 `["text"]` ❌。
+   选错不会报错，只会返回「看不到这张图片」的空识别——**静默失败**。
+2. **推理型模型要把「思考」关掉。** 开着思考时 `max_tokens` 会全被 `reasoning_tokens` 吃掉，
+   `content` 恒为空、`finish_reason=length`（实测 512 和 3000 token 都是空）。
+   后端默认发 `thinking: {"type":"disabled"}`（`OPENAI_DISABLE_THINKING` 控制），
+   且 `content` 为空时**直接报错**而不是静默返回 `glyph: null`。
+
 ## 报告
 
 `--report out.html` 会生成一份 HTML 报告（汇总 + 逐样本明细 + 置信度分桶），
@@ -127,8 +186,12 @@ EVAL_BACKEND=http://127.0.0.1:3099 \
 - ✅ 计分逻辑、报告、离线自测**现已完整可用**（见上面的 `--offline` / `--self-check`）。
 - ✅ **桩管线验证可用**：`mock_backend.py` + `smoke.sh` 在「无 key」前提下端到端验证
   在线管线（HTTP→解析→打分→报告），把「管线/环境」与「模型」解耦（研究三分法）。
-- ⏳ **放量前的真标注集**：需要一批真实减字谱图片 + 人工标注的 `ground_truth_glyph`。
-  拿到后删掉样本里的 `predicted` 字段、填上真实 `image` 路径，即可在线跑。
+- ✅ **真数据集已可生成**：`gen_font_cases.py` 从字体渲染真减字图 + 真值（零人工标注），
+  并已跑出真实基线（见上「基线结果」）。
+- ⏳ **扩大样本量**：目前 10 条，且只覆盖弦序与少数连字。要做统计意义上的判断，
+  需把 `CASES` 扩到几十~上百条（尤其带徽位/复合右手的整字）。
+- ⏳ **手写/扫描件真图**：字体渲染的图是「电子谱面」分布，真实拍照/手写会有噪声、
+  笔画粘连、光照差异，需另收一批人工标注的真实图片来测泛化。
 - 🔧 **可选扩展**：把「由减字反推简谱音高」接进评分，增加「音高匹配率」指标。
   ⚠️ 注意：`taiyin_core` **暂无** jianzi→jianpu 转换逻辑，前端 `jianzi-pitch.ts` 是唯一实现。
   若给后端加 `/api/v1/jianzi/to-jianpu` 端点，需**先把转换逻辑抽到共享层**（如 `taiyin_core`），

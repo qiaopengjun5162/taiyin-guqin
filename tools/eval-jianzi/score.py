@@ -45,6 +45,8 @@ import urllib.error
 import urllib.request
 from collections import Counter
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+
 
 class BackendError(RuntimeError):
     """后端调用失败的统一异常基类（所有非 2xx / 连接失败都归到这里）。"""
@@ -140,13 +142,35 @@ def _post_json(url: str, payload: dict, timeout: int) -> dict:
 
 
 def b64_or_inline(item: dict, base_dir: str) -> tuple[str, str]:
-    """返回 (image_base64, media_type)。优先用内联 image_base64，否则读文件。"""
+    """返回 (image_base64, media_type)。优先用内联 image_base64，否则读文件。
+
+    相对路径的解析顺序（详见 README「图片路径怎么解析」）：
+      1. 标注文件所在目录（`annotations/xxx.json` 里写 `images/a.png`）
+      2. harness 根目录（`annotations/` 与 `images/` 是同级的兄弟目录，最常见）
+      3. 当前工作目录
+    找不到时把尝试过的路径全部列出——比一句 FileNotFoundError 好定位得多。
+    """
     if item.get("image_base64"):
         return item["image_base64"], item.get("media_type", "image/png")
     img_path = item.get("image")
     if not img_path:
         raise ValueError(f"样本 {item.get('id')} 既无 image_base64 也无 image 路径")
-    full = img_path if os.path.isabs(img_path) else os.path.join(base_dir, img_path)
+
+    if os.path.isabs(img_path):
+        candidates = [img_path]
+    else:
+        candidates = [
+            os.path.join(base_dir, img_path),
+            os.path.join(HERE, img_path),
+            os.path.abspath(img_path),
+        ]
+    full = next((c for c in candidates if os.path.isfile(c)), None)
+    if full is None:
+        raise FileNotFoundError(
+            f"样本 {item.get('id')} 的图片不存在：{img_path}\n"
+            f"       已尝试：{chr(10).join('         - ' + c for c in candidates)}"
+        )
+
     with open(full, "rb") as f:
         raw = f.read()
     # 猜测 mime

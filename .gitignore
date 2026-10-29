@@ -17,3 +17,4 @@ bindings/
 # eval harness 生成的冒烟产物（可由 gen_smoke.py 再生，勿提交）
 tools/eval-jianzi/annotations/smoke_*.json
 tools/eval-jianzi/images/
+tools/eval-jianzi/annotations/font_cases.json
