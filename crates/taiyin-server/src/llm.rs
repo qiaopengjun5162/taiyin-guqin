@@ -40,8 +40,7 @@ impl LlmConfig {
             .ok()
             .filter(|k| !k.is_empty());
         let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into());
-        let base_url = std::env::var("ANTHROPIC_BASE_URL")
-            .unwrap_or_else(|_| ANTHROPIC_URL.into());
+        let base_url = std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| ANTHROPIC_URL.into());
         Self {
             api_key,
             model,
