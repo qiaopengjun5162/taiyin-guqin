@@ -66,8 +66,9 @@ jobs:
         uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          # 与 .cargo/audit.toml 的豁免保持一致：rsa 0.9.x 的 Marvin 计时侧信道暂无上游修复版本。
-          ignore: RUSTSEC-2023-0071
+          # 与 .cargo/audit.toml 的豁免保持一致：rsa 0.9.x 的 Marvin 计时侧信道、webpki-roots 0.26.x
+          # 的 bundled-root 信任问题均暂无上游修复版本（前者无补丁，后者修复在 1.0.x 需 rustls 主版本联动）。
+          ignore: RUSTSEC-2023-0071,RUSTSEC-2026-0381
       - name: Test
         run: cargo nextest run --all-features
 

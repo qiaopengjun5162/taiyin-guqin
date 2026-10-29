@@ -9,7 +9,14 @@
 #   攻击者的计时侧信道测量窗口极窄，现实风险可控。
 #   一旦上游 rsa / jsonwebtoken 发布补丁，应立即移除该豁免并升级依赖。
 
+# RUSTSEC-2026-0381 — webpki-roots 0.26.x 打包的根证书信任了已被 distrusted 的 emSign 中间证书。
+#   修复仅存在于 webpki-roots 1.0.x；当前依赖方 rustls 0.23 锁定的是 0.26.x，升级到 1.0 需要
+#   rustls 主版本联动（破坏性变更），暂不宜强制。本项目仅向 api.anthropic.com 发起 HTTPS 调用、
+#   使用已知 CA，该 bundled-root 信任问题的现实风险极低。待 rustls 链支持 webpki-roots 1.0 后
+#   移除该豁免并升级依赖。
+
 [advisories]
 ignore = [
     "RUSTSEC-2023-0071",
+    "RUSTSEC-2026-0381",
 ]
