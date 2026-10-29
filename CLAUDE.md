@@ -332,3 +332,12 @@ export https_proxy=http://127.0.0.1:7890
 - CORS 仅放行 `ALLOWED_ORIGINS` 已知来源，禁止 `CorsLayer::permissive()`。
 - 昂贵 LLM 端点必须叠加 per-IP 限流（`SmartIpKeyExtractor`）。
 - 协作分工与快速确认协议见 [VERIFICATION.md](./VERIFICATION.md)（人 / Claude 职责双栏 + 验证机制清单 + 反模式）。
+
+### 写作素材记录（强制）
+- 每完成一段**有卡点或产生数字**的工作（跑通链路、修掉一个非显然的 bug、量出一组指标），
+  必须在本轮结束前追加一条素材到 `docs/articles/material/YYYY-MM-DD-主题.md`，
+  模板见 `docs/articles/_template-material.md`，规矩见 `docs/articles/README.md`。
+- 硬要求：**原样粘贴真实命令与输出**、保留耗时/体积/百分比、密钥打码（`sk-c07…fb98`）、
+  留 commit hash。不许事后凭记忆写「大概」。
+- 只记有信息量的东西；纯格式调整、改错别字不用记。
+- 时间线数字一律由 `bash scripts/gen-article-timeline.sh` 现算，不要手抄提交数/行数。
