@@ -26,7 +26,8 @@
 两种运行模式
 ------------
 - 在线（默认）：真实调用后端 `/api/v1/jianzi/recognize` 或 `/recognize-sheet`。
-  需要后端已配置 ANTHROPIC_API_KEY（否则响应 method="unavailable" 会直接报错退出）。
+  需要后端已配置 ANTHROPIC_API_KEY；未配置时后端返回 HTTP 503，脚本会干净报错退出
+  （提示需配 key 或加 --offline），不会假装通过。也可用 `mock_backend.py` 做无 key 冒烟。
 - 离线（--offline）：直接用标注里的 `predicted` / `predicted_cells` 字段计分，
   不发起任何网络请求。用于校验评分逻辑、准备标注、CI 自测。
 
@@ -43,6 +44,23 @@ import sys
 import urllib.error
 import urllib.request
 from collections import Counter
+
+
+class BackendError(RuntimeError):
+    """后端调用失败的统一异常基类（所有非 2xx / 连接失败都归到这里）。"""
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
+
+class BackendUnavailable(BackendError):
+    """后端识别服务不可用（通常 503：未配置 ANTHROPIC_API_KEY）。"""
+
+
+class BackendConnectionError(BackendError):
+    """无法连接后端（通常后端未启动 / 地址错误）。"""
+
 
 # ---------------------------------------------------------------------------
 # 指标函数（纯逻辑，便于 --self-check 单测）
@@ -98,14 +116,27 @@ def _post_json(url: str, payload: dict, timeout: int) -> dict:
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": "application/json"}, method="POST"
     )
+    # 本地 eval 不应经过公司/沙箱 HTTP 代理：显式用「无代理」opener。
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with opener.open(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:  # 503 无 key / 422 字段错等
+    except urllib.error.HTTPError as e:  # 503 无 key / 422 字段错 / 5xx 等
         body = e.read().decode("utf-8", "replace")
-        raise RuntimeError(f"HTTP {e.code} from {url}: {body[:300]}")
+        if e.code == 503:
+            # 后端路由在未配置密钥时返回 503 + {"error": "..."}（见 routes.rs）。
+            # 透出服务端消息，便于快速定位是「环境/配置」而非「模型」问题。
+            msg = ""
+            try:
+                msg = json.loads(body).get("error", "")
+            except Exception:
+                msg = body[:200]
+            raise BackendUnavailable(msg or f"HTTP 503 from {url}", status=503)
+        raise BackendError(f"HTTP {e.code} from {url}: {body[:300]}", status=e.code)
     except urllib.error.URLError as e:
-        raise RuntimeError(f"无法连接后端 {url}: {e.reason}")
+        raise BackendConnectionError(
+            f"无法连接后端 {url}：{e.reason}（后端是否已启动？）"
+        )
 
 
 def b64_or_inline(item: dict, base_dir: str) -> tuple[str, str]:
@@ -412,7 +443,19 @@ def main(argv=None) -> int:
         "timestamp": _dt.datetime.now().isoformat(timespec="seconds"),
     }
 
-    summary = run_eval(annotations, args.backend, args.offline, args.timeout)
+    try:
+        summary = run_eval(annotations, args.backend, args.offline, args.timeout)
+    except BackendError as e:
+        if isinstance(e, BackendUnavailable):
+            print(
+                f"[eval] 后端识别服务不可用（503）：{e}\n"
+                f"       需配置 ANTHROPIC_API_KEY，或经 ANTHROPIC_BASE_URL 走兼容代理；\n"
+                f"       或加 --offline 离线计分（用标注里的 predicted 字段）。",
+                file=sys.stderr,
+            )
+        else:
+            print(f"[eval] 后端调用失败：{e}", file=sys.stderr)
+        return 2
     rows = summary.pop("_rows")
     rows_by_id = summary.pop("_rows_by_id")
 

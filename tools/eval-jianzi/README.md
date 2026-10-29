@@ -87,8 +87,35 @@ EVAL_BACKEND=http://127.0.0.1:3001 ./run.sh --annotations annotations/your_set.j
 
 > ⚠️ **硬约束**：在线识别需要后端 `ANTHROPIC_API_KEY`（且 `LlmConfig` 的
 > `ANTHROPIC_URL` 默认指向官方域名，可用 `ANTHROPIC_BASE_URL` 改走兼容代理）。
-> 未配置时端点返回 `method:"unavailable"`，脚本会直接报错退出——这是有意为之，
-> 不假装通过。
+> 未配置时端点返回 **HTTP 503** `{"error":"LLM 未配置…"}`，脚本会干净地报错退出
+> （提示需配 key 或加 `--offline`），不会假装通过。
+
+### 无 key 也能验证管线：确定性 mock + 端到端冒烟
+
+真实识别质量取决于 Claude，而那需要 key。但「eval 流水线本身对不对」
+（图片→HTTP→后端解析→打分→HTML 报告，字段是否对齐）**不该**被「有没有 key」
+卡住。为此提供了 `mock_backend.py`：接口契约与真实后端完全一致，但识别结果由
+图片字节**确定性派生**（sha256 → 固定词表），不调任何模型。
+
+对应 VERIFICATION.md 的研究三分法（eval / env / model）：mock 下能跑通，
+说明问题只在「模型」侧；跑不通，说明是「管线/环境」侧——先把管线修对，再谈模型。
+
+```bash
+# 一条命令：起 mock → 生成真值标注 → 在线跑 eval → 出报告 → 关 mock
+./smoke.sh
+
+# 等价分步：
+python3 mock_backend.py --port 3099 &          # 起 mock 后端
+python3 gen_smoke.py                           # 生成 images/ + annotations/smoke_*.json
+EVAL_BACKEND=http://127.0.0.1:3099 \
+  ./run.sh --annotations annotations/smoke_single.json --report /tmp/eval_smoke_single.html
+EVAL_BACKEND=http://127.0.0.1:3099 \
+  ./run.sh --annotations annotations/smoke_sheet.json  --report /tmp/eval_smoke_sheet.html
+```
+
+`gen_smoke.py` 复用 mock 的派生函数计算真值，因此在线 exact_match≈100%；
+并故意把个别样本真值改错，制造「红行」与 <100% 汇总，以验证打分/着色逻辑。
+生成的 `images/` 与 `annotations/smoke_*.json` 均为可再生产物（已在 .gitignore 忽略）。
 
 ## 报告
 
@@ -98,8 +125,13 @@ EVAL_BACKEND=http://127.0.0.1:3001 ./run.sh --annotations annotations/your_set.j
 ## 现在能做什么 / 还差什么
 
 - ✅ 计分逻辑、报告、离线自测**现已完整可用**（见上面的 `--offline` / `--self-check`）。
+- ✅ **桩管线验证可用**：`mock_backend.py` + `smoke.sh` 在「无 key」前提下端到端验证
+  在线管线（HTTP→解析→打分→报告），把「管线/环境」与「模型」解耦（研究三分法）。
 - ⏳ **放量前的真标注集**：需要一批真实减字谱图片 + 人工标注的 `ground_truth_glyph`。
   拿到后删掉样本里的 `predicted` 字段、填上真实 `image` 路径，即可在线跑。
-- 🔧 **可选扩展**：把「由减字反推简谱音高」（`apps/web/src/lib/jianzi-pitch.ts` 的
-  `jianziToJianpu`）也接进评分，增加「音高匹配率」指标。最干净的做法是给后端加一个
-  `/api/v1/jianzi/to-jianpu` 端点，harness 调用它而非在前端/Python 里重实现物理模型。
+- 🔧 **可选扩展**：把「由减字反推简谱音高」接进评分，增加「音高匹配率」指标。
+  ⚠️ 注意：`taiyin_core` **暂无** jianzi→jianpu 转换逻辑，前端 `jianzi-pitch.ts` 是唯一实现。
+  若给后端加 `/api/v1/jianzi/to-jianpu` 端点，需**先把转换逻辑抽到共享层**（如 `taiyin_core`），
+  否则会出现第二份物理模型实现，踩中「改一处漏一处」的同步坑（见仓库 MEMORY.md）。
+- 🔧 **可选 CI 化**：`smoke.sh` 已能在 CI 里跑（无需 key / 无需编译 Rust 后端），可加一个
+  GitHub Actions job 持续守护 eval harness 不被回归破坏。

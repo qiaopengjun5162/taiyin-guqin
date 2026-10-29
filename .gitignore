@@ -13,3 +13,7 @@ dist
 
 # ts-rs 自动测试可能写出的默认 bindings 目录（真实生成物在 apps/web/src/lib/generated/）
 bindings/
+
+# eval harness 生成的冒烟产物（可由 gen_smoke.py 再生，勿提交）
+tools/eval-jianzi/annotations/smoke_*.json
+tools/eval-jianzi/images/
