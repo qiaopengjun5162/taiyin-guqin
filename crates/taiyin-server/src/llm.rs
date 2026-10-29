@@ -16,6 +16,9 @@ const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
 pub struct LlmConfig {
     pub api_key: Option<String>,
     pub model: String,
+    /// Anthropic Messages API 端点。默认官方地址，可用 `ANTHROPIC_BASE_URL`
+    /// 覆盖为兼容的代理（如自建 / 第三方 Claude 兼容网关）。
+    pub base_url: String,
     pub client: reqwest::Client,
 }
 
@@ -24,6 +27,7 @@ impl Default for LlmConfig {
         Self {
             api_key: None,
             model: DEFAULT_MODEL.into(),
+            base_url: ANTHROPIC_URL.into(),
             client: reqwest::Client::new(),
         }
     }
@@ -36,9 +40,12 @@ impl LlmConfig {
             .ok()
             .filter(|k| !k.is_empty());
         let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into());
+        let base_url = std::env::var("ANTHROPIC_BASE_URL")
+            .unwrap_or_else(|_| ANTHROPIC_URL.into());
         Self {
             api_key,
             model,
+            base_url,
             ..Default::default()
         }
     }
@@ -436,7 +443,7 @@ pub async fn recognize_jianzi_with_llm(
 
     let resp = config
         .client
-        .post(ANTHROPIC_URL)
+        .post(&config.base_url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .json(&body)
@@ -595,7 +602,7 @@ pub async fn recognize_sheet_with_llm(
 
     let resp = config
         .client
-        .post(ANTHROPIC_URL)
+        .post(&config.base_url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .json(&body)
@@ -652,7 +659,7 @@ pub async fn select_with_llm(
 
     let resp = config
         .client
-        .post(ANTHROPIC_URL)
+        .post(&config.base_url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .json(&body)
