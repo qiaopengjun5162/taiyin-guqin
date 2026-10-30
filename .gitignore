@@ -22,3 +22,6 @@ tools/eval-jianzi/annotations/font_cases.json
 tools/eval-jianzi/.cache/
 tools/eval-jianzi/annotations/font_cases_tpl.json
 tools/eval-jianzi/annotations/sheet_cases.json
+
+# moonpub 本地产物（预览接收人等）
+.moonpub/
