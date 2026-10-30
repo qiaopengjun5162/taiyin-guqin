@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { JianziSheetRecognizer } from "@/components/jianzi-sheet-recognizer";
 
@@ -14,10 +14,27 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
+// 点格子试听走 Web Audio；jsdom 没有 AudioContext，连合成一起替身。
+vi.mock("@/lib/audio-synth", () => ({
+  schedulePluck: vi.fn(),
+  scheduleClick: vi.fn(),
+  TONE_PROFILE: {},
+}));
+
 import { recognizeJianziSheet, ApiError } from "@/lib/api";
+import { schedulePluck } from "@/lib/audio-synth";
+
+class FakeAudioContext {
+  currentTime = 0;
+  state = "running";
+  destination = {};
+  resume = vi.fn(async () => {});
+}
 
 beforeEach(() => {
   vi.mocked(recognizeJianziSheet).mockReset();
+  vi.mocked(schedulePluck).mockReset();
+  vi.stubGlobal("AudioContext", FakeAudioContext);
   // jsdom 的 FileReader 不会为 File 触发 onload，mock 掉以驱动测试
   global.FileReader = class {
     result: string | ArrayBuffer | null = null;
@@ -29,6 +46,18 @@ beforeEach(() => {
     }
   } as unknown as typeof FileReader;
 });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** 上传一张假整页图。 */
+function upload(container: HTMLElement) {
+  const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(input, {
+    target: { files: [new File(["x"], "sheet.png", { type: "image/png" })] },
+  });
+}
 
 describe("JianziSheetRecognizer", () => {
   it("renders grid and imports readable cells in reading order", async () => {
@@ -136,5 +165,59 @@ describe("JianziSheetRecognizer", () => {
     expect(notes).toHaveLength(1);
     expect(screen.getByText(/跳过 1 个/)).toBeTruthy();
     expect(screen.getByText(/无法解析 1/)).toBeTruthy();
+  });
+
+  it("非 503 的失败照原样报错，不伪装成「未启用」", async () => {
+    vi.mocked(recognizeJianziSheet).mockRejectedValue(new Error("图片太大"));
+
+    const { container } = render(<JianziSheetRecognizer onImport={vi.fn()} />);
+    upload(container);
+
+    await waitFor(() => expect(screen.getByText("图片太大")).toBeTruthy());
+    expect(screen.queryByText(/未启用 AI 识别/)).toBeNull();
+  });
+
+  it("识别结果为空时提示换一张更清晰的图", async () => {
+    vi.mocked(recognizeJianziSheet).mockResolvedValue({ method: "llm", cells: [] });
+
+    const { container } = render(<JianziSheetRecognizer onImport={vi.fn()} />);
+    upload(container);
+
+    await waitFor(() => expect(screen.getByText(/未识别到减字/)).toBeTruthy());
+    expect(screen.queryByText("导入为曲谱")).toBeNull();
+  });
+
+  it("点「上传整页减字图片」会触发隐藏 file input", () => {
+    const click = vi
+      .spyOn(HTMLInputElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    render(<JianziSheetRecognizer onImport={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "上传整页减字图片" }));
+
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
+  });
+
+  it("点已识别的格子可按该减字试听", async () => {
+    vi.mocked(recognizeJianziSheet).mockResolvedValue({
+      method: "llm",
+      cells: [{ row: 0, col: 0, glyph: "散挑一", explanation: "x", confidence: 0.9 }],
+    });
+
+    const { container } = render(<JianziSheetRecognizer onImport={vi.fn()} />);
+    upload(container);
+    await waitFor(() => expect(screen.getByText(/识别 1 格/)).toBeTruthy());
+
+    // 点击校正框会冒泡到格子的 onClick
+    fireEvent.click(screen.getByLabelText("校正减字 0-0"));
+
+    expect(schedulePluck).toHaveBeenCalledTimes(1);
+    const [ctx, freq, time, duration, tone] = vi.mocked(schedulePluck).mock.calls[0];
+    expect(ctx).toBeInstanceOf(FakeAudioContext);
+    expect(freq).toBeGreaterThan(0);
+    expect(time).toBeCloseTo(0.05, 5);
+    expect(duration).toBe(1.2);
+    expect(tone).toBe("散");
   });
 });

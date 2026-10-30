@@ -43,8 +43,8 @@
 |------|------|------------------|
 | 格式门 | `cargo fmt` 检查（CI + pre-commit） | `LlmConfig` base_url 单行格式不符 rustfmt |
 | 安全门 | `cargo audit` + `.cargo/audit.toml` 豁免政策（ADR-0003） | 2026-10-28 新披露的 11 个 advisory（quinn-proto / rustls / tokio 链） |
-| 构建 / 测试门 | `cargo nextest`（69 条）+ 前端 `vitest`（254 条 / 24 文件） | `waitFor` 不重试、`getByText` 多命中这类交互 bug |
-| 覆盖率门 | Rust `cargo llvm-cov --fail-under-lines 70`；前端 `vitest --coverage` 阈值（行 87 / 分支 79 / 函数 82 / 语句 84） | 2026-10-29 之前这两个数字**只上传 artifact、全程 `continue-on-error`**，等于没设防 |
+| 构建 / 测试门 | `cargo nextest`（69 条）+ 前端 `vitest`（279 条 / 25 文件） | `waitFor` 不重试、`getByText` 多命中这类交互 bug |
+| 覆盖率门 | Rust `cargo llvm-cov --fail-under-lines 70`；前端 `vitest --coverage` 阈值（行 90 / 分支 82 / 函数 85 / 语句 87） | 2026-10-29 之前这两个数字**只上传 artifact、全程 `continue-on-error`**，等于没设防 |
 | 部署门 | 前端静态导出 → GitHub Pages 构建 | 保证线上产物可构建 |
 | 流程门 | `build` + `Deploy` 两个 workflow **都绿** | 防止「只推了就说 CI 兜底」的假确认 |
 | 运行探针（手动） | `/health`、`/translate/select` 启发式兜底、曲谱 CRUD 冒烟 | 确认连库、持久化、端到端真通 |
@@ -55,7 +55,7 @@
 |------|----|------|------|------|----------|
 | Rust `--lib`（CI 闸门口径） | 74.74% | – | 78.51% | – | `cargo llvm-cov nextest --lib --summary-only` |
 | Rust `--workspace`（含 tests/ 集成测试） | 78.76% | – | 84.40% | – | `cargo llvm-cov nextest --workspace --summary-only` |
-| 前端 `src/{lib,components,app}` | 89.39% | 81.42% | 84.51% | 86.89% | `pnpm --filter web exec vitest run --coverage` |
+| 前端 `src/{lib,components,app}` | 92.54% | 84.02% | 86.86% | 89.78% | `pnpm --filter web exec vitest run --coverage` |
 
 单文件要点（同为 2026-10-29 实测，`--workspace` 口径）：
 `taiyin-core/jianpu.rs` 98.23%、`taiyin-core/lib.rs` 94.68%、`auth.rs` 100%、
@@ -65,18 +65,19 @@
 
 **已知盲区（按优先级，不是「以后再说」而是「知道自己在裸奔」）**：
 
-前端 2026-10-30 这一轮加了 47 条交互用例（254 条 / 24 文件），把三个最大的空洞补上了：
+前端 2026-10-30 两轮补测共加 72 条用例（279 条 / 25 文件），把原先最大的四个空洞填上了：
 `components/jianzipu-keyboard.tsx` **24.1% → 91.96% 行**（16 条：选音色/切换散按清左右手、按键二次点击取消、八度与附点开关、编辑模式保留 id、拼音候选词/空格/方向键/回车提交、纯拼音不追加空谱字）、
 `lib/audio-export.ts` **0% → 100%**（12 条：离线渲染排期与预备拍偏移、节拍器拍点数量与重音位置、44 字节 WAV 头逐字段、int16 截断、多声道交错、下载后清理 DOM）、
-`app/page.tsx` **27.1% → 79.86% 行**（19 条：播放/停止与节拍器联动、空格快捷键与输入框豁免、BPM 与拍号、导出 WAV 的参数与失败回退、保存/更新/失败提示、加载列表与载入、编辑模式、删除、撤销/重做、AI 面板切换）。
+`app/page.tsx` **27.1% → 79.86% 行**（19 条：播放/停止与节拍器联动、空格快捷键与输入框豁免、BPM 与拍号、导出 WAV 的参数与失败回退、保存/更新/失败提示、加载列表与载入、编辑模式、删除、撤销/重做、AI 面板切换）、
+`lib/audio-synth.ts` **51.1% → 100%**（15 条：缓冲长度随时值/尾长/采样率、0.2s 保底、周期下限 2、起音淡入与尾部淡出、[-1,1] 不削波、散音比泛音衰减慢、节拍点击声的 40ms 长度/强弱拍峰值/尾部衰减/固定种子确定性）、
+两个 recognizer **→ 100% / 97.95% 行**（8 + 8 条：识别中状态、请求失败原文透出、空结果提示、点格试听按减字算频率与音色、校正框清空回到「未识别」、503 与普通错误分开处理）。
 
-`lib/api.ts` 上轮已是 **100% 行 / 88.88% 分支**（14 条：各端点 URL/方法/载荷、`ApiError` 状态与消息映射、错误体非 JSON 的 `statusText` 兜底、503 语义保留、`x-api-key` 有无两态、10s 超时中止）。这些用例都用变异验证确认过「改坏会红」。
+`lib/api.ts` 更早已是 **100% 行 / 88.88% 分支**（14 条：各端点 URL/方法/载荷、`ApiError` 状态与消息映射、错误体非 JSON 的 `statusText` 兜底、503 语义保留、`x-api-key` 有无两态、10s 超时中止）。这些用例都用变异验证确认过「改坏会红」。
 
 仍未覆盖的短板（数字皆为同一口径实测）：
 
-- `lib/audio-synth.ts` **51.1% 行** —— 真 Karplus-Strong 逐样本合成（需要 OfflineAudioContext 才能跑）。导出与播放测试都把它替身掉了，所以「音色听感对不对」目前只有人工听。
-- `components/jianzi-recognizer.tsx` **82.75%**、`components/jianzi-sheet-recognizer.tsx` **88.77%** —— 上传图片后的真实识别分支（依赖后端 LLM）未测；AI 路径的正确性靠 `tools/eval-jianzi/` 的识别 eval 兜。
-- `lib/pinyin-dict.ts` **81.81%** —— 大量生僻拼音键没有用例，属数据表而非逻辑。
+- **分支覆盖落后于行覆盖**（84.02% vs 92.54%）：剩下的大多是防御性 `?.`/`??` 与「不可达兜底分支」（如 `glyph && state` 双空时的「未识别」占位、`handleImport` 在 `!grid` 时的早退）。这些分支不该为覆盖率去构造不现实的输入。
+- `lib/pinyin-dict.ts` **81.81% 行** —— 大量生僻拼音键没有用例，属数据表而非逻辑。
 - `app/layout.tsx` **0%** —— 只有 metadata 与字体挂载，无逻辑；计入口径仅为提醒。
 - Rust `routes.rs` 在 `--lib` 口径下是 0%（集成测试不在 lib target），别拿 CI 那个数字误判它没测；`--workspace` 口径下是 63.18%。
 

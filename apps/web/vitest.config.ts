@@ -22,14 +22,14 @@ export default defineConfig({
         "src/**/*.css",
         "src/app/favicon.ico",
       ],
-      // 下限 = 2026-10-30 实测基线（行 89.39 / 分支 81.42 / 函数 84.51 / 语句 86.89）
+      // 下限 = 2026-10-30 实测基线（行 92.54 / 分支 84.02 / 函数 86.86 / 语句 89.78）
       // 略降约 2 个点，用来「防退步」而不是「刷高分」。
       // 加了新代码却没加测试 → 这里会红，逼迫补测或显式调整阈值（并在 PR 里说明理由）。
       thresholds: {
-        lines: 87,
-        statements: 84,
-        branches: 79,
-        functions: 82,
+        lines: 90,
+        statements: 87,
+        branches: 82,
+        functions: 85,
       },
     },
   },
