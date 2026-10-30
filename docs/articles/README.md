@@ -62,7 +62,7 @@ bash scripts/gen-article-timeline.sh
 ### 草稿
 
 - `drafts/01-五个月-118次提交-一个人做出古琴减字谱编辑器.md`
-- `drafts/02-识别从0%到100%-先证明它不行再绕开它.md` —— 识别 0→100% 全程（42 条定论 → 模板匹配 → 整页切分）；已配 3 张数据图（`scripts/gen-article-charts.py` 可复现）
+- `drafts/02-太音古琴减字谱编辑器-识别准确率0到100实操全记录.md` —— 识别 0→100% 全程（摘要/前言/背景/实操输入输出/解释说明/过程验证结论/总结/参考）；配 6 图（`scripts/gen-article-charts.py`、`scripts/gen-article-figures.py` 可复现）
 
 ### 已有工程日志（非素材库，但可交叉引用）
 
