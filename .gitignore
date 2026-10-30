@@ -18,3 +18,6 @@ bindings/
 tools/eval-jianzi/annotations/smoke_*.json
 tools/eval-jianzi/images/
 tools/eval-jianzi/annotations/font_cases.json
+# 模板匹配的中间产物（build/predict 再生；Rust 索引在 crates/taiyin-server/data/）
+tools/eval-jianzi/.cache/
+tools/eval-jianzi/annotations/font_cases_tpl.json

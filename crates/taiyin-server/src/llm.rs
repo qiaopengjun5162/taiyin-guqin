@@ -399,7 +399,8 @@ fn default_media_type() -> String {
 
 /// `POST /api/v1/jianzi/recognize` 响应体。
 ///
-/// `method` 为 `"llm"`（识别成功）或 `"unavailable"`（未配置密钥）。
+/// `method` 为 `"template"`（字体模板匹配命中，电子谱面专用、确定性）、
+/// `"llm"`（视觉模型识别成功）或 `"unavailable"`（未配置密钥）。
 /// `glyph` 为模型给出的规范减字文本（如「散挑一」「大九勾四」），
 /// 前端再用 `parseJianziText` 解析为可视化状态；`explanation` 提供识别依据，
 /// 对应白皮书强调的"可解释性"。

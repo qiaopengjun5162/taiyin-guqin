@@ -387,7 +387,7 @@ def run_eval(annotations: dict, backend: str, offline: bool, timeout: int) -> di
             pred = item.get("predicted")
             if not offline and pred is None:
                 resp = recognize_single(backend, item, base_dir, timeout)
-                if resp.get("method") != "llm":
+                if resp.get("method") not in ("llm", "template"):
                     raise RuntimeError(
                         f"后端不可用（method={resp.get('method')}），需配置 ANTHROPIC_API_KEY"
                     )

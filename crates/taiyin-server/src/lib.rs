@@ -9,6 +9,7 @@ mod error;
 pub mod llm;
 mod models;
 mod routes;
+pub mod template_match;
 
 pub use config::ServerConfig;
 pub use db::AppState;

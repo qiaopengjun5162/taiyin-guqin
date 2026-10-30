@@ -48,6 +48,7 @@
 | Lint 门 | 前端 `eslint --max-warnings 0`（2026-10-30 起） | 之前 warning 不算失败，`handlePlay` 未 `useCallback` 导致空格键监听每渲染重装的告警就这么溜过去 |
 | 部署门 | 前端静态导出 → GitHub Pages 构建 | 保证线上产物可构建 |
 | 流程门 | `build` + `Deploy` 两个 workflow **都绿** | 防止「只推了就说 CI 兜底」的假确认 |
+| 识别 eval（手动） | `tools/eval-jianzi/` 42 条字体真字基线 + 扰动实验 | 视觉模型 exact 0% 的「模板坍缩」负结果；模板匹配 100% 的正结果 |
 | 运行探针（手动） | `/health`、`/translate/select` 启发式兜底、曲谱 CRUD 冒烟 | 确认连库、持久化、端到端真通 |
 
 ### 3.1 覆盖率基线（2026-10-30 实测，可复现）
@@ -85,7 +86,7 @@
 - `app/layout.tsx` **0%** —— 只有 metadata 与字体挂载，无逻辑；计入口径仅为提醒。
 - Rust `routes.rs` 在 `--lib` 口径下是 0%（集成测试不在 lib target），别拿 CI 那个数字误判它没测；`--workspace` 口径下是 63.18%。
 
-**缺失的闸（已搭骨架，待放量）**：识别准确率 eval harness。骨架已落地在 `tools/eval-jianzi/`（标注格式 + `score.py` 计分 + HTML 报告模板 + 离线自测），指标含 `exact_match` / `detection_rate` / `mean_cer` / `component P·R·F1` / 置信度分桶准确率。现在：**离线评分与 `--self-check` 已可跑**；在线放量仍卡在 `ANTHROPIC_API_KEY`——一旦到位，填真实图片 + 真值即可跑，让 AI 识别进入「跑 eval → 过了就推」的节奏。详见该目录 `README.md`。
+**识别准确率 eval（已跑出基线，2026-10-30）**：harness 在 `tools/eval-jianzi/`（标注格式 + `score.py` 计分 + HTML 报告 + 离线自测），指标含 `exact_match` / `detection_rate` / `mean_cer` / `component P·R·F1` / 置信度分桶准确率。42 条 GSUB 自动真值基线上：**通用视觉模型 exact 0%（模板坍缩、置信度不可信），模板匹配 exact 100%**；后者已接入后端识别端点（`RECOGNIZE_MODE=auto` 模板优先、LLM 兜底），端到端 HTTP 复测 42/42。适用边界（噪声/缩放/模糊扰动实验）与两条路径的取舍见该目录 `README.md`。
 
 ## 4. 快速确认协议（Quick-Confirm Protocol）
 

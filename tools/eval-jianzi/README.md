@@ -195,6 +195,53 @@ python3 gen_font_cases.py --prefix md   # 只渲弦序类
 
 > 复现：`python3 gen_font_cases.py && ./run.sh --annotations annotations/font_cases.json --backend http://127.0.0.1:3001`
 
+### 模板匹配：电子谱面 100% 的第二条路（2026-10-30，`template_match.py`）
+
+上面的结论②已落地：对**电子谱面**（本项目字体渲染的干净减字图）不再问视觉模型，
+改为「字体全字形模板 + 归一化最近邻」——268 个模板（213 个复合减字 + 55 个部件）
+覆盖字体里全部可读字形，识别退化为闭集最近邻：确定性、毫秒级、零成本。
+
+```bash
+python3 template_match.py build     # 渲染 268 字形建模板索引（缓存 .cache/）
+python3 template_match.py predict \
+  --annotations annotations/font_cases.json --out annotations/font_cases_tpl.json
+python3 score.py --offline --annotations annotations/font_cases_tpl.json
+python3 template_match.py robust    # 扰动鲁棒性实验（量化适用边界）
+python3 template_match.py export-rust  # 导出后端内嵌索引 crates/taiyin-server/data/
+```
+
+同一批 42 条字体真字，两条路的对比：
+
+| 指标 | 视觉大模型（deepseek-flash） | 模板匹配 |
+|---|---|---|
+| exact_match | **0.0%**（0/42） | **100.0%**（42/42） |
+| mean_cer | 1.193 | **0.000** |
+| component F1 | 13.7% | **100.0%** |
+| 耗时/成本 | 1.4–1.6s/张，计费 | <1ms/张，零成本 |
+| 输出确定性 | 非确定（同图两跑不同错答） | 确定 |
+
+扰动鲁棒性（`robust` 子命令，42 条各加扰动后重匹配；含 3x3 中值去斑预处理）：
+
+| 条件 | 命中率 | 说明 |
+|---|---|---|
+| 无扰动 / 平移 | 100% | 归一化裁外接框，平移天然不敏感 |
+| 缩放 0.7x / 1.4x | 100% | 同上 |
+| 高斯模糊 r=1 / r=2 | 100% | 笔画拓扑未变 |
+| 椒盐噪声 0.5% | 100% | 中值去斑兜住 |
+| 椒盐噪声 1% / 2% | 97.6% / 92.9% | 边界在这里开始 |
+| （无中值去斑时）椒盐噪声任意 | 78.6% | 噪点撑大外接框 → 去斑是必需预处理 |
+
+**诚实边界**：以上全部是「训练=测试」分布（同一字体渲染）。拍照/扫描件的光照、
+笔画粘连、形变不在适用范围——那类输入走 `RECOGNIZE_MODE=auto` 自动落 LLM，
+或未来用 42+171 条自动真值微调专用模型。
+
+**已接入后端**（`crates/taiyin-server/src/template_match.rs`，索引内嵌编译期打进二进制）：
+`/api/v1/jianzi/recognize` 默认 `RECOGNIZE_MODE=auto`——模板置信度（top-2 margin 比）
+≥ 0.3 直接返回 `method: "template"`；不够才落 LLM；LLM 未配置时用模板兜底，不再直接 503。
+端到端实测（HTTP 真链路重跑 42 条）：**exact 100%、置信度 [0.8,1.0) 桶 42/42**，与离线一致。
+Rust 端归一化（中值去斑/外接框/半像素双线性）与 Python 逐行等价，有 10 条单测
+（含「取索引任一模板自匹配必须回同名」的管线回环）守护。
+
 ### 两个必踩的坑（换模型时对照检查）
 
 1. **模型必须支持图片输入。** 查端点 `GET /v1/models` 的 `input_modalities`：
@@ -219,8 +266,12 @@ python3 gen_font_cases.py --prefix md   # 只渲弦序类
   （零人工标注、自动发现异体写法），并已跑出 42 条的统计意义基线（见上「基线结果」）。
 - ✅ **样本量已到统计意义**：42 个复合字形全量（lg/lgw/xl/md），另有 171 个 `sm_*`
   部件字形可按 `--prefix sm` 扩充；结论（exact 0/42、模板坍缩、置信度全错）已足够定论。
+- ✅ **电子谱面识别已可用**（2026-10-30）：`template_match.py` 模板匹配 exact 100%，
+  已接入后端 `/api/v1/jianzi/recognize`（`RECOGNIZE_MODE=auto` 模板优先、LLM 兜底），
+  见上「模板匹配」一节。
 - ⏳ **手写/扫描件真图**：字体渲染的图是「电子谱面」分布，真实拍照/手写会有噪声、
-  笔画粘连、光照差异，需另收一批人工标注的真实图片来测泛化。
+  笔画粘连、光照差异，需另收一批人工标注的真实图片来测泛化（模板匹配不适用，
+  走 LLM 或未来的微调模型）。
 - 🔧 **可选扩展**：把「由减字反推简谱音高」接进评分，增加「音高匹配率」指标。
   ⚠️ 注意：`taiyin_core` **暂无** jianzi→jianpu 转换逻辑，前端 `jianzi-pitch.ts` 是唯一实现。
   若给后端加 `/api/v1/jianzi/to-jianpu` 端点，需**先把转换逻辑抽到共享层**（如 `taiyin_core`），

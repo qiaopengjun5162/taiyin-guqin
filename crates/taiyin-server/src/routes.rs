@@ -26,6 +26,7 @@ use crate::llm::{
     heuristic_selections, recognize_jianzi_with_llm, recognize_sheet_with_llm, select_with_llm,
 };
 use crate::models::{CreateScoreRequest, Score, ScoreListItem, UpdateScoreRequest};
+use crate::template_match::{self, RecognizeMode};
 
 const MAX_TITLE_LENGTH: usize = 200;
 
@@ -137,7 +138,32 @@ async fn select_candidates(
     Ok(Json(SelectResponse { method, selections }))
 }
 
-/// 减字谱单字图像识别：图片经 Claude 多模态识别为规范减字文本；未配置密钥时返回 503。
+/// 模板匹配结果 → 识别响应。
+fn template_response(m: &template_match::TemplateMatch) -> RecognizeResponse {
+    RecognizeResponse {
+        method: "template",
+        glyph: Some(m.text.clone()),
+        explanation: Some(format!(
+            "模板匹配（字形 {}）：距离 {:.3}，与次优差 {:.3}，置信度 {:.0}%",
+            m.name,
+            m.distance,
+            m.margin,
+            m.confidence() * 100.0
+        )),
+        confidence: Some(m.confidence()),
+    }
+}
+
+/// 减字谱单字图像识别。
+///
+/// 识别路径（`RECOGNIZE_MODE` 控制，默认 `auto`）：
+/// 1. **模板匹配**（`template_match`）：对电子谱面（本项目字体渲染的干净减字图）
+///    确定性命中，exact_match 100%，零成本、毫秒级；
+/// 2. **LLM 视觉识别**：拍照/扫描件等模板覆盖不了的分布，或模板置信度不足时。
+///
+/// auto 模式下模板置信度（top-2 margin 比）≥ `RECOGNIZE_TEMPLATE_MIN_MARGIN`
+/// （默认 0.3）直接采用模板结果；否则落 LLM。LLM 未配置时用模板结果兜底，
+/// 不再直接 503。
 async fn recognize_jianzi(
     State(state): State<AppState>,
     Json(req): Json<RecognizeRequest>,
@@ -153,11 +179,40 @@ async fn recognize_jianzi(
         return Err(AppError::Validation("缺少图片数据".into()));
     }
 
+    let strategy = template_match::RecognizeStrategy::from_env();
+
+    // 模板路径需要解码像素；解码失败（如超大图/损坏图）时安静降级到 LLM。
+    let tpl = if strategy.mode != RecognizeMode::Llm {
+        base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            req.image_base64.trim(),
+        )
+        .ok()
+        .and_then(|bytes| template_match::match_image_bytes(&bytes).ok())
+    } else {
+        None
+    };
+
+    if let Some(m) = &tpl
+        && template_match::prefer_template(&strategy, m.confidence())
+    {
+        return Ok(Json(template_response(m)));
+    }
+
     match recognize_jianzi_with_llm(&state.llm, &req.image_base64, media_type).await {
         Ok(Some(resp)) => Ok(Json(resp)),
-        Ok(None) => Err(AppError::ServiceUnavailable(
-            "LLM 未配置（缺少 ANTHROPIC_API_KEY）".into(),
-        )),
+        Ok(None) => {
+            // LLM 未配置：auto/template 模式下用模板兜底（即便置信度不高，
+            // 也比直接 503 有用）；显式 llm 模式维持原 503 语义。
+            if strategy.mode != RecognizeMode::Llm
+                && let Some(m) = &tpl
+            {
+                return Ok(Json(template_response(m)));
+            }
+            Err(AppError::ServiceUnavailable(
+                "LLM 未配置（缺少 ANTHROPIC_API_KEY）".into(),
+            ))
+        }
         Err(e) => {
             tracing::warn!("jianzi recognition failed: {e}");
             Err(AppError::ServiceUnavailable(format!("识别失败：{e}")))
