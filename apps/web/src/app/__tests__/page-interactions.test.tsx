@@ -24,6 +24,9 @@ const h = vi.hoisted(() => ({
   listScores: vi.fn(),
   getScore: vi.fn(),
   deleteScore: vi.fn(),
+  exportPng: vi.fn(),
+  exportSvg: vi.fn(),
+  translateJianpuToJianzi: vi.fn(),
 }));
 
 /** 播放 hook：用真实 useState 撑起 isPlaying，让按钮文案能跟着变。 */
@@ -103,12 +106,20 @@ vi.mock("@/lib/api", () => {
   };
 });
 
+vi.mock("@/lib/use-export-image", () => ({
+  useExportImage: () => ({
+    exportPng: h.exportPng,
+    exportSvg: h.exportSvg,
+    isExporting: false,
+  }),
+}));
+
 vi.mock("@/lib/taiyin-wasm", () => ({
   getWasmLoadState: () => "ready",
   getWasmLoadError: () => null,
   initWasm: vi.fn().mockResolvedValue(undefined),
   useWasmInit: () => ({ state: "ready", error: null }),
-  translateJianpuToJianzi: vi.fn(),
+  translateJianpuToJianzi: h.translateJianpuToJianzi,
   translateJianpuSequenceToJianzi: vi.fn(),
 }));
 
@@ -423,5 +434,196 @@ describe("Home · AI 识别面板", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "收起 AI 识别" }));
     expect(container.textContent).toContain("＋ 用 AI 识别减字图片");
+  });
+});
+
+describe("Home · 导出图片", () => {
+  it("PNG / SVG 按钮分别接线到导出函数", async () => {
+    await loadExample();
+
+    fireEvent.click(screen.getByLabelText("导出图片（PNG）"));
+    expect(h.exportPng).toHaveBeenCalledTimes(1);
+    expect(h.exportSvg).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText("导出矢量图（SVG）"));
+    expect(h.exportSvg).toHaveBeenCalledTimes(1);
+    expect(h.exportPng).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Home · 歌词跳转", () => {
+  it("点歌词从该字起播（无音符在播时只起播）", async () => {
+    const { container } = render(<Home />);
+    fireEvent.change(screen.getByLabelText("加载示例"), {
+      target: { value: "huafeihua" },
+    });
+    await waitFor(() => expect(noteColumns(container).length).toBeGreaterThan(0));
+
+    // 花非花前 10 个是前奏（无歌词），第 11 个起带歌词
+    const lyrics = screen.getAllByTitle("点击从此音开始播放");
+    expect(lyrics.length).toBeGreaterThan(0);
+    fireEvent.click(lyrics[0]);
+
+    expect(h.stopPlayback).toHaveBeenCalledTimes(1);
+    expect(h.play).toHaveBeenCalledTimes(1);
+    expect(h.play.mock.calls[0][0]).toBe(10); // HUAFEI_PRELUDE = 10
+  });
+
+  it("节拍器运行中点歌词会重启节拍器以对齐", async () => {
+    const { container } = render(<Home />);
+    fireEvent.change(screen.getByLabelText("加载示例"), {
+      target: { value: "huafeihua" },
+    });
+    await waitFor(() => expect(noteColumns(container).length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByLabelText("启动节拍器"));
+    expect(h.toggleMetronome).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getAllByTitle("点击从此音开始播放")[0]);
+
+    expect(h.stopMetronome).toHaveBeenCalledTimes(1);
+    expect(h.toggleMetronome).toHaveBeenCalledTimes(2); // 重启
+    expect(h.play.mock.calls[0][0]).toBe(10);
+  });
+});
+
+describe("Home · 简谱转减字", () => {
+  const CANDIDATES = JSON.stringify({
+    candidates: [
+      {
+        score: 90,
+        note: {
+          note_type: "散",
+          left_finger: null,
+          hui: null,
+          right_action: "Gou",
+          string_number: 3,
+        },
+      },
+    ],
+  });
+
+  it("翻译出候选并选中后，往谱尾追加一列音符", async () => {
+    h.translateJianpuToJianzi.mockResolvedValue(CANDIDATES);
+    const { container } = render(<Home />);
+    expect(noteColumns(container).length).toBe(0);
+
+    fireEvent.change(screen.getByLabelText("简谱数字"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "翻译" }));
+
+    await waitFor(() => expect(h.translateJianpuToJianzi).toHaveBeenCalledTimes(1));
+    // 传给 WASM 的载荷带上了数字/八度/调式
+    expect(JSON.parse(h.translateJianpuToJianzi.mock.calls[0][0])).toEqual({
+      number: 5,
+      octave: 0,
+      tuning: "zheng",
+    });
+
+    const candidate = await screen.findByTitle("评分: 90");
+    fireEvent.click(candidate);
+
+    await waitFor(() => expect(noteColumns(container).length).toBe(1));
+  });
+
+  it("翻译失败时展示错误文案", async () => {
+    h.translateJianpuToJianzi.mockRejectedValue(new Error("WASM 未初始化"));
+    render(<Home />);
+
+    fireEvent.change(screen.getByLabelText("简谱数字"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "翻译" }));
+
+    await waitFor(() => expect(screen.getByText("WASM 未初始化")).toBeTruthy());
+  });
+});
+
+describe("Home · 曲谱删除", () => {
+  const savedNote: NoteColumn = {
+    id: "a",
+    jianpuNumber: "5",
+    jianpuOctave: "",
+    jianpuDot: false,
+    duration: "四分",
+    jianzi: {
+      toneType: "散",
+      rhythmMode: null,
+      leftFinger: null,
+      hui: null,
+      fen: null,
+      rightAction: "勹",
+      stringNumber: "五",
+    },
+  };
+
+  it("删除需二次确认，取消则不动后端", async () => {
+    h.listScores.mockResolvedValue([
+      { id: "s1", title: "旧曲", created_at: "", updated_at: "" },
+    ]);
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    const del = await screen.findByTitle("删除");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    fireEvent.click(del);
+    expect(h.deleteScore).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(del);
+    await waitFor(() => expect(h.deleteScore).toHaveBeenCalledWith("s1"));
+    confirmSpy.mockRestore();
+  });
+
+  it("删除当前打开的曲谱后回到空谱并复位标题", async () => {
+    h.listScores.mockResolvedValue([
+      { id: "s1", title: "旧曲", created_at: "", updated_at: "" },
+    ]);
+    h.getScore.mockResolvedValue({
+      id: "s1",
+      title: "旧曲",
+      notes: [savedNote],
+      created_at: "",
+      updated_at: "",
+    });
+    const { container } = render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+    fireEvent.click(await screen.findByText("旧曲"));
+    await waitFor(() => expect(noteColumns(container).length).toBe(1));
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+    fireEvent.click(await screen.findByTitle("删除"));
+
+    await waitFor(() => expect(noteColumns(container).length).toBe(0));
+    expect((screen.getByLabelText("曲谱名称") as HTMLInputElement).value).toBe("未命名曲谱");
+    expect((screen.getByLabelText("播放") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("删除失败时提示「删除失败」", async () => {
+    h.listScores.mockResolvedValue([
+      { id: "s1", title: "旧曲", created_at: "", updated_at: "" },
+    ]);
+    h.deleteScore.mockRejectedValue(new Error("boom"));
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(await screen.findByTitle("删除"));
+
+    await waitFor(() => expect(screen.getByText("删除失败")).toBeTruthy());
+  });
+});
+
+describe("Home · 加载失败", () => {
+  it("拉取曲谱详情失败时提示「加载失败」且不关掉对话框", async () => {
+    h.listScores.mockResolvedValue([
+      { id: "s1", title: "旧曲", created_at: "", updated_at: "" },
+    ]);
+    h.getScore.mockRejectedValue(new Error("boom"));
+    const { container } = render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    fireEvent.click(await screen.findByText("旧曲"));
+
+    await waitFor(() => expect(screen.getByText("加载失败")).toBeTruthy());
+    expect(noteColumns(container).length).toBe(0);
   });
 });

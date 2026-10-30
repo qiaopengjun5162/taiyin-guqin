@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
@@ -114,6 +114,22 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [undo, redo]);
 
+  /**
+   * 播放/停止必须用 useCallback 稳定引用：它们是空格键 useEffect 的依赖，
+   * 若每次渲染都产生新函数，监听器会每帧卸载重装（见 exhaustive-deps 告警）。
+   */
+  /** 播放：可联动启动节拍器（共享同速、重拍对齐乐谱小节） */
+  const handlePlay = useCallback(() => {
+    void play();
+    if (linkMetronome && !metronomeRunning) void toggleMetronome();
+  }, [play, linkMetronome, metronomeRunning, toggleMetronome]);
+
+  /** 停止：可联动停止节拍器 */
+  const handleStop = useCallback(() => {
+    stopPlayback();
+    if (linkMetronome && metronomeRunning) stopMetronome();
+  }, [stopPlayback, linkMetronome, metronomeRunning, stopMetronome]);
+
   /** 空格键播放/停止：焦点在输入框/按钮等交互元素上时交给原生行为，避免误触与页面滚动 */
   useEffect(() => {
     function handleSpace(e: KeyboardEvent) {
@@ -165,18 +181,6 @@ export default function Home() {
     if (removedIdx >= 0 && editingIndex === removedIdx) {
       setEditingIndex(null);
     }
-  }
-
-  /** 播放：可联动启动节拍器（共享同速、重拍对齐乐谱小节） */
-  function handlePlay() {
-    void play();
-    if (linkMetronome && !metronomeRunning) void toggleMetronome();
-  }
-
-  /** 停止：可联动停止节拍器 */
-  function handleStop() {
-    stopPlayback();
-    if (linkMetronome && metronomeRunning) stopMetronome();
   }
 
   /** 点击歌词：从该音符起播（先停后播，联动节拍器则一并重启对齐） */

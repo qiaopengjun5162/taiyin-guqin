@@ -70,6 +70,7 @@ export function SingleNoteMode({
         <select
           value={number}
           onChange={(e) => setNumber(e.target.value as JianpuNumber)}
+          aria-label="简谱数字"
           className="px-2 py-1 rounded border border-amber-700/20 bg-transparent text-amber-100/70"
         >
           <option value="">数字</option>
@@ -80,6 +81,7 @@ export function SingleNoteMode({
         <select
           value={octave}
           onChange={(e) => setOctave(e.target.value as JianpuOctave)}
+          aria-label="八度"
           className="px-2 py-1 rounded border border-amber-700/20 bg-transparent text-amber-100/70"
         >
           <option value="">八度</option>

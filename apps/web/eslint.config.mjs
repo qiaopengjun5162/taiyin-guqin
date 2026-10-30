@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     "public/wasm/**",
     // Next.js 静态导出产物（output: "export" → apps/web/dist），同样非源码。
     "dist/**",
+    // vitest 覆盖率报告（含 lcov-report 的 HTML 与其中的 .js），每次跑覆盖率都会重写。
+    "coverage/**",
   ]),
 ]);
 
