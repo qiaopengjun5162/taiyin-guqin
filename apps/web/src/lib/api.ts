@@ -170,14 +170,16 @@ export interface RecognizeSheetCell {
 }
 
 export interface RecognizeSheetResponse {
-  method: "llm" | "unavailable";
+  /** template=模板切分+逐格匹配（电子谱面确定性路径）；llm=视觉模型识别 */
+  method: "template" | "llm" | "unavailable";
   /** 识别出的所有字格（坐标可能非连续，前端按 row/col 重排为网格） */
   cells: RecognizeSheetCell[];
 }
 
 /**
- * 整页减字谱图像识别：base64 图片 → Claude 多模态 → 按网格坐标排布的各减字文本。
- * 后端未配置 ANTHROPIC_API_KEY 时返回 method="unavailable" + 503。
+ * 整页减字谱图像识别：base64 图片 → 电子谱面走模板切分（method="template"，
+ * 字高 ≥72px 时逐格 100%），其余落 Claude 多模态（method="llm"）。
+ * LLM 未配置且模板无结果时 503。
  */
 export async function recognizeJianziSheet(
   imageBase64: string,

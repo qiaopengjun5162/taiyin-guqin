@@ -229,13 +229,15 @@ CREATE TABLE scores (
 
 ```
 src/
-├── main.rs          # 入口：初始化 DB pool + 启动 Axum
-├── lib.rs           # crate 根：导出 AppState + app()
-├── db.rs            # AppState + init_pool（自动迁移）
-├── error.rs         # AppError（thiserror）→ IntoResponse
-├── models.rs        # Score / CreateScoreRequest / UpdateScoreRequest
-├── llm.rs           # LLM 候选择优（Anthropic Messages API + 启发式回退）
-└── routes.rs        # API 路由 + handler 函数
+├── main.rs           # 入口：初始化 DB pool + 启动 Axum
+├── lib.rs            # crate 根：导出 AppState + app()
+├── db.rs             # AppState + init_pool（自动迁移）
+├── error.rs          # AppError（thiserror）→ IntoResponse
+├── models.rs         # Score / CreateScoreRequest / UpdateScoreRequest
+├── llm.rs            # LLM 候选择优 + 识别提示词/解析（Anthropic/OpenAI 兼容）
+├── template_match.rs # 单字模板匹配（归一化 + 最近邻 + 策略），索引内嵌 data/template_index.json
+├── sheet_segment.rs  # 整页切分（间隙容忍投影）+ 逐格模板匹配
+└── routes.rs         # API 路由 + handler 函数
 ```
 
 ### 测试策略
@@ -245,7 +247,24 @@ src/
 - 后端集成测试需要运行中的 PostgreSQL。
 - 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
 - `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
-- 当前测试总数：Rust 45 + 前端 135 = **180**。
+- 当前测试总数：Rust `--lib` 52（+ tests/ 集成）+ 前端 298 条（26 文件）。
+- **新测试必须变异验证**（改坏实现看它红一次再改回），见 VERIFICATION.md §4。
+
+## 电子谱面识别（模板匹配 + 整页切分）
+
+视觉大模型在 42 条字体真字上 exact 0%（模板坍缩），电子谱面识别走**确定性模板路径**：
+
+- **单字**：`template_match.rs` 归一化（3×3 中值→阈值 128→外接框→补方→半像素双线性 64×64）+ 最近邻；
+  `RECOGNIZE_MODE=auto`（默认）模板置信度（top-2 margin 比）≥ `RECOGNIZE_TEMPLATE_MIN_MARGIN` 直接采用，否则落 LLM。
+- **整页**：`sheet_segment.rs` 间隙容忍投影切分（白缝 <0.10×S 不切；S=页面墨迹尺度）→ 逐格归一化+匹配。
+  `recognize-sheet` 同样 `auto` 策略，全页平均置信度达标出 `method:"template"`；LLM 未配置时模板兜底（含空结果），不再 503。
+- **等价写法**：字体里 11 处同形异名（一徽一分≡十一徽、md_N≡sm_N 光板数字）在索引里合并为单条目、truths 并集；
+  命中任一写法即对。**新增字形若出现同形异名，进 `template_match.py` 的 `KNOWN_SAME_OUTLINE`**。
+- **两端等价纪律**：`sheet_segment.rs` 与 `tools/eval-jianzi/sheet_eval.py` 的 `segment()` 逐行等价
+  （含 half-up 取整 `int(x+0.5)`，不能用 Python round() 银行家舍入）；改任一端必须跑
+  `sheet_eval.py http-check`（同批图打真实 HTTP 逐格比对）确认一致。
+- **准确率边界**：字高 ≥72px 逐格 100%；间隙 ≥0.2×字高切分全对（真实渲染 0.5×字高）。详见
+  `VERIFICATION.md` §3.2 与 `tools/eval-jianzi/README.md`。
 
 ## 一期 · 渐进式混合渲染引擎（feat/svg-engine）
 

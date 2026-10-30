@@ -62,6 +62,20 @@ def _index_glyphs(font_path: Path) -> list[tuple[str, list[str]]]:
     return out
 
 
+def median3_clamp(arr: np.ndarray) -> np.ndarray:
+    """3x3 中值滤波，边缘钳位 —— 与 Rust template_match::median3 同一公式。
+
+    归一化（normalize）与整页切分（sheet_eval.segment）共用；numpy 向量化
+    实现（9 个移位窗口取中值），逐像素 Python 循环在整页上慢到不可用。
+    """
+    h, w = arr.shape
+    p = np.pad(arr, 1, mode="edge")
+    win = np.stack(
+        [p[dy : dy + h, dx : dx + w] for dy in (0, 1, 2) for dx in (0, 1, 2)]
+    )
+    return np.median(win, axis=0).astype(arr.dtype)
+
+
 def _bilinear_resize(canvas: np.ndarray, size: int) -> np.ndarray:
     """半像素中心双线性缩放。Rust 端 `template_match.rs` 用同一公式，保证两端一致。"""
     h, w = canvas.shape
@@ -82,15 +96,16 @@ def _bilinear_resize(canvas: np.ndarray, size: int) -> np.ndarray:
 def normalize(img, size: int = SIZE) -> np.ndarray:
     """白底黑字图 → 归一化 64x64 墨迹图（float32，0=空白 1=墨）。
 
-    先 3x3 中值滤波去孤立噪点（扫描件常见椒盐噪声；干净图上近乎恒等），
-    再裁剪到墨迹外接框、补成正方形再缩放 —— 对平移/缩放/留白天然不敏感。
+    先 3x3 中值滤波去孤立噪点（与 Rust `normalize_gray` 的 median3 完全
+    同源，含边缘钳位），再裁剪到墨迹外接框、补成正方形再缩放 —— 对平移/
+    缩放/留白天然不敏感。
     """
-    from PIL import Image, ImageFilter
+    from PIL import Image
 
     if not isinstance(img, Image.Image):
         img = Image.open(img)
-    gray = img.convert("L").filter(ImageFilter.MedianFilter(3))
-    arr = np.asarray(gray, dtype=np.float32)
+    gray = np.asarray(img.convert("L"), dtype=np.uint8)
+    arr = median3_clamp(gray).astype(np.float32)
     ink = arr < 128
     if not ink.any():
         return np.zeros((size, size), dtype=np.float32)
@@ -102,6 +117,72 @@ def normalize(img, size: int = SIZE) -> np.ndarray:
     oy, ox = (side - h) // 2, (side - w) // 2
     canvas[oy : oy + h, ox : ox + w] = crop
     return _bilinear_resize(canvas, size)
+
+
+# 字体里「同形异名」的视觉等价簇（手工确认）：md_N（N弦）与 sm_N（N徽）
+# 都画成光板数字 N（实测 md_3/sm_3 均为 3 轮廓「三」、md_1/sm_1 均为
+# 1 轮廓「一」，无任何区分标记）—— 人眼也无法区分，只能作为等价写法。
+# 命名不同（md_ 弦序 / sm_ 徽位）靠组合字形的象限位置区分，独立出现时
+# 语义本身就模糊。
+KNOWN_SAME_OUTLINE: list[tuple[str, ...]] = [
+    (f"md_{n}", f"sm_{n}") for n in range(1, 8)
+]
+
+
+def _merge_duplicate_templates(
+    names: list[str], truths: list[list[str]], vecs: np.ndarray
+) -> tuple[list[str], list[list[str]], np.ndarray]:
+    """合并视觉上无法区分的模板，truths 取并集。
+
+    两类等价：
+    1. **归一化像素完全相同**（实测 4 对：一徽一分≡十一徽、一徽二分≡十二徽、
+       一徽三分≡十三徽、sm_ci≡sm_ruan）—— 字形名不同但轮廓一模一样；
+    2. **KNOWN_SAME_OUTLINE** 手工确认的同形簇（md_N≡sm_N 光板数字）。
+
+    这是字形库的固有歧义，不是识别错误：任何字号、任何算法都区分不开。
+    合并后匹配结果天然给出全部等价写法，评估按「命中任一等价写法即对」
+    计分，不再把平局算成失败。
+    """
+    # 先按名字做已知等价簇的并查集
+    parent: dict[str, str] = {n: n for n in names}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for cluster in KNOWN_SAME_OUTLINE:
+        members = [n for n in cluster if n in parent]
+        for n in members[1:]:
+            parent[find(n)] = find(members[0])
+
+    by_pixels: dict[bytes, int] = {}
+    out_names: list[str] = []
+    out_truths: list[list[str]] = []
+    out_vecs: list[np.ndarray] = []
+    root_idx: dict[str, int] = {}
+    for name, texts, vec in zip(names, truths, vecs):
+        key = np.round(vec * 255.0).astype(np.uint8).tobytes()
+        root = find(name)
+        if key in by_pixels:
+            i = by_pixels[key]
+        elif root in root_idx:
+            i = root_idx[root]
+        else:
+            i = len(out_names)
+            by_pixels[key] = i
+            root_idx[root] = i
+            out_names.append(name)
+            out_truths.append([])
+            out_vecs.append(vec)
+        for t in texts:
+            if t not in out_truths[i]:
+                out_truths[i].append(t)
+    merged = len(names) - len(out_names)
+    if merged:
+        print(f"[build] 合并同形/等价模板 {merged} 个（固有歧义，truths 取并集）")
+    return out_names, out_truths, np.stack(out_vecs)
 
 
 def build_index(rebuild: bool = False) -> dict:
@@ -141,17 +222,23 @@ def build_index(rebuild: bool = False) -> dict:
             print(f"[build] {i}/{len(glyphs)}")
 
     arr = np.stack(vecs).astype(np.float32)
+    m_names, m_truths, m_arr = _merge_duplicate_templates(
+        names,
+        [[t for t in s.split("\x1f") if t] for s in truths],
+        arr,
+    )
+    truth_strs = ["\x1f".join(t) for t in m_truths]
     np.savez_compressed(
         INDEX_NPZ,
-        names=np.array(names),
-        truths=np.array(truths),
-        vecs=arr,
+        names=np.array(m_names),
+        truths=np.array(truth_strs),
+        vecs=m_arr,
     )
-    print(f"[build] 索引 {len(names)} 个模板 -> {INDEX_NPZ}")
+    print(f"[build] 索引 {len(m_names)} 个模板 -> {INDEX_NPZ}")
     return {
-        "names": names,
-        "truths": [[t for t in t.split("\x1f") if t] for t in truths],
-        "vecs": arr.reshape(len(names), -1),
+        "names": m_names,
+        "truths": m_truths,
+        "vecs": m_arr.reshape(len(m_names), -1),
     }
 
 

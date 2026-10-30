@@ -102,7 +102,8 @@ impl TemplateMatch {
 }
 
 /// 3x3 中值滤波（边缘钳位）：去掉椒盐噪声的孤立噪点，干净图上近乎恒等。
-fn median3(width: usize, height: usize, src: &[u8]) -> Vec<u8> {
+/// 整页切分（`sheet_segment`）复用，Python 端 `median3_clamp` 同一公式。
+pub(crate) fn median3(width: usize, height: usize, src: &[u8]) -> Vec<u8> {
     let mut out = vec![0u8; width * height];
     for y in 0..height {
         for x in 0..width {

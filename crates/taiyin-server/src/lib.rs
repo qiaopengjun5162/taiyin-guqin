@@ -9,6 +9,7 @@ mod error;
 pub mod llm;
 mod models;
 mod routes;
+pub mod sheet_segment;
 pub mod template_match;
 
 pub use config::ServerConfig;

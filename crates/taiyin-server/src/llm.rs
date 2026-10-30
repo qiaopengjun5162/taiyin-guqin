@@ -665,7 +665,8 @@ pub struct RecognizeSheetCell {
 
 /// `POST /api/v1/jianzi/recognize-sheet` 响应体。
 ///
-/// `method` 为 `"llm"`（识别成功）或 `"unavailable"`（未配置密钥）。
+/// `method` 为 `"template"`（模板切分+匹配，电子谱面确定性路径）或
+/// `"llm"`（视觉模型识别）。
 #[derive(Debug, Serialize)]
 pub struct RecognizeSheetResponse {
     pub method: &'static str,

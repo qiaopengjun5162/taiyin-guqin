@@ -88,6 +88,26 @@
 
 **识别准确率 eval（已跑出基线，2026-10-30）**：harness 在 `tools/eval-jianzi/`（标注格式 + `score.py` 计分 + HTML 报告 + 离线自测），指标含 `exact_match` / `detection_rate` / `mean_cer` / `component P·R·F1` / 置信度分桶准确率。42 条 GSUB 自动真值基线上：**通用视觉模型 exact 0%（模板坍缩、置信度不可信），模板匹配 exact 100%**；后者已接入后端识别端点（`RECOGNIZE_MODE=auto` 模板优先、LLM 兜底），端到端 HTTP 复测 42/42。适用边界（噪声/缩放/模糊扰动实验）与两条路径的取舍见该目录 `README.md`。
 
+### 3.2 整页识别基线（2026-10-30 实测，可复现）
+
+复现：`tools/eval-jianzi/sheet_eval.py synth / eval / curve / http-check`（合成谱图来自真字体渲染，非随手画方块）。
+
+| 指标 | 数字 | 复现命令 |
+|------|------|----------|
+| 切分结构正确（间隙 ≥0.2×字高） | 36/36 页 | `sheet_eval.py eval` |
+| 逐格 exact（间隙 ≥0.1，字高 56–96px 混合） | 99.0–99.5% | 同上 |
+| 逐格 exact（单字，字高 ≥72px） | **42/42 = 100%** | `sheet_eval.py curve --pool 42` |
+| 逐格 exact（字高 48px / 24px） | 97.6% / 59.5% | 同上 |
+| Python↔Rust 逐格一致（同批 72 页打真实 HTTP） | **72/72 页、851/851 格** | `sheet_eval.py http-check` |
+| 单字 42 条基线（改动后回归） | exact 100%、CER 0 | `score.py --backend …` |
+
+**边界（诚实记录，不是 bug）**：
+
+- **字格间隙 <0.1×字高会粘连**（切分把两字并成一格）；0.1 为临界线（11/12 页）；0.2 起全稳。本项目真实渲染间隙 ≈0.5×字高（24px 字 + 12px 间距），有 5 倍余量。
+- **字高 <72px 时密集复合减字（掐拨剌N声等）开始兄弟混淆**（48px 97.6%、24px 59.5%，LANCZOS 重采样口径）。识别整页请用 ≥3× 导出（72px+）。
+- **字体固有歧义 11 处已合并为等价写法**（一徽一分≡十一徽等 3 对轮廓完全相同 + md_N≡sm_N 光板数字 7 对）：任何算法都区分不开，命中任一等价写法计对，API 返回等价 truths。
+- 切分阈值（列/行 0.10×S 间隙容忍）按 213 真字实测内部白缝分布（列向 p99=2px、行向 max 0.36×字高）标定；改动 `sheet_segment.rs` 必须同步 `sheet_eval.py`（`http-check` 会逐格抓不一致）。
+
 ## 4. 快速确认协议（Quick-Confirm Protocol）
 
 1. **提交前必扫 diff**：`git status` / `git diff --stat`（diff hygiene）。防 `tsconfig.json` 被 `pnpm dev` 误改这类无关改动混入提交。
