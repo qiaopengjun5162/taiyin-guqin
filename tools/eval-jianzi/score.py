@@ -209,15 +209,24 @@ def recognize_sheet(backend: str, item: dict, base_dir: str, timeout: int) -> di
 # ---------------------------------------------------------------------------
 
 
-def score_cell(ref_glyph: str, pred_glyph: str | None):
-    """对单个单元格计分，返回一行指标 dict。pred_glyph 可能为 None（模型放弃）。"""
+def score_cell(ref_glyph: str | list[str], pred_glyph: str | None):
+    """对单个单元格计分，返回一行指标 dict。pred_glyph 可能为 None（模型放弃）。
+
+    ref_glyph 可传字符串或「等价真值列表」（如「半涓/半蠲」两种写法都对）。
+    exact 命中任一等价真值即为 True；CER 与部件 F1 取与 pred 最近的那个真值计算。
+    """
+    refs = [ref_glyph] if isinstance(ref_glyph, str) else list(ref_glyph)
+    if not refs:
+        refs = [""]
     pred = pred_glyph or ""
-    exact = (ref_glyph == pred) and pred != ""
-    cer = char_error_rate(ref_glyph, pred)
-    prec, rec, f1, tp, fp, fn = component_prf(ref_glyph, pred)
+    exact = pred != "" and pred in refs
+    # 多真值时挑编辑距离最近的算 CER / 部件指标，避免把「写法等价」误判成错误
+    best_ref = min(refs, key=lambda r: levenshtein(r, pred))
+    cer = char_error_rate(best_ref, pred)
+    prec, rec, f1, tp, fp, fn = component_prf(best_ref, pred)
     detected = pred_glyph is not None and pred_glyph != ""
     return {
-        "ref": ref_glyph,
+        "ref": "/".join(refs),
         "pred": pred_glyph,
         "exact": exact,
         "cer": cer,
@@ -371,7 +380,10 @@ def run_eval(annotations: dict, backend: str, offline: bool, timeout: int) -> di
         run_id += 1
         note = item.get("note", "")
         if mode == "single":
-            ref = item.get("ground_truth_glyph", "")
+            ref: str | list[str] = item.get("ground_truth_glyph", "")
+            alts = item.get("ground_truth_alts") or []
+            if alts:
+                ref = [ref, *alts]
             pred = item.get("predicted")
             if not offline and pred is None:
                 resp = recognize_single(backend, item, base_dir, timeout)
@@ -436,7 +448,13 @@ def self_check() -> int:
     assert s["detection_rate"] == 2 / 3
     # tp=4+2+0=6, fp=0+1+0=1, fn=0+1+4=5 -> F1 = 2*(6/7)*(6/11)/(6/7+6/11) = 2/3
     assert abs(s["comp_f1"] - 2 / 3) < 1e-9
-    print("SELF-CHECK OK: levenshtein / CER / component-F1 / aggregate 均正确")
+    # 等价真值：命中任一 alt 都算 exact；CER/F1 取最近真值
+    r = score_cell(["半涓", "半蠲"], "半蠲")
+    assert r["exact"], "alt 命中应算 exact"
+    assert r["cer"] == 0.0 and r["comp_f1"] == 1.0
+    r = score_cell(["半涓", "半蠲"], "半滑")
+    assert not r["exact"] and abs(r["cer"] - 1 / 2) < 1e-9  # 距「半涓」1/2
+    print("SELF-CHECK OK: levenshtein / CER / component-F1 / aggregate / alts 均正确")
     return 0
 
 
