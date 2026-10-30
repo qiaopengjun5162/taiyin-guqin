@@ -163,8 +163,10 @@ export function JianzipuKeyboard({
             onChange={setPinyinText}
             onSubmit={(text) => {
               if (!text.trim()) return;
+              // 纯拼音（未经过候选词替换成汉字）解析不出减字：此时直接忽略，
+              // 否则会往谱面追加一个全空的谱字列。保留输入让用户继续选候选。
               const parsed = /[一-鿿]/.test(text) ? parseJianziText(text) : null;
-              const jianzi = parsed ?? createEmptyState();
+              if (!parsed) return;
               // 编辑模式下保留原有简谱/时值数据
               const note: NoteColumn = {
                 id: defaultNote?.id ?? crypto.randomUUID(),
@@ -172,7 +174,7 @@ export function JianzipuKeyboard({
                 jianpuOctave: defaultNote?.jianpuOctave ?? "",
                 jianpuDot: defaultNote?.jianpuDot ?? false,
                 duration: defaultNote?.duration ?? "四分",
-                jianzi,
+                jianzi: parsed,
               };
               onAppend?.(note);
               setPinyinText("");

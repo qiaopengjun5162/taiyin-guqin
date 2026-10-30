@@ -337,10 +337,10 @@ export https_proxy=http://127.0.0.1:7890
 - Rust：`DATABASE_URL=... cargo llvm-cov nextest --workspace --summary-only`（含集成测试）；
   CI 用 `--lib --fail-under-lines 70` 作闸门（`--lib` 不含 `tests/`，故 `routes.rs` 在该口径下为 0%，别误判）。
 - 前端：`pnpm --filter web exec vitest run --coverage`（阈值在 `apps/web/vitest.config.ts`：
-  行 68 / 语句 66 / 分支 58 / 函数 55）。口径只含 `src/{lib,components,app}`，测试自身与生成代码排除。
+  行 87 / 语句 84 / 分支 79 / 函数 82，= 2026-10-30 实测基线略降约 2 个点）。口径只含 `src/{lib,components,app}`，测试自身与生成代码排除。
 - **本机 BUG 规避**：本机直接 `pnpm --filter web test` 可能因并发起 vitest worker 超时报
   `Failed to start worker`（表现为只跑 5/21 个文件 + 14 个 unhandled error，退出码 1）。
-  用 `pnpm --filter web test:serial`（`--no-file-parallelism --maxWorkers=1`）可稳定跑完 21/207；
+  用 `pnpm --filter web test:serial`（`--no-file-parallelism --maxWorkers=1`）可稳定跑完 24/254；
   CI 并行没问题，不要为了本机把 CI 改成串行。
 - 覆盖率报告生成吃内存：本机需 `NODE_OPTIONS=--max-old-space-size=4096`，否则进程被 SIGTERM（退出码 137）。
 
