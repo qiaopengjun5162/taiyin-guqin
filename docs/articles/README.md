@@ -61,8 +61,8 @@ bash scripts/gen-article-timeline.sh
 
 ### 草稿
 
-- `drafts/01-五个月-118次提交-一个人做出古琴减字谱编辑器.md`
-- `drafts/02-太音古琴减字谱编辑器-识别准确率0到100实操全记录.md` —— 识别 0→100% 全程（摘要/前言/背景/实操输入输出/解释说明/过程验证结论/总结/参考）；配 6 图（`scripts/gen-article-charts.py`、`scripts/gen-article-figures.py` 可复现）
+- `drafts/01-五个月-130次提交-一个人做出古琴减字谱编辑器.md` —— 项目总览长文（摘要/前言/背景/十个章节/补记/过程验证结论/总结/参考）；数字更新为 130 提交/190 文件/37554 行，配 6 图（新增 `scripts/gen-article-timeline-chart.py` 生成提交时间线图）。已推送公众号（2026-10-31）
+- `drafts/02-太音古琴减字谱编辑器-识别准确率0到100实操全记录.md` —— 识别 0→100% 全程（摘要/前言/背景/实操输入输出/解释说明/过程验证结论/总结/参考）；配 6 图（`scripts/gen-article-charts.py`、`scripts/gen-article-figures.py` 可复现）。已推送公众号（2026-10-31）
 
 ### 已有工程日志（非素材库，但可交叉引用）
 
