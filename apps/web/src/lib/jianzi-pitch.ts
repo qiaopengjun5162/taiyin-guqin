@@ -81,15 +81,15 @@ export function chineseNumToHui(hui: string | null): number | null {
   return n > 0 && n <= 13 ? n : null;
 }
 
-/** 分位 → 占相邻两徽间隔的比例（三分→0.3，六分→0.6，八分→0.8，半→0.5）。 */
+/** 分位 → 占相邻两徽间隔的比例（三分→0.3，六分→0.6，半→0.5）。 */
 function fenToFraction(fen: string | null): number {
-  switch (fen) {
-    case "三分": return 0.3;
-    case "六分": return 0.6;
-    case "八分": return 0.8;
-    case "半": return 0.5;
-    default: return 0;
-  }
+  if (!fen) return 0;
+  if (fen === "半") return 0.5;
+  const map: Record<string, number> = {
+    "一分": 0.1, "二分": 0.2, "三分": 0.3, "四分": 0.4, "五分": 0.5,
+    "六分": 0.6, "七分": 0.7, "八分": 0.8, "九分": 0.9,
+  };
+  return map[fen] ?? 0;
 }
 
 /**

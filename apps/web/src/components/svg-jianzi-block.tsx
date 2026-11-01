@@ -2,6 +2,7 @@
 
 import type { JianziState } from "@/lib/types";
 import { SVG_PATHS } from "@/lib/svg-paths";
+import { fenToGlyph } from "@/lib/jianzi";
 
 // ── mapped into svg path keys ──────────────────
 
@@ -189,6 +190,23 @@ export function SvgJianziBlock({
         >
           <GlyphSVG d={fenEntry.d} bbox={fenEntry.bbox} />
         </div>
+      )}
+      {/* 有分位但没抽到对应字形（一分/二分/四分/五分/七分/九分）时用文字兜底，
+          否则这些微分在泛音/打摘分支会静默丢掉分数，谱面记错音位。 */}
+      {fen && !fenEntry && (
+        <span
+          className="absolute"
+          style={{
+            top: "44%",
+            right: "3%",
+            fontSize: numPx * 0.2,
+            fontFamily: "'KaiTi', 'STKaiti', 'Noto Serif SC', serif",
+            color: "#1c1b1a",
+            lineHeight: 1,
+          }}
+        >
+          {fenToGlyph(fen)}
+        </span>
       )}
 
       {/* ── 右手外壳（下半部，半包围结构） ── */}

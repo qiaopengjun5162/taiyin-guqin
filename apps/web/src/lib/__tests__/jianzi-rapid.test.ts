@@ -108,3 +108,38 @@ describe("parseRapidInput · 未完成与容错", () => {
     expect(parseRapidInput("gt3", "泛").complete).toBe(false);
   });
 });
+
+describe("parseRapidInput · 十三徽与全部分位", () => {
+  it("十一 sssy / 十二 ssse / 十三 ssss", () => {
+    expect(parseRapidInput("dsssyg4", "按").state.hui).toBe("十一");
+    expect(parseRapidInput("dssseg4", "按").state.hui).toBe("十二");
+    expect(parseRapidInput("dssssg4", "按").state.hui).toBe("十三");
+  });
+
+  it("十三徽整字可成字", () => {
+    const r = parseRapidInput("dssssg4", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.hui).toBe("十三");
+    expect(r.state.rightAction).toBe("勹");
+    expect(r.state.stringNumber).toBe("四");
+  });
+
+  it("十徽仍走 sss，不被 ssss 抢走", () => {
+    const r = parseRapidInput("dsssg4", "按");
+    expect(r.state.hui).toBe("十");
+    expect(r.complete).toBe(true);
+  });
+
+  it("分位 f1–f9 与 fb", () => {
+    const cases = [
+      ["f1", "一分"], ["f2", "二分"], ["f3", "三分"], ["f4", "四分"], ["f5", "五分"],
+      ["f6", "六分"], ["f7", "七分"], ["f8", "八分"], ["f9", "九分"], ["fb", "半"],
+    ] as const;
+    for (const [key, fen] of cases) {
+      const r = parseRapidInput(`dq${key}g4`, "按");
+      expect(r.state.hui, key).toBe("七");
+      expect(r.state.fen, key).toBe(fen);
+      expect(r.complete, key).toBe(true);
+    }
+  });
+});

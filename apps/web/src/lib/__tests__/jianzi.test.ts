@@ -79,6 +79,27 @@ describe("jianziToText", () => {
     expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "七", fen: "半", rightAction: "勹", stringNumber: "二" }))).toBe("大七半勾二");
   });
 
+  /*
+   * 减字谱字体的一条硬规则：徽位后的分数在减字里**只写数字**。
+   * 「七徽六分」的字形是「七」下压一个「六」；若写成「六分」，
+   * 字体找不到部件，整块散架（线上实测「勹」被挤出格子）。
+   */
+  it("分位序列化为单字（去掉「分」字）", () => {
+    const at = (fen: string) =>
+      jianziToText(make({ toneType: "按", leftFinger: "大", hui: "七", fen, rightAction: "勹", stringNumber: "四" }));
+    expect(at("三分")).toBe("大七三勾四");
+    expect(at("六分")).toBe("大七六勾四");
+    expect(at("八分")).toBe("大七八勾四");
+    expect(at("一分")).toBe("大七一勾四");
+    expect(at("九分")).toBe("大七九勾四");
+    expect(at("半")).toBe("大七半勾四");
+  });
+
+  it("十三徽序列化为两字，与字体「十一」「十二」「十三」部件一致", () => {
+    expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "十一", rightAction: "勹", stringNumber: "四" }))).toBe("大十一勾四");
+    expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "十三", rightAction: "勹", stringNumber: "四" }))).toBe("大十三勾四");
+  });
+
   it("returns empty string for incomplete state", () => {
     expect(jianziToText(createEmptyState())).toBe("");
   });
@@ -192,6 +213,45 @@ describe("parseJianziText", () => {
   it("keeps single-character action intact (not swallowed by compound)", () => {
     expect(parseJianziText("大九抹四")!.rightAction).toBe("抹");
     expect(parseJianziText("散勾五")!.rightAction).toBe("勾");
+  });
+
+  /*
+   * 「徽位后一位数字」是分数，不是第二位徽数。
+   * 贪心吃连续徽数字会把「大七六勾四」读成徽位「七六」。
+   */
+  it("分位单位数字解析为「X分」而不是并进徽位", () => {
+    const r = parseJianziText("大七六勾四");
+    expect(r).not.toBeNull();
+    expect(r!.hui).toBe("七");
+    expect(r!.fen).toBe("六分");
+    expect(r!.rightAction).toBe("勾");
+    expect(r!.stringNumber).toBe("四");
+  });
+
+  it("解析 一分/九分 等全部分位", () => {
+    for (const [ch, fen] of [["一", "一分"], ["二", "二分"], ["四", "四分"], ["五", "五分"], ["七", "七分"], ["九", "九分"]] as const) {
+      const r = parseJianziText(`大九${ch}勾四`);
+      expect(r, `大九${ch}勾四`).not.toBeNull();
+      expect(r!.hui).toBe("九");
+      expect(r!.fen).toBe(fen);
+    }
+  });
+
+  it("兼容旧写法（带「分」字）", () => {
+    const r = parseJianziText("大七六分勾四");
+    expect(r).not.toBeNull();
+    expect(r!.hui).toBe("七");
+    expect(r!.fen).toBe("六分");
+  });
+
+  it("十一～十三徽与分位可往返", () => {
+    for (const hui of ["十一", "十二", "十三"]) {
+      const state = make({ toneType: "按", leftFinger: "大", hui, fen: "六分", rightAction: "勹", stringNumber: "四" });
+      const back = parseJianziText(jianziToText(state));
+      expect(back, hui).not.toBeNull();
+      expect(back!.hui).toBe(hui);
+      expect(back!.fen).toBe("六分");
+    }
   });
 });
 

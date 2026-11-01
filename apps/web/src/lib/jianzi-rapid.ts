@@ -55,8 +55,12 @@ const TOKENS: Record<RapidSlot, Array<[string, string]>> = {
     ["m", "夕"],
     ["g", "跪"],
   ],
-  // 三 s、四 ss、十 sss 是火蜘蛛的消歧约定，其余按首字母
+  // 三 s、四 ss、十 sss 是火蜘蛛的消歧约定，其余按首字母。
+  // 十一/十二/十三 沿用「十 + 数字」的思路：sss + y/e/s。
   hui: [
+    ["ssss", "十三"],
+    ["sssy", "十一"],
+    ["ssse", "十二"],
     ["sss", "十"],
     ["ss", "四"],
     ["s", "三"],
@@ -68,11 +72,17 @@ const TOKENS: Record<RapidSlot, Array<[string, string]>> = {
     ["b", "八"],
     ["j", "九"],
   ],
-  // 「分」是可选槽，用 f + 数字/半：f3 三分、f6 六分、f8 八分、fb 半
+  // 「分」是可选槽，用 f + 数字/半：f1 一分 … f9 九分、fb 半
   fen: [
+    ["f1", "一分"],
+    ["f2", "二分"],
     ["f3", "三分"],
+    ["f4", "四分"],
+    ["f5", "五分"],
     ["f6", "六分"],
+    ["f7", "七分"],
     ["f8", "八分"],
+    ["f9", "九分"],
     ["fb", "半"],
   ],
   // 复合指法优先（抹挑 mt / 勾剔 gt / 抹勾 mg / 打摘 dz），
@@ -257,8 +267,11 @@ export function parseRapidInput(
 /** 连打速查表，供 UI 说明 */
 export const RAPID_CHEATSHEET = [
   { title: "左手", text: "大 d · 食指 s · 中 z · 名 m · 跪 g" },
-  { title: "徽位", text: "一 y 二 e 三 s 四 ss 五 w 六 l 七 q 八 b 九 j 十 sss" },
-  { title: "分", text: "f3 三分 · f6 六分 · f8 八分 · fb 半" },
+  {
+    title: "徽位",
+    text: "一 y 二 e 三 s 四 ss 五 w 六 l 七 q 八 b 九 j 十 sss · 十一 sssy 十二 ssse 十三 ssss",
+  },
+  { title: "分", text: "f1–f9 一至九分 · fb 半" },
   {
     title: "右手",
     text: "挑 t · 勾 g · 抹 m · 打 d · 摘 z · 托 tu · 剔 ti · 擘 b · 抹挑 mt · 勾剔 gt",

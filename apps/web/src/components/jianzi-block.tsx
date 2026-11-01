@@ -9,9 +9,14 @@ const JIANZI_FONT = '"TaiYinJianZiPuKaiTi", "KaiTi", "STKaiti", "Ma Shan Zheng",
 /** 降级到 SVG 渲染的触发条件（字体 GSUB 无法正确处理的情况）。 */
 function needsSvg(state: JianziState): boolean {
   const ra = state.rightAction ?? "";
+  const hui = state.hui ?? "";
   return (
     state.toneType === "泛" ||
-    ["打", "摘", "丁", "倽"].includes(ra)
+    ["打", "摘", "丁", "倽"].includes(ra) ||
+    // 十一～十三徽是两字徽位，字体能单独成字，但后面再接分数线
+    // 就会把整块撑开（实测「大十三六勾四」的「勹」被挤出格子）。
+    // 这类组合交给 SVG 积木装，字形位置由槽位决定，不依赖连字规则。
+    (hui.length > 1 && state.fen !== null)
   );
 }
 

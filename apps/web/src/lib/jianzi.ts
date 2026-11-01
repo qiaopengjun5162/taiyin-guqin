@@ -29,6 +29,24 @@ export function createEmptyState(): JianziState {
   };
 }
 
+/**
+ * 分位 → 字体拼装用的字形字符。
+ *
+ * 这是减字谱字体的一条硬规则：徽位后面的分数在**减字里只写数字**，
+ * 不写「分」字——「七徽六分」的减字是「七」下压一个「六」。
+ * 若把「六分」整串塞进去，字体找不到对应部件，整块会被撑开散架
+ * （线上实测：选「六分」后「勹」被挤到格子外）。
+ */
+const FEN_GLYPH: Record<string, string> = {
+  "一分": "一", "二分": "二", "三分": "三", "四分": "四", "五分": "五",
+  "六分": "六", "七分": "七", "八分": "八", "九分": "九", "半": "半",
+};
+
+/** 分位取值 → 减字字形（找不到映射时退回去掉「分」字）。 */
+export function fenToGlyph(fen: string): string {
+  return FEN_GLYPH[fen] ?? fen.replace(/分$/, "");
+}
+
 /** 键盘显示字符 → 字体 GSUB 引擎期望的触发字符 */
 const RIGHT_ACTION_GLYPH: Record<string, string> = {
   勹: "勾",
@@ -61,14 +79,14 @@ export function jianziToText(jianzi: JianziState): string {
 
   if (jianzi.leftFinger) text += jianzi.leftFinger;
   if (jianzi.hui) text += jianzi.hui;
-  if (jianzi.fen) text += jianzi.fen;
+  if (jianzi.fen) text += fenToGlyph(jianzi.fen);
   if (jianzi.rightAction)
     text += RIGHT_ACTION_GLYPH[jianzi.rightAction] ?? jianzi.rightAction;
   if (jianzi.stringNumber) text += jianzi.stringNumber;
   return text;
 }
 
-/** 已知的徽数字集 */
+/** 已知的徽数字集：一～九 为单位数，十/十一/十二/十三 另判 */
 const HUI_CHARS = new Set([
   "一",
   "二",
@@ -79,8 +97,9 @@ const HUI_CHARS = new Set([
   "七",
   "八",
   "九",
-  "十",
 ]);
+/** 徽位后可能紧跟的分位数字（一分～九分 在减字里只写数字） */
+const FEN_DIGITS = new Set(["一", "二", "三", "四", "五", "六", "七", "八", "九"]);
 /** 弦序字符集 */
 const STRING_CHARS = new Set(["一", "二", "三", "四", "五", "六", "七"]);
 
@@ -149,20 +168,33 @@ export function parseJianziText(text: string): JianziState | null {
   }
 
   // 3. 徽位数字
+  //    十一/十二/十三 是两个字；其余是一位。不能贪心吃光连续数字，
+  //    否则「大七六勾四」（七徽六分）会被读成徽位「七六」。
   let huiBuf = "";
-  while (remaining.length > 0 && HUI_CHARS.has(remaining[0])) {
-    huiBuf += remaining[0];
+  if (remaining.startsWith("十")) {
+    const second = remaining[1];
+    if (second === "一" || second === "二" || second === "三") {
+      huiBuf = remaining.slice(0, 2);
+      remaining = remaining.slice(2);
+    } else {
+      huiBuf = "十";
+      remaining = remaining.slice(1);
+    }
+  } else if (remaining.length > 0 && HUI_CHARS.has(remaining[0])) {
+    huiBuf = remaining[0];
     remaining = remaining.slice(1);
   }
   if (huiBuf) result.hui = huiBuf;
 
   // 4. 分
-  for (const fen of ["三分", "六分", "八分", "半"]) {
-    if (remaining.startsWith(fen)) {
-      result.fen = fen;
-      remaining = remaining.slice(fen.length);
-      break;
-    }
+  //    减字里分数只写数字（七徽六分 → 「大七六勾四」），也兼容旧写法「六分」。
+  if (remaining.startsWith("半")) {
+    result.fen = "半";
+    remaining = remaining.slice(1);
+  } else if (remaining.length > 0 && FEN_DIGITS.has(remaining[0])) {
+    result.fen = `${remaining[0]}分`;
+    remaining = remaining.slice(1);
+    if (remaining.startsWith("分")) remaining = remaining.slice(1);
   }
 
   // 5. 右手指法
