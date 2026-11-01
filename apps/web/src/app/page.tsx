@@ -586,7 +586,7 @@ export default function Home() {
         <div className="p-5">
           <button
             onClick={() => setShowRecognizer((v) => !v)}
-            className="text-[10px] tracking-wider text-amber-600/60 hover:text-amber-100/80 transition-colors"
+            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
           >
             {showRecognizer ? "收起 AI 识别" : "＋ 用 AI 识别减字图片"}
           </button>
