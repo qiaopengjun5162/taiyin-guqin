@@ -575,7 +575,8 @@ function RapidInput({
       />
 
       <div className="flex flex-col items-center gap-3">
-        <JianzipuPreview state={parsed.state} />
+        {/* 平时不占一个空框：只有识别出槽位才显示实时预览 */}
+        {parsed.tokens.length > 0 && <JianzipuPreview state={parsed.state} />}
         <input
           ref={inputRef}
           autoFocus
