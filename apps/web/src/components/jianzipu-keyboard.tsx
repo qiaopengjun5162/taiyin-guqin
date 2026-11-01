@@ -20,6 +20,12 @@ import {
   parseJianziText,
 } from "@/lib/jianzi";
 import { lookupPinyin } from "@/lib/pinyin-dict";
+import {
+  parseRapidInput,
+  normalizeRapidInput,
+  RAPID_CHEATSHEET,
+  RAPID_SLOT_LABEL,
+} from "@/lib/jianzi-rapid";
 import { JianzipuPreview } from "./jianzipu-preview";
 
 type Section =
@@ -67,7 +73,9 @@ export function JianzipuKeyboard({
   const [duration, setDuration] = useState<Duration>(
     () => defaultNote?.duration ?? "四分",
   );
-  const [inputMode, setInputMode] = useState<"point" | "pinyin">("point");
+  const [inputMode, setInputMode] = useState<"point" | "pinyin" | "rapid">(
+    "point",
+  );
   const [pinyinText, setPinyinText] = useState(() => {
     if (defaultNote) return jianziToText(defaultNote.jianzi);
     return "";
@@ -128,35 +136,59 @@ export function JianzipuKeyboard({
     <div className="flex flex-col items-center gap-6 w-full">
       {/* ── 输入模式切换 ── */}
       <div className="flex w-full border border-stone-700/20 rounded overflow-hidden">
-        <button
-          onClick={() => setInputMode("point")}
-          className={`flex-1 py-2 text-xs tracking-wider transition-all duration-200 ${
-            inputMode === "point"
-              ? "bg-stone-800 text-amber-50"
-              : "bg-transparent text-stone-500 hover:text-stone-300"
-          }`}
-        >
-          点选
-        </button>
-        <button
-          onClick={() => setInputMode("pinyin")}
-          className={`flex-1 py-2 text-xs tracking-wider transition-all duration-200 ${
-            inputMode === "pinyin"
-              ? "bg-stone-800 text-amber-50"
-              : "bg-transparent text-stone-500 hover:text-stone-300"
-          }`}
-        >
-          拼音
-        </button>
+        {(
+          [
+            ["point", "点选"],
+            ["pinyin", "拼音"],
+            ["rapid", "连打"],
+          ] as const
+        ).map(([mode, label]) => (
+          <button
+            key={mode}
+            onClick={() => setInputMode(mode)}
+            className={`flex-1 py-2 text-xs tracking-wider transition-all duration-200 ${
+              inputMode === mode
+                ? "bg-stone-800 text-amber-50"
+                : "bg-transparent text-stone-500 hover:text-stone-300"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* ── 预览区 ── */}
-      <div className="flex flex-col items-center gap-2">
-        <JianzipuPreview state={state} />
-      </div>
+      {/* ── 预览区（连打模式在输入框旁自带实时预览） ── */}
+      {inputMode !== "rapid" && (
+        <div className="flex flex-col items-center gap-2">
+          <JianzipuPreview state={state} />
+        </div>
+      )}
 
       {/* ── 输入模式内容 ── */}
-      {inputMode === "pinyin" ? (
+      {inputMode === "rapid" ? (
+        <div className="w-full">
+          <RapidInput
+            toneType={state.toneType ?? "散"}
+            onToneType={(t) => handleSelect("toneType", t)}
+            onCommit={(jianzi) => {
+              onAppend?.({
+                id: defaultNote?.id ?? crypto.randomUUID(),
+                jianpuNumber: defaultNote?.jianpuNumber ?? null,
+                jianpuOctave: defaultNote?.jianpuOctave ?? "",
+                jianpuDot: defaultNote?.jianpuDot ?? false,
+                duration: defaultNote?.duration ?? "四分",
+                jianzi,
+              });
+              // 连打是「一个谱字接一个谱字」的流水录入，提交后只保留音色语境
+              setState((prev) => ({
+                ...createEmptyState(),
+                toneType: prev.toneType,
+                rhythmMode: prev.rhythmMode,
+              }));
+            }}
+          />
+        </div>
+      ) : inputMode === "pinyin" ? (
         <div className="w-full">
           <PinyinInput
             value={pinyinText}
@@ -497,6 +529,121 @@ function PinyinInput({
           提交
         </button>
       </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// 连打输入组件（键盘盲打，不弹候选词）
+// ──────────────────────────────────────────────
+
+function RapidInput({
+  toneType,
+  onToneType,
+  onCommit,
+}: {
+  toneType: NoteType;
+  onToneType: (tone: NoteType) => void;
+  onCommit: (jianzi: JianziState) => void;
+}) {
+  const [buffer, setBuffer] = useState("");
+  const [committed, setCommitted] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const parsed = parseRapidInput(buffer, toneType);
+
+  function handleChange(raw: string) {
+    const next = normalizeRapidInput(raw);
+    const result = parseRapidInput(next, toneType);
+    // 打满一个完整谱字就立刻成字，并清空输入继续下一个
+    if (result.complete) {
+      onCommit(result.state);
+      setBuffer("");
+      setCommitted((n) => n + 1);
+      return;
+    }
+    setBuffer(next);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionGroup
+        label="音色"
+        items={DEFAULT_KEYBOARD.toneTypes}
+        active={toneType}
+        onSelect={(v) => onToneType(v as NoteType)}
+      />
+
+      <div className="flex flex-col items-center gap-3">
+        <JianzipuPreview state={parsed.state} />
+        <input
+          ref={inputRef}
+          autoFocus
+          value={buffer}
+          onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setBuffer("");
+              e.preventDefault();
+            }
+          }}
+          placeholder={
+            toneType === "散" ? "例：g4（勾四）" : "例：djg4（大九勾四）"
+          }
+          className="w-full px-3 py-2 text-base tracking-[0.3em] text-center rounded border border-stone-300/50 bg-[#f8f3eb] text-stone-800 placeholder:text-stone-400/40 placeholder:tracking-normal outline-none focus:border-amber-600/40 focus:ring-1 focus:ring-amber-600/20 transition-all"
+        />
+
+        {/* 已识别槽位 */}
+        <div className="flex flex-wrap items-center justify-center gap-1.5 min-h-[26px]">
+          {parsed.tokens.length === 0 ? (
+            <span className="text-[11px] tracking-[0.15em] text-stone-400">
+              按减字书写顺序打，打满自动成字
+            </span>
+          ) : (
+            parsed.tokens.map((t, i) => (
+              <span
+                key={`${t.slot}-${i}`}
+                className="px-2 py-0.5 text-[11px] rounded border border-amber-700/30 bg-amber-700/10 text-stone-700"
+              >
+                <span className="text-stone-400">{RAPID_SLOT_LABEL[t.slot]}</span>
+                <span className="mx-1 text-stone-300">·</span>
+                {t.value}
+              </span>
+            ))
+          )}
+          {parsed.nextSlot && (
+            <span className="px-2 py-0.5 text-[11px] rounded border border-dashed border-stone-300 text-stone-400">
+              下一个：{RAPID_SLOT_LABEL[parsed.nextSlot]}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 text-[11px] tracking-[0.15em] text-stone-400">
+          <span>已录入 {committed} 字</span>
+          {buffer && (
+            <button
+              onClick={() => setBuffer("")}
+              className="text-stone-500 hover:text-stone-800 transition-colors"
+            >
+              Esc 清空
+            </button>
+          )}
+        </div>
+      </div>
+
+      <details className="w-full rounded border border-stone-700/10 bg-stone-700/[0.03]">
+        <summary className="px-3 py-2 text-[11px] tracking-[0.15em] text-stone-500 cursor-pointer select-none">
+          连打速查表（三/四/十分别为 s / ss / sss）
+        </summary>
+        <ul className="px-3 pb-3 space-y-1.5">
+          {RAPID_CHEATSHEET.map((row) => (
+            <li key={row.title} className="flex gap-2 text-[11px] leading-relaxed">
+              <span className="shrink-0 w-8 text-stone-400">{row.title}</span>
+              <span className="text-stone-600">{row.text}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
     </div>
   );
 }
