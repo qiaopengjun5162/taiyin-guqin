@@ -20,6 +20,8 @@ interface SaveLoadToolbarProps {
   canRedo?: boolean;
   onUndo?: () => void;
   onRedo?: () => void;
+  /** server=存后端；browser=静态站点无后端，存本机浏览器 */
+  storageMode?: "server" | "browser";
 }
 
 export function SaveLoadToolbar({
@@ -42,6 +44,7 @@ export function SaveLoadToolbar({
   canRedo,
   onUndo,
   onRedo,
+  storageMode = "server",
 }: SaveLoadToolbarProps) {
   return (
     <div className="no-print mt-3 w-full max-w-md flex items-center gap-2">
@@ -86,6 +89,14 @@ export function SaveLoadToolbar({
       >
         {saveStatus === "saving" ? "保存中…" : saveStatus === "saved" ? "已保存" : saveStatus === "error" ? "保存失败" : "保存"}
       </button>
+      {storageMode === "browser" && (
+        <span
+          title="当前是纯前端版本（未连接后端），曲谱保存在本机浏览器，换设备或清缓存会丢失；可用「导出文本」备份。"
+          className="px-1.5 py-1 rounded text-[9px] tracking-wider text-amber-700/50 border border-amber-700/20 whitespace-nowrap"
+        >
+          存本机
+        </span>
+      )}
       <button
         onClick={onLoad}
         aria-label="加载曲谱"
