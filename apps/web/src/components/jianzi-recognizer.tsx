@@ -4,7 +4,12 @@ import { useRef, useState } from "react";
 import type { JianziState } from "@/lib/types";
 import { parseJianziText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "@/components/svg-jianzi-block";
-import { recognizeJianzi } from "@/lib/api";
+import { recognizeJianzi, isBrowserOnlyMode } from "@/lib/api";
+import {
+  loadTemplateIndex,
+  recognizeFile,
+  type TemplateMatch,
+} from "@/lib/jianzi-template";
 import { schedulePluck } from "@/lib/audio-synth";
 import { jianziToFrequency, jianziToJianpu } from "@/lib/jianzi-pitch";
 
@@ -21,11 +26,33 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** 模板索引的静态地址：随 basePath 变化，用文档基准 URL 解析最稳。 */
+function templateIndexUrl(): string {
+  return new URL("data/template_index.json", document.baseURI).toString();
+}
+
+/**
+ * 纯前端识别：模板索引懒加载 → 归一化 → 最近邻。
+ *
+ * 线上是静态托管，没有后端可调；但模板匹配本来就是确定性算术，
+ * 完全可以在浏览器里跑，识别因此不再依赖服务器。
+ */
+async function recognizeInBrowser(f: File): Promise<TemplateMatch> {
+  const index = await loadTemplateIndex(templateIndexUrl());
+  const match = await recognizeFile(index, f);
+  if (!match) throw new Error("图片里没有找到墨迹，换一张更清晰的减字图试试");
+  return match;
+}
+
 /**
  * 减字谱单字图像识别面板（对标 udywang「琴与人的交互 1 号」）。
  *
- * 上传/拍照一张减字谱单字 → 后端 Claude 多模态识别为规范减字文本 →
+ * 上传/拍照一张减字谱单字 → 识别为规范减字文本 →
  * 前端用既有 `parseJianziText` 解析为可视化状态并渲染 → 可点听。
+ *
+ * 两条识别路径：
+ * - 有后端（本机开发）：走后端多模态接口；
+ * - 静态站点（线上）：走浏览器内模板匹配，确定性、不烧 token、零服务器。
  *
  * 试听采用「正调七弦空弦音 + 识别音色」近似（徽位精确音高留待后续），
  * 仅用于建立"这个减字听起来是什么弦"的直觉。
@@ -37,6 +64,9 @@ export function JianziRecognizer() {
   const [explanation, setExplanation] = useState<string | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
   const [edit, setEdit] = useState<string | null>(null);
+  const [method, setMethod] = useState<"llm" | "unavailable" | "template" | null>(
+    null,
+  );
   const [state, setState] = useState<JianziState | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -47,15 +77,28 @@ export function JianziRecognizer() {
     setExplanation(null);
     setConfidence(null);
     setEdit(null);
+    setMethod(null);
     setState(null);
     setLoading(true);
     try {
+      if (isBrowserOnlyMode()) {
+        const match = await recognizeInBrowser(f);
+        setGlyph(match.text);
+        setConfidence(match.confidence);
+        setMethod("template");
+        setExplanation(
+          `本机模板匹配（无需后端）：命中 ${match.name}，距离 ${match.distance.toFixed(0)}`,
+        );
+        setState(parseJianziText(match.text));
+        return;
+      }
       const base64 = await fileToBase64(f);
       const mediaType = f.type || "image/jpeg";
       const resp = await recognizeJianzi(base64, mediaType);
       setGlyph(resp.glyph);
       setExplanation(resp.explanation);
       setConfidence(resp.confidence);
+      setMethod(resp.method ?? null);
       if (resp.glyph) {
         setState(parseJianziText(resp.glyph));
       } else if (resp.method === "unavailable") {
@@ -87,7 +130,7 @@ export function JianziRecognizer() {
   return (
     <div className="p-3 rounded border border-amber-700/20 bg-amber-900/10">
       <p className="mb-2 text-[10px] tracking-wider text-amber-600/60">
-        减字谱单字识别（AI 图像识别）
+        减字谱单字识别（模板匹配 · 无需联网）
       </p>
 
       <input
@@ -110,7 +153,7 @@ export function JianziRecognizer() {
           {loading ? "识别中…" : "上传减字图片"}
         </button>
         <p className="text-[10px] tracking-wider text-amber-700/40">
-          拍/传一张减字谱单字（如「大九勾四」）
+          传一张减字图（如「大九勾四」）；电子谱面/清晰扫描件最准
         </p>
       </div>
 
@@ -164,6 +207,8 @@ export function JianziRecognizer() {
             {confidence !== null && edit === null && (
               <p className="mt-0.5 text-[10px] tracking-wider text-amber-700/50">
                 置信度：{(confidence * 100).toFixed(0)}%
+                {method === "template" && " · 本机模板匹配"}
+                {method === "llm" && " · 后端模型"}
               </p>
             )}
             {explanation && (
