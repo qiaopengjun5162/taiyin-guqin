@@ -25,3 +25,7 @@ tools/eval-jianzi/annotations/sheet_cases.json
 
 # moonpub 本地产物（预览接收人等）
 .moonpub/
+
+# moonpub 发布产物（.md 源文件才是要提交的）
+docs/articles/drafts/*.draft.json
+docs/articles/drafts/*.html
