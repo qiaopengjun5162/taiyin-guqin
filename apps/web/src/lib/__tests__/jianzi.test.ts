@@ -101,11 +101,11 @@ describe("jianziToText", () => {
   });
 
   /*
-   * 两字徽位后面接分数时，中间要有「徽」字分隔，
-   * 否则字体把后面的数字另起一块、整字被撑开（实测对比四种写法）。
+   * 两字徽位 + 分数是字体做不到的组合（实测分数会被甩到左下角），
+   * 渲染层改走 SVG；文本形态保持「徽位 + 分数」直连，便于导出与再解析。
    */
-  it("两字徽位 + 分数时插入「徽」分隔", () => {
-    expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "十三", fen: "六分", rightAction: "勹", stringNumber: "四" }))).toBe("大十三徽六勾四");
+  it("两字徽位 + 分数时文本不含「徽」字", () => {
+    expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "十三", fen: "六分", rightAction: "勹", stringNumber: "四" }))).toBe("大十三六勾四");
     expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "十", fen: "六分", rightAction: "勹", stringNumber: "四" }))).toBe("大十六勾四");
   });
 
