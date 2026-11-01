@@ -57,6 +57,8 @@ export default function Home() {
   // 持久化状态
   const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
   const [savedScores, setSavedScores] = useState<api.ScoreListItem[]>([]);
+  // 纯前端模式（静态托管无后端）时，曲谱改存浏览器本地，需在 UI 上说明
+  const [storageMode, setStorageMode] = useState<"server" | "browser">("server");
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -86,6 +88,11 @@ export default function Home() {
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
+  }, []);
+
+  /** 静态站点（无后端）时，曲谱改存浏览器本地 —— 在挂载后判定，避免 SSR 水合不一致 */
+  useEffect(() => {
+    setStorageMode(api.scoreStorageMode());
   }, []);
 
   /** 全局撤销/重做快捷键 */
@@ -350,6 +357,7 @@ export default function Home() {
       {/* ── 工具栏：标题 + 保存 / 加载 / 导出 ── */}
       <SaveLoadToolbar
         title={scoreTitle}
+        storageMode={storageMode}
         onTitleChange={setScoreTitle}
         onTitleBlur={() => commitScoreTitle(scoreTitle)}
         onSave={handleSave}

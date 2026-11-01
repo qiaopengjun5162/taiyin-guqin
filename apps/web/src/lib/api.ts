@@ -1,6 +1,32 @@
 import type { NoteColumn } from "./types";
+import {
+  localCreateScore,
+  localDeleteScore,
+  localGetScore,
+  localListScores,
+  localUpdateScore,
+} from "./local-score-store";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+/**
+ * 纯前端模式：没有配置后端地址，且当前不在本机开发环境。
+ *
+ * GitHub Pages 这类静态托管没有 Rust 后端，此时若继续打 localhost:3001，
+ * 保存 / 加载 / 识别全部必然失败。曲谱改为存浏览器本地，
+ * 保证「拼—听—存—取」这条最基本的链路在线上可用。
+ */
+export function isBrowserOnlyMode(): boolean {
+  if (process.env.NEXT_PUBLIC_API_URL) return false;
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host !== "localhost" && host !== "127.0.0.1";
+}
+
+/** 当前曲谱存储位置，供 UI 提示用。 */
+export function scoreStorageMode(): "server" | "browser" {
+  return isBrowserOnlyMode() ? "browser" : "server";
+}
 const DEFAULT_TIMEOUT = 10_000;
 
 // 后端可选 API-key 闸门（纵深防御性设计）：配置后调用 /translate/select 需携带。
@@ -23,6 +49,10 @@ export class ApiError extends Error {
     this.status = status;
   }
 }
+
+/** 静态站点没有后端时的识别提示（避免静默失败） */
+const BROWSER_ONLY_RECOGNIZE_HINT =
+  "识别功能需要后端服务。当前是纯前端版本（未连接后端），请在本机运行 just dev 后使用识别。";
 
 async function fetchWithTimeout(
   url: string,
@@ -69,6 +99,7 @@ export async function createScore(
   title: string,
   notes: NoteColumn[],
 ): Promise<Score> {
+  if (isBrowserOnlyMode()) return localCreateScore(title, notes);
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -78,11 +109,13 @@ export async function createScore(
 }
 
 export async function listScores(): Promise<ScoreListItem[]> {
+  if (isBrowserOnlyMode()) return localListScores();
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`);
   return handleResponse(res);
 }
 
 export async function getScore(id: string): Promise<Score> {
+  if (isBrowserOnlyMode()) return localGetScore(id);
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`);
   return handleResponse(res);
 }
@@ -91,6 +124,7 @@ export async function updateScore(
   id: string,
   data: { title?: string; notes?: NoteColumn[] },
 ): Promise<Score> {
+  if (isBrowserOnlyMode()) return localUpdateScore(id, data);
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -100,6 +134,10 @@ export async function updateScore(
 }
 
 export async function deleteScore(id: string): Promise<void> {
+  if (isBrowserOnlyMode()) {
+    localDeleteScore(id);
+    return;
+  }
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
     method: "DELETE",
   });
@@ -147,6 +185,7 @@ export async function recognizeJianzi(
   imageBase64: string,
   mediaType: string,
 ): Promise<RecognizeJianziResponse> {
+  if (isBrowserOnlyMode()) throw new ApiError(BROWSER_ONLY_RECOGNIZE_HINT, 503);
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/jianzi/recognize`, {
     method: "POST",
     headers: authHeaders(),
@@ -185,6 +224,7 @@ export async function recognizeJianziSheet(
   imageBase64: string,
   mediaType: string,
 ): Promise<RecognizeSheetResponse> {
+  if (isBrowserOnlyMode()) throw new ApiError(BROWSER_ONLY_RECOGNIZE_HINT, 503);
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/jianzi/recognize-sheet`, {
     method: "POST",
     headers: authHeaders(),

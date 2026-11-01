@@ -12,6 +12,7 @@ vi.mock("@/lib/api", () => ({
   selectCandidates: vi.fn(),
   recognizeJianzi: vi.fn(),
   recognizeJianziSheet: vi.fn(),
+  scoreStorageMode: () => "server",
   ApiError: class ApiError extends Error {},
 }));
 
