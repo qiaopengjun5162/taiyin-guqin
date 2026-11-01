@@ -169,7 +169,11 @@ export function JianziRecognizer() {
               {state ? (
                 <SvgJianziBlock state={state} fontSize="40px" />
               ) : (
-                <span className="text-[11px] text-amber-700/50">未识别</span>
+                // 识别成功但拼不成完整演奏谱字（如「大指」「四弦」这类部件）时，
+                // 显示识别出的原文，别让用户误以为没识别出来
+                <span className="text-[13px] text-stone-700">
+                  {edit === null && glyph ? glyph : "未识别"}
+                </span>
               )}
             </div>
             {state && (
