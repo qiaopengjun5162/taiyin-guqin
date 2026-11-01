@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
@@ -19,6 +19,9 @@ import { useMetronome } from "@/lib/use-metronome";
 import { renderScoreToBuffer, downloadWav } from "@/lib/audio-export";
 import * as api from "@/lib/api";
 import Link from "next/link";
+
+/** useSyncExternalStore 的空订阅：存储模式在页面生命周期内不会变，无需通知。 */
+const subscribeNoop = () => () => {};
 
 /**
  * 数据流：
@@ -57,8 +60,14 @@ export default function Home() {
   // 持久化状态
   const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
   const [savedScores, setSavedScores] = useState<api.ScoreListItem[]>([]);
-  // 纯前端模式（静态托管无后端）时，曲谱改存浏览器本地，需在 UI 上说明
-  const [storageMode, setStorageMode] = useState<"server" | "browser">("server");
+  // 纯前端模式（静态托管无后端）时，曲谱改存浏览器本地，需在 UI 上说明。
+  // 用 useSyncExternalStore 读取「仅浏览器可得」的值：服务端快照固定为 server，
+  // 挂载后取真实值，既不触发水合不一致，也避免在 effect 里同步 setState。
+  const storageMode = useSyncExternalStore<"server" | "browser">(
+    subscribeNoop,
+    api.scoreStorageMode,
+    () => "server",
+  );
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -88,11 +97,6 @@ export default function Home() {
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
-  }, []);
-
-  /** 静态站点（无后端）时，曲谱改存浏览器本地 —— 在挂载后判定，避免 SSR 水合不一致 */
-  useEffect(() => {
-    setStorageMode(api.scoreStorageMode());
   }, []);
 
   /** 全局撤销/重做快捷键 */
