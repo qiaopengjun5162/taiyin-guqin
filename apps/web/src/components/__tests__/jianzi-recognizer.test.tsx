@@ -4,6 +4,14 @@ import { JianziRecognizer } from "@/components/jianzi-recognizer";
 
 vi.mock("@/lib/api", () => ({
   recognizeJianzi: vi.fn(),
+  // 这些用例都走「有后端」分支；浏览器内模板匹配另有单测覆盖
+  isBrowserOnlyMode: vi.fn(() => false),
+}));
+
+// 浏览器端匹配：索引与图片解码都在 jsdom 里跑不动，整体替身，只验证接线
+vi.mock("@/lib/jianzi-template", () => ({
+  loadTemplateIndex: vi.fn(async () => ({ size: 64, entries: [] })),
+  recognizeFile: vi.fn(),
 }));
 
 // 试听走 Web Audio；jsdom 没有 AudioContext，连合成函数一起替身，
@@ -14,7 +22,8 @@ vi.mock("@/lib/audio-synth", () => ({
   TONE_PROFILE: {},
 }));
 
-import { recognizeJianzi } from "@/lib/api";
+import { recognizeJianzi, isBrowserOnlyMode } from "@/lib/api";
+import { recognizeFile } from "@/lib/jianzi-template";
 import { schedulePluck } from "@/lib/audio-synth";
 
 class FakeAudioContext {
@@ -26,6 +35,8 @@ class FakeAudioContext {
 
 beforeEach(() => {
   vi.mocked(recognizeJianzi).mockReset();
+  vi.mocked(recognizeFile).mockReset();
+  vi.mocked(isBrowserOnlyMode).mockReturnValue(false);
   vi.mocked(schedulePluck).mockReset();
   vi.stubGlobal("AudioContext", FakeAudioContext);
   // jsdom 的 FileReader 不会为 File 触发 onload，mock 掉以驱动测试
@@ -246,5 +257,39 @@ describe("JianziRecognizer", () => {
 
     expect(screen.getByText("未识别")).toBeTruthy();
     expect(screen.queryByText("试听")).toBeNull();
+  });
+  it("静态站点走浏览器内模板匹配，不调用后端", async () => {
+    vi.mocked(isBrowserOnlyMode).mockReturnValue(true);
+    vi.mocked(recognizeFile).mockResolvedValue({
+      name: "lg_dajiugousi",
+      text: "大九勾四",
+      distance: 8.5,
+      margin: 120.25,
+      confidence: 0.93,
+    });
+
+    const { container } = render(<JianziRecognizer />);
+    upload(container);
+
+    await waitFor(() =>
+      expect(
+        (container.querySelector('input[aria-label="减字校正框"]') as HTMLInputElement)
+          .value,
+      ).toBe("大九勾四"),
+    );
+    expect(recognizeJianzi).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/本机模板匹配/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/命中 lg_dajiugousi/)).toBeTruthy();
+  });
+
+  it("本机匹配没找到墨迹时给出提示而不是静默失败", async () => {
+    vi.mocked(isBrowserOnlyMode).mockReturnValue(true);
+    vi.mocked(recognizeFile).mockResolvedValue(null);
+
+    const { container } = render(<JianziRecognizer />);
+    upload(container);
+
+    await waitFor(() => expect(screen.getByText(/没有找到墨迹/)).toBeTruthy());
+    expect(recognizeJianzi).not.toHaveBeenCalled();
   });
 });
