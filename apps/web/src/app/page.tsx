@@ -18,6 +18,7 @@ import { useScorePlayer } from "@/lib/use-score-player";
 import { useMetronome } from "@/lib/use-metronome";
 import { renderScoreToBuffer, downloadWav } from "@/lib/audio-export";
 import * as api from "@/lib/api";
+import Link from "next/link";
 
 /**
  * 数据流：
@@ -572,9 +573,23 @@ export default function Home() {
       </div>
 
       {/* ── 页脚 ── */}
-      <p className="no-print mt-auto pt-10 text-[11px] tracking-[0.15em] text-amber-700/30">
-        先选音色，再依次拼出完整减字
-      </p>
+      <div className="no-print mt-auto pt-10 flex flex-col items-center gap-2">
+        <p className="text-[11px] tracking-[0.15em] text-amber-700/30">
+          先选音色，再依次拼出完整减字
+        </p>
+        <Link
+          href="/yuelun"
+          className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
+        >
+          乐论 · 《荀子》读书
+        </Link>
+        <Link
+          href="/jianzipu"
+          className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
+        >
+          减字谱 · 科普
+        </Link>
+      </div>
     </main>
   );
 }
