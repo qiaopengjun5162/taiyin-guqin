@@ -104,6 +104,8 @@ vi.mock("@/lib/api", () => {
     recognizeJianzi: vi.fn(),
     recognizeJianziSheet: vi.fn(),
     scoreStorageMode: () => "server",
+    // jsdom 跑在 localhost，与真实判定一致：有后端模式
+    isBrowserOnlyMode: () => false,
   };
 });
 
@@ -453,10 +455,10 @@ describe("Home · AI 识别面板", () => {
     const { container } = render(<Home />);
 
     fireEvent.click(screen.getByRole("button", { name: "＋ 用 AI 识别减字图片" }));
-    expect(screen.getByText("减字谱单字识别（模板匹配 · 无需联网）")).toBeTruthy();
+    expect(screen.getByText("减字谱单字识别（后端模型）")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "整页" }));
-    expect(screen.queryByText("减字谱单字识别（模板匹配 · 无需联网）")).toBeNull();
+    expect(screen.queryByText("减字谱单字识别（后端模型）")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "收起 AI 识别" }));
     expect(container.textContent).toContain("＋ 用 AI 识别减字图片");

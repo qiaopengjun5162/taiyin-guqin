@@ -260,12 +260,14 @@ describe("JianziRecognizer", () => {
   });
   it("静态站点走浏览器内模板匹配，不调用后端", async () => {
     vi.mocked(isBrowserOnlyMode).mockReturnValue(true);
+    // 用索引里真实存在的条目（徽位），别再造「大九勾四」这种整字模板——
+    // 模板索引里没有整字，假数据会让测试假装算法能认整字。
     vi.mocked(recognizeFile).mockResolvedValue({
-      name: "lg_dajiugousi",
-      text: "大九勾四",
-      distance: 8.5,
-      margin: 120.25,
-      confidence: 0.93,
+      name: "sm_7.6",
+      text: "七徽六分",
+      distance: 812,
+      margin: 1460.25,
+      confidence: 0.64,
     });
 
     const { container } = render(<JianziRecognizer />);
@@ -275,11 +277,54 @@ describe("JianziRecognizer", () => {
       expect(
         (container.querySelector('input[aria-label="减字校正框"]') as HTMLInputElement)
           .value,
-      ).toBe("大九勾四"),
+      ).toBe("七徽六分"),
     );
     expect(recognizeJianzi).not.toHaveBeenCalled();
     expect(screen.getAllByText(/本机模板匹配/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/命中 lg_dajiugousi/)).toBeTruthy();
+    expect(screen.getByText(/命中 sm_7\.6/)).toBeTruthy();
+    // 只认部件这件事必须写在面板上，别让用户以为能认整字
+    expect(screen.getByText(/只认单个部件/)).toBeTruthy();
+    expect(screen.getByText("减字部件识别（本机模板匹配）")).toBeTruthy();
+  });
+
+  it("匹配度低时不把结果当答案，明确告警", async () => {
+    vi.mocked(isBrowserOnlyMode).mockReturnValue(true);
+    // 真实测出来的情形：整字「大九勾四」被硬套成「抹勾」，置信度 3%
+    vi.mocked(recognizeFile).mockResolvedValue({
+      name: "lg_mogou",
+      text: "抹勾",
+      distance: 7445,
+      margin: 230,
+      confidence: 0.03,
+    });
+
+    const { container } = render(<JianziRecognizer />);
+    upload(container);
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toContain("很可能不对");
+  });
+
+  it("匹配度够高时不出告警", async () => {
+    vi.mocked(isBrowserOnlyMode).mockReturnValue(true);
+    vi.mocked(recognizeFile).mockResolvedValue({
+      name: "sm_7.6",
+      text: "七徽六分",
+      distance: 812,
+      margin: 1460.25,
+      confidence: 0.64,
+    });
+
+    const { container } = render(<JianziRecognizer />);
+    upload(container);
+
+    await waitFor(() =>
+      expect(
+        (container.querySelector('input[aria-label="减字校正框"]') as HTMLInputElement)
+          .value,
+      ).toBe("七徽六分"),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("本机匹配没找到墨迹时给出提示而不是静默失败", async () => {

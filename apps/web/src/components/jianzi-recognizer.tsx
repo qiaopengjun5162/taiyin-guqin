@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import type { JianziState } from "@/lib/types";
 import { parseJianziText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "@/components/svg-jianzi-block";
@@ -44,15 +44,27 @@ async function recognizeInBrowser(f: File): Promise<TemplateMatch> {
   return match;
 }
 
+/** 该模式在页面生命周期内不变，无需通知。 */
+const subscribeNoop = () => () => {};
+
 /**
- * 减字谱单字图像识别面板（对标 udywang「琴与人的交互 1 号」）。
+ * 匹配度低于此值就明确告警：`confidence = margin/(distance+margin)`，
+ * top-2 距离接近时趋于 0 —— 也就是算法自己都分不清是哪一个。
+ * 这类结果宁可不给，也不能当答案摆着。
+ */
+const LOW_CONFIDENCE = 0.2;
+
+/**
+ * 减字谱识别面板。
  *
- * 上传/拍照一张减字谱单字 → 识别为规范减字文本 →
+ * 上传/拍照一张减字谱图像 → 识别为规范减字文本 →
  * 前端用既有 `parseJianziText` 解析为可视化状态并渲染 → 可点听。
  *
- * 两条识别路径：
- * - 有后端（本机开发）：走后端多模态接口；
- * - 静态站点（线上）：走浏览器内模板匹配，确定性、不烧 token、零服务器。
+ * 两条识别路径，能力边界不同，必须在界面上说清：
+ * - 有后端（本机开发）：走后端多模态接口，可认完整减字；
+ * - 静态站点（线上）：走浏览器内模板匹配，**只认单个部件**
+ *   （徽位「七徽六分」、复合指法「勾剔」、弦/徽数字），
+ *   模板索引里没有「大九勾四」这类整字，别指望它认整字。
  *
  * 试听采用「正调七弦空弦音 + 识别音色」近似（徽位精确音高留待后续），
  * 仅用于建立"这个减字听起来是什么弦"的直觉。
@@ -70,6 +82,9 @@ export function JianziRecognizer() {
   const [state, setState] = useState<JianziState | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 静态站点无后端时走本机匹配（能力只到部件一级），文案要跟着变。
+  // 服务端快照固定 false，避免水合不一致。
+  const browserOnly = useSyncExternalStore(subscribeNoop, isBrowserOnlyMode, () => false);
 
   async function handleFile(f: File) {
     setError(null);
@@ -81,7 +96,7 @@ export function JianziRecognizer() {
     setState(null);
     setLoading(true);
     try {
-      if (isBrowserOnlyMode()) {
+      if (browserOnly) {
         const match = await recognizeInBrowser(f);
         setGlyph(match.text);
         setConfidence(match.confidence);
@@ -130,7 +145,7 @@ export function JianziRecognizer() {
   return (
     <div className="p-3 rounded border border-amber-700/20 bg-amber-900/10">
       <p className="mb-2 text-[10px] tracking-wider text-amber-600/60">
-        减字谱单字识别（模板匹配 · 无需联网）
+        {browserOnly ? "减字部件识别（本机模板匹配）" : "减字谱单字识别（后端模型）"}
       </p>
 
       <input
@@ -152,8 +167,10 @@ export function JianziRecognizer() {
         >
           {loading ? "识别中…" : "上传减字图片"}
         </button>
-        <p className="text-[10px] tracking-wider text-amber-700/40">
-          传一张减字图（如「大九勾四」）；电子谱面/清晰扫描件最准
+        <p className="text-[10px] leading-relaxed tracking-wider text-amber-700/40">
+          {browserOnly
+            ? "本机匹配只认单个部件：徽位（七徽六分）、复合指法（勾剔）、弦/徽数字。整字请用「连打」录入"
+            : "传一张减字图（如「大九勾四」）；电子谱面/清晰扫描件最准"}
         </p>
       </div>
 
@@ -213,6 +230,15 @@ export function JianziRecognizer() {
                 置信度：{(confidence * 100).toFixed(0)}%
                 {method === "template" && " · 本机模板匹配"}
                 {method === "llm" && " · 后端模型"}
+              </p>
+            )}
+            {confidence !== null && confidence < LOW_CONFIDENCE && edit === null && (
+              <p
+                role="alert"
+                className="mt-1 rounded border border-red-400/40 bg-red-900/20 px-2 py-1 text-[10px] leading-relaxed text-red-200/85"
+              >
+                匹配度低：候选之间几乎分不开，这个结果很可能不对。请直接改正，
+                或改用「连打」自己录——别拿它当答案。
               </p>
             )}
             {explanation && (
