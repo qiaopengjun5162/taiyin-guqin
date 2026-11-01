@@ -356,4 +356,56 @@ describe("JianzipuKeyboard", () => {
     const submit = screen.getByRole("button", { name: "提交" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
   });
+
+  // ── 连打（键盘盲打）──
+
+  it("连打模式：散音打 g4 自动成「勾四」并清空输入", () => {
+    const onAppend = vi.fn();
+    const { container } = render(<JianzipuKeyboard onAppend={onAppend} />);
+    fireEvent.click(screen.getByRole("button", { name: "连打" }));
+
+    const input = container.querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "g4" } });
+
+    expect(onAppend).toHaveBeenCalledTimes(1);
+    const note = onAppend.mock.calls[0][0] as NoteColumn;
+    expect(note.jianzi.toneType).toBe("散");
+    expect(note.jianzi.rightAction).toBe("勹");
+    expect(note.jianzi.stringNumber).toBe("四");
+    expect(input.value).toBe("");
+  });
+
+  it("连打模式：按音打 djg4 成「大九勾四」，未打满前不成字", () => {
+    const onAppend = vi.fn();
+    const { container } = render(<JianzipuKeyboard onAppend={onAppend} />);
+    fireEvent.click(screen.getByRole("button", { name: "连打" }));
+    pick(container, "音色", "按");
+
+    const input = container.querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "djg" } });
+    expect(onAppend).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "djg4" } });
+    expect(onAppend).toHaveBeenCalledTimes(1);
+    const note = onAppend.mock.calls[0][0] as NoteColumn;
+    expect(note.jianzi.toneType).toBe("按");
+    expect(note.jianzi.leftFinger).toBe("大");
+    expect(note.jianzi.hui).toBe("九");
+    expect(note.jianzi.rightAction).toBe("勹");
+    expect(note.jianzi.stringNumber).toBe("四");
+  });
+
+  it("连打模式：Esc 清空当前未完成的输入", () => {
+    const onAppend = vi.fn();
+    const { container } = render(<JianzipuKeyboard onAppend={onAppend} />);
+    fireEvent.click(screen.getByRole("button", { name: "连打" }));
+
+    const input = container.querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "dj" } });
+    expect(input.value).toBe("dj");
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input.value).toBe("");
+    expect(onAppend).not.toHaveBeenCalled();
+  });
 });
