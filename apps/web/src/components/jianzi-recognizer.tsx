@@ -167,7 +167,7 @@ export function JianziRecognizer() {
         >
           {loading ? "识别中…" : "上传减字图片"}
         </button>
-        <p className="text-[10px] leading-relaxed tracking-wider text-amber-700/40">
+        <p className="text-[10px] leading-relaxed tracking-wider text-amber-800/70">
           {browserOnly
             ? "本机匹配只认单个部件：徽位（七徽六分）、复合指法（勾剔）、弦/徽数字。整字请用「连打」录入"
             : "传一张减字图（如「大九勾四」）；电子谱面/清晰扫描件最准"}
@@ -235,7 +235,7 @@ export function JianziRecognizer() {
             {confidence !== null && confidence < LOW_CONFIDENCE && edit === null && (
               <p
                 role="alert"
-                className="mt-1 rounded border border-red-400/40 bg-red-900/20 px-2 py-1 text-[10px] leading-relaxed text-red-200/85"
+                className="mt-1 rounded border border-red-600/40 bg-red-500/10 px-2 py-1 text-[10px] leading-relaxed text-red-800"
               >
                 匹配度低：候选之间几乎分不开，这个结果很可能不对。请直接改正，
                 或改用「连打」自己录——别拿它当答案。
