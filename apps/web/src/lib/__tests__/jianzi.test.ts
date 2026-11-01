@@ -100,6 +100,15 @@ describe("jianziToText", () => {
     expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "十三", rightAction: "勹", stringNumber: "四" }))).toBe("大十三勾四");
   });
 
+  /*
+   * 两字徽位后面接分数时，中间要有「徽」字分隔，
+   * 否则字体把后面的数字另起一块、整字被撑开（实测对比四种写法）。
+   */
+  it("两字徽位 + 分数时插入「徽」分隔", () => {
+    expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "十三", fen: "六分", rightAction: "勹", stringNumber: "四" }))).toBe("大十三徽六勾四");
+    expect(jianziToText(make({ toneType: "按", leftFinger: "大", hui: "十", fen: "六分", rightAction: "勹", stringNumber: "四" }))).toBe("大十六勾四");
+  });
+
   it("returns empty string for incomplete state", () => {
     expect(jianziToText(createEmptyState())).toBe("");
   });

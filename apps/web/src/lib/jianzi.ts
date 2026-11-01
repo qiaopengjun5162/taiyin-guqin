@@ -79,6 +79,10 @@ export function jianziToText(jianzi: JianziState): string {
 
   if (jianzi.leftFinger) text += jianzi.leftFinger;
   if (jianzi.hui) text += jianzi.hui;
+  // 十一～十三徽是两字徽位。字体把「十三」当成一个徽位部件后，
+  // 紧跟的数字会被当成下一个字符另起一块，整字被撑开；
+  // 中间补一个「徽」字，字体才把分数收进同一象限（实测四种写法对比选定）。
+  if (jianzi.hui && jianzi.hui.length > 1 && jianzi.fen) text += "徽";
   if (jianzi.fen) text += fenToGlyph(jianzi.fen);
   if (jianzi.rightAction)
     text += RIGHT_ACTION_GLYPH[jianzi.rightAction] ?? jianzi.rightAction;
@@ -188,6 +192,8 @@ export function parseJianziText(text: string): JianziState | null {
 
   // 4. 分
   //    减字里分数只写数字（七徽六分 → 「大七六勾四」），也兼容旧写法「六分」。
+  //    两字徽位后可能带一个「徽」分隔字（见 jianziToText 的说明），先跳过。
+  if (remaining.startsWith("徽")) remaining = remaining.slice(1);
   if (remaining.startsWith("半")) {
     result.fen = "半";
     remaining = remaining.slice(1);
