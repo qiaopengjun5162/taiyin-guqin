@@ -41,6 +41,23 @@ describe("jianpuToFrequency", () => {
     expect(jianpuToFrequency("0", "")).toBeNull();
     expect(jianpuToFrequency(null, "")).toBeNull();
   });
+
+  it("默认以 A4=440 为基准", () => {
+    // 简谱 5 之上的 6（A4 本身）= 440
+    expect(jianpuToFrequency("6", "")).toBeCloseTo(440, 1);
+  });
+
+  it("改基准音时整谱等比平移，相对音程不变", () => {
+    const at440 = jianpuToFrequency("1", "", 440) as number;
+    const at415 = jianpuToFrequency("1", "", 415) as number;
+    // 415/440 的比例作用到每个音上
+    expect(at415 / at440).toBeCloseTo(415 / 440, 6);
+
+    // 古琴常整床偏低：425Hz 时中央 C 约低 60 音分（1200·log2(425/440) ≈ -59.6）
+    const at425 = jianpuToFrequency("1", "", 425) as number;
+    const cents = 1200 * Math.log2(at425 / at440);
+    expect(cents).toBeCloseTo(-59.6, 0);
+  });
 });
 
 describe("buildSchedule", () => {
@@ -75,5 +92,16 @@ describe("buildSchedule", () => {
   it("notes without jianpu number are silent", () => {
     const schedule = buildSchedule([makeNote({ jianpuNumber: null })], 500);
     expect(schedule[0].freq).toBeNull();
+  });
+
+  it("基准音透传到每个音，且不改变排程时值", () => {
+    const notes = [makeNote({ jianpuNumber: "6" }), makeNote({ jianpuNumber: "5" })];
+    const at440 = buildSchedule(notes, 500);
+    const at415 = buildSchedule(notes, 500, 415);
+
+    expect(at440[0].freq).toBeCloseTo(440, 1);
+    expect(at415[0].freq).toBeCloseTo(415, 1);
+    // 时值不受基准音影响
+    expect(at415.map((s) => s.start)).toEqual(at440.map((s) => s.start));
   });
 });

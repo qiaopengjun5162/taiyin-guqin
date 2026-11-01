@@ -8,6 +8,7 @@
 
 import type { NoteColumn, NoteType } from "./types";
 import { durationToBeats } from "./jianzi";
+import { CONCERT_PITCH_DEFAULT } from "./concert-pitch";
 
 /** 简谱数字 → 相对 C 的半音数。 */
 const SEMITONES: Record<string, number> = {
@@ -20,10 +21,15 @@ const SEMITONES: Record<string, number> = {
   "7": 11,
 };
 
-/** 简谱数字 + 八度偏移 → 播放频率（Hz）；不可播放返回 null。 */
+/** 简谱数字 + 八度偏移 → 播放频率（Hz）；不可播放返回 null。
+ *
+ * `concertPitch` 为 A4 的频率（默认 440）。古琴常整床偏低，改这一个数即可
+ * 让整谱跟着自己的琴走——相对音程不变，只是整体平移。
+ */
 export function jianpuToFrequency(
   number: string | null,
   octave: string,
+  concertPitch: number = CONCERT_PITCH_DEFAULT,
 ): number | null {
   if (!number || number === "0") return null;
   const semitone = SEMITONES[number];
@@ -31,7 +37,7 @@ export function jianpuToFrequency(
   const octaveOffset =
     octave === "·" ? 12 : octave === "··" ? 24 : octave === "," ? -12 : octave === ",," ? -24 : 0;
   const midi = 60 + semitone + octaveOffset;
-  return 440 * Math.pow(2, (midi - 69) / 12);
+  return concertPitch * Math.pow(2, (midi - 69) / 12);
 }
 
 export interface ScheduledNote {
@@ -47,8 +53,13 @@ export interface ScheduledNote {
 
 /**
  * 将乐谱流排为调度表。`beatMs` 为一拍（四分音符）的毫秒数。
+ * `concertPitch` 为 A4 频率，透传给 `jianpuToFrequency`。
  */
-export function buildSchedule(notes: NoteColumn[], beatMs: number): ScheduledNote[] {
+export function buildSchedule(
+  notes: NoteColumn[],
+  beatMs: number,
+  concertPitch: number = CONCERT_PITCH_DEFAULT,
+): ScheduledNote[] {
   const out: ScheduledNote[] = [];
   let cursor = 0;
   for (const note of notes) {
@@ -57,7 +68,7 @@ export function buildSchedule(notes: NoteColumn[], beatMs: number): ScheduledNot
     out.push({
       start: cursor,
       duration,
-      freq: jianpuToFrequency(note.jianpuNumber, note.jianpuOctave),
+      freq: jianpuToFrequency(note.jianpuNumber, note.jianpuOctave, concertPitch),
       toneType: note.jianzi.toneType,
     });
     cursor += duration;

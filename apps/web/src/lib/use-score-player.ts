@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { NoteColumn } from "./types";
 import { buildSchedule } from "./player";
+import { CONCERT_PITCH_DEFAULT } from "./concert-pitch";
 import { schedulePluck, TONE_PROFILE } from "./audio-synth";
 
 /**
@@ -15,8 +16,13 @@ import { schedulePluck, TONE_PROFILE } from "./audio-synth";
  * 休止符与无简谱标注的音静默但占位时值。
  *
  * @param bpm 速度（拍/分钟），默认 120；调速后下次播放生效。
+ * @param concertPitch A4 频率（默认 440）；古琴整床偏低时用它对齐。
  */
-export function useScorePlayer(notes: NoteColumn[], bpm: number = 120) {
+export function useScorePlayer(
+  notes: NoteColumn[],
+  bpm: number = 120,
+  concertPitch: number = CONCERT_PITCH_DEFAULT,
+) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   /** 同步追踪播放态，供 play 做重入 guard（不依赖 isPlaying 闭包，便于跳转重启） */
@@ -61,7 +67,7 @@ export function useScorePlayer(notes: NoteColumn[], bpm: number = 120) {
     }
 
     const beatMs = 60000 / bpm;
-    const schedule = buildSchedule(notes, beatMs);
+    const schedule = buildSchedule(notes, beatMs, concertPitch);
     // 起始音符的时间基准，用作整体左移偏移
     const offset = schedule[startIndex]?.start ?? 0;
     const t0 = ctx.currentTime + 0.05;
@@ -90,7 +96,7 @@ export function useScorePlayer(notes: NoteColumn[], bpm: number = 120) {
     );
     const remaining = Math.max(0, total - offset);
     timerRef.current = setTimeout(stop, remaining * 1000 + 100);
-  }, [notes, stop, bpm]);
+  }, [notes, stop, bpm, concertPitch]);
 
   // 乐谱变更时自动停止播放，防止旧音频继续发声
   useEffect(() => {

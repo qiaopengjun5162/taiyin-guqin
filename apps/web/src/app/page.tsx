@@ -16,6 +16,15 @@ import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
 import { useScorePlayer } from "@/lib/use-score-player";
 import { useMetronome } from "@/lib/use-metronome";
+import {
+  CONCERT_PITCH_DEFAULT,
+  CONCERT_PITCH_MAX,
+  CONCERT_PITCH_MIN,
+  getConcertPitch,
+  getServerConcertPitch,
+  setConcertPitch,
+  subscribeConcertPitch,
+} from "@/lib/concert-pitch";
 import { renderScoreToBuffer, downloadWav } from "@/lib/audio-export";
 import * as api from "@/lib/api";
 import Link from "next/link";
@@ -74,11 +83,18 @@ export default function Home() {
   const [isExportingAudio, setIsExportingAudio] = useState(false);
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   const [bpm, setBpm] = useState(120);
+  // 基准音：古琴常整床偏低（丝弦尤甚），改 A4 频率即可让整谱跟着自己的琴走。
+  // 同样用 useSyncExternalStore 读「仅浏览器可得」的 localStorage 值。
+  const concertPitch = useSyncExternalStore(
+    subscribeConcertPitch,
+    getConcertPitch,
+    getServerConcertPitch,
+  );
   const [linkMetronome, setLinkMetronome] = useState(true);
   const [exportWithCountIn, setExportWithCountIn] = useState(true);
   const [showRecognizer, setShowRecognizer] = useState(false);
   const [recognizerTab, setRecognizerTab] = useState<"single" | "sheet">("single");
-  const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score, bpm);
+  const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score, bpm, concertPitch);
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -293,6 +309,7 @@ export default function Home() {
         beatsPerBar,
         withMetronome: linkMetronome,
         leadInBars: exportWithCountIn ? 2 : 0,
+        concertPitch,
       });
       downloadWav(buffer, `${scoreTitle || "taiyin-score"}.wav`);
     } catch {
@@ -480,6 +497,31 @@ export default function Home() {
           aria-label="播放速度（BPM）"
           className="flex-1 accent-amber-600 h-2"
         />
+      </div>
+
+      {/* ── 基准音（A4）调节：古琴常整床偏低，按自己琴上的实际音高设 ── */}
+      <div className="no-print mt-1 w-full max-w-md flex items-center gap-3 py-1.5">
+        <span className="text-[10px] tracking-wider text-amber-600/50 whitespace-nowrap">
+          基准音 {concertPitch} Hz
+        </span>
+        <input
+          type="range"
+          min={CONCERT_PITCH_MIN}
+          max={CONCERT_PITCH_MAX}
+          step={1}
+          value={concertPitch}
+          onChange={(e) => setConcertPitch(parseInt(e.target.value, 10))}
+          aria-label="基准音（A4 频率 Hz）"
+          className="flex-1 accent-amber-600 h-2"
+        />
+        <button
+          onClick={() => setConcertPitch(CONCERT_PITCH_DEFAULT)}
+          disabled={concertPitch === CONCERT_PITCH_DEFAULT}
+          className="shrink-0 rounded border border-amber-700/25 px-2 py-0.5 text-[10px] tracking-wider text-amber-700/60 transition-colors hover:text-amber-900 disabled:opacity-30 disabled:hover:text-amber-700/60"
+          title="回到标准音高 A4=440"
+        >
+          标准
+        </button>
       </div>
 
       {/* ── 加载对话框 ── */}

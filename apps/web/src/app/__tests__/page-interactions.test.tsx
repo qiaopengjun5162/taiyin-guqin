@@ -269,7 +269,12 @@ describe("Home · 音频导出", () => {
     const [notes, bpm, opts] = h.renderScoreToBuffer.mock.calls[0];
     expect((notes as NoteColumn[]).length).toBe(8);
     expect(bpm).toBe(100);
-    expect(opts).toEqual({ beatsPerBar: 3, withMetronome: true, leadInBars: 2 });
+    expect(opts).toEqual({
+      beatsPerBar: 3,
+      withMetronome: true,
+      leadInBars: 2,
+      concertPitch: 440,
+    });
 
     await waitFor(() => expect(h.downloadWav).toHaveBeenCalledTimes(1));
     expect(h.downloadWav.mock.calls[0][1]).toBe("沧海一声笑（片段）.wav");
@@ -308,6 +313,26 @@ describe("Home · 音频导出", () => {
     const [text, filename] = h.downloadTextFile.mock.calls[0];
     expect(text).toContain("沧海一声笑");
     expect(filename).toBe("沧海一声笑（片段）.txt");
+  });
+});
+
+describe("Home · 基准音", () => {
+  it("改基准音会同步到导出，点「标准」可恢复 440", async () => {
+    await loadExample();
+    expect(screen.getByText("基准音 440 Hz")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("基准音（A4 频率 Hz）"), {
+      target: { value: "415" },
+    });
+    expect(screen.getByText("基准音 415 Hz")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("导出音频"));
+    await waitFor(() => expect(h.renderScoreToBuffer).toHaveBeenCalledTimes(1));
+    expect(h.renderScoreToBuffer.mock.calls[0][2].concertPitch).toBe(415);
+
+    // 恢复标准音高，避免把 415 泄漏给同一文件里的后续用例
+    fireEvent.click(screen.getByRole("button", { name: "标准" }));
+    expect(screen.getByText("基准音 440 Hz")).toBeTruthy();
   });
 });
 

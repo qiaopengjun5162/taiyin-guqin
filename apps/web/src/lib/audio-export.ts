@@ -9,6 +9,7 @@
  */
 import type { NoteColumn, NoteType } from "./types";
 import { buildSchedule } from "./player";
+import { CONCERT_PITCH_DEFAULT } from "./concert-pitch";
 import { schedulePluck, scheduleClick, TONE_PROFILE } from "./audio-synth";
 
 function tailOf(toneType: NoteType | null): number {
@@ -24,6 +25,8 @@ export interface RenderOptions {
   leadInBars?: number;
   /** 采样率，默认 44100。 */
   sampleRate?: number;
+  /** A4 基准频率，默认 440；导出音轨需与播放时的琴音高一致。 */
+  concertPitch?: number;
 }
 
 /**
@@ -37,13 +40,19 @@ export async function renderScoreToBuffer(
   bpm: number,
   opts: RenderOptions = {},
 ): Promise<AudioBuffer> {
-  const { beatsPerBar = 4, withMetronome = false, leadInBars = 0, sampleRate = 44100 } = opts;
+  const {
+    beatsPerBar = 4,
+    withMetronome = false,
+    leadInBars = 0,
+    sampleRate = 44100,
+    concertPitch = CONCERT_PITCH_DEFAULT,
+  } = opts;
   const beatMs = 60000 / bpm;
   const beatSec = beatMs / 1000;
   const beatOffset = 0.05; // 与实时播放一样的起拍前导
   const leadInBeats = leadInBars * beatsPerBar;
   const startOffset = leadInBeats * beatSec;
-  const schedule = buildSchedule(notes, beatMs);
+  const schedule = buildSchedule(notes, beatMs, concertPitch);
   const total = schedule.reduce(
     (end, s) => Math.max(end, s.start + s.duration + tailOf(s.toneType)),
     0,
