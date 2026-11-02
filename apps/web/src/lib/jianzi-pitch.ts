@@ -1,10 +1,13 @@
 /**
- * 减字 → 音高推算（古琴正调）。
+ * 减字 → 音高推算。
  *
  * 由减字状态（弦序 + 徽位 + 分 + 音色）反推实际振动频率与简谱唱名，
  * 供「AI 识别 → 点听 / 导入为可演奏曲谱」使用。
  *
- * 物理模型（正调，空弦音见 OPEN_STRING_FREQ）：
+ * 空弦音来自 `tuning.ts` 的定弦表（正调 / 蕤宾调 / 慢角调），
+ * 再乘以基准音频率——两者是独立维度：定弦决定弦间音程，基准音决定整体高低。
+ *
+ * 物理模型（以该定弦的空弦频率为基准）：
  * - 散音：直接取空弦频率。
  * - 按音：在距岳山 p（按弦点占全弦比例）处按实，有效弦长为 (1−p)，
  *         频率 = 空弦 / (1−p)。
@@ -15,17 +18,14 @@
  */
 
 import type { JianziState, JianpuNumber, JianpuOctave } from "./types";
+import { CONCERT_PITCH_DEFAULT } from "./concert-pitch";
+import { DEFAULT_TUNING, openStringFrequency, type TuningId } from "./tuning";
 
-/** 正调（仲呂調）七弦空弦频率 (Hz)。 */
-export const OPEN_STRING_FREQ: Record<string, number> = {
-  "一": 65.41, // C2
-  "二": 73.42, // D2
-  "三": 87.31, // F2
-  "四": 98.0, // G2
-  "五": 110.0, // A2
-  "六": 130.81, // C3
-  "七": 146.83, // D3
-};
+/** 推算用的上下文：用哪种定弦、A4 定到多少。 */
+export interface PitchContext {
+  tuning?: TuningId;
+  concertPitch?: number;
+}
 
 /** 十三徽距岳山的比例（p，占全弦长）。 */
 const HUI_FRACTION: Record<number, number> = {
@@ -60,6 +60,16 @@ const HUI_HARMONIC: Record<number, number> = {
   12: 6,
   13: 8,
 };
+
+/**
+ * 徽位 → 该处轻触得到的泛音谐波次数（一徽 8 次、七徽 2 次…）。
+ *
+ * 对外暴露是因为「琴面音位全览」也要用同一张表：图上标的泛音若与
+ * 点下去听到的次数不一致，那张图就只是装饰。非法徽位返回 null。
+ */
+export function huiHarmonic(hui: number): number | null {
+  return HUI_HARMONIC[hui] ?? null;
+}
 
 /** 中文数字徽位 → 整数（支持 一～十三）。 */
 export function chineseNumToHui(hui: string | null): number | null {
@@ -125,10 +135,11 @@ function harmonicNumberFromP(p: number): number {
 }
 
 /** 减字状态 → 实际振动频率 (Hz)；无法推算返回 null。 */
-export function jianziToFrequency(state: JianziState): number | null {
+export function jianziToFrequency(state: JianziState, ctx: PitchContext = {}): number | null {
+  const { tuning = DEFAULT_TUNING, concertPitch = CONCERT_PITCH_DEFAULT } = ctx;
   if (!state.stringNumber) return null;
-  const open = OPEN_STRING_FREQ[state.stringNumber];
-  if (!open) return null;
+  const open = openStringFrequency(state.stringNumber, tuning, concertPitch);
+  if (open == null) return null;
   if (state.toneType === "散") return open;
   if (state.hui == null) return null; // 按/泛音必须有徽位
   const huiNum = chineseNumToHui(state.hui);
@@ -143,15 +154,21 @@ export function jianziToFrequency(state: JianziState): number | null {
 }
 
 /**
- * 频率 → 最接近的可表示简谱唱名（±2 八度范围，以 1=C4 为基准）。
- * 古琴低音区（一～五弦空弦及低按音）现可正确落于低二八度（",,"），
- * 不再被上移八度；高音区（高徽按音/泛音）可落于高二八度（"··"）。
+ * 频率 → 最接近的可表示简谱唱名（1=F 记谱，与 Rust 引擎一致）。
+ *
+ * 基准与 `jianpuToMidi` 同一套：未标记八度的「1」= F1（MIDI 29）。
+ * 古琴低音区（一～五弦空弦及低按音）落在低八度记号，高音区（高徽按音/泛音）
+ * 落于高八度记号。搜索范围在 ±2 八度（可表示记号的上限）；超出窗口的音高
+ * 会吸附到最近的边界记号——纯显示用途，不影响播放（播放以减字为准）。
  */
 export function frequencyToJianpu(
   freq: number,
+  concertPitch: number = CONCERT_PITCH_DEFAULT,
 ): { number: JianpuNumber; octave: JianpuOctave } | null {
   if (!isFinite(freq) || freq <= 0) return null;
-  const targetMidi = 69 + 12 * Math.log2(freq / 440);
+  const targetMidi = 69 + 12 * Math.log2(freq / concertPitch);
+  // 1=F 基准：未标记「1」= F1 = MIDI 29，与 player.jianpuToMidi 一致。
+  const BASE_MIDI = 29;
   const offsets: JianpuOctave[] = ["", "·", "··", ",", ",,"];
   const degrees: [JianpuNumber, number][] = [
     ["1", 0], ["2", 2], ["3", 4], ["4", 5], ["5", 7], ["6", 9], ["7", 11],
@@ -163,7 +180,7 @@ export function frequencyToJianpu(
     for (const o of offsets) {
       const off =
         o === "·" ? 12 : o === "··" ? 24 : o === "," ? -12 : o === ",," ? -24 : 0;
-      const err = Math.abs(targetMidi - (60 + s + off));
+      const err = Math.abs(targetMidi - (BASE_MIDI + s + off));
       if (err < bestErr) {
         bestErr = err;
         bestNum = num;
@@ -177,8 +194,9 @@ export function frequencyToJianpu(
 /** 减字状态 → 最接近的可表示简谱唱名；无法推算返回 null。 */
 export function jianziToJianpu(
   state: JianziState,
+  ctx: PitchContext = {},
 ): { number: JianpuNumber; octave: JianpuOctave } | null {
-  const freq = jianziToFrequency(state);
+  const freq = jianziToFrequency(state, ctx);
   if (freq == null) return null;
-  return frequencyToJianpu(freq);
+  return frequencyToJianpu(freq, ctx.concertPitch ?? CONCERT_PITCH_DEFAULT);
 }

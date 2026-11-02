@@ -81,6 +81,7 @@ describe("JianzipuKeyboard", () => {
       leftFinger: null,
       hui: null,
       fen: null,
+      slide: null,
       rightAction: "勹",
       stringNumber: "五",
     });
@@ -104,6 +105,74 @@ describe("JianzipuKeyboard", () => {
     expect(confirmBtn().disabled).toBe(true);
     // 音色仍是散，选中态保留
     expect(option(container, "音色", "散").className).toContain("bg-amber-700");
+  });
+
+  it("走手音只在按音出现，选了绰会随谱字吐出 slide", () => {
+    const onAppend = vi.fn();
+    const { container } = render(<JianzipuKeyboard onAppend={onAppend} />);
+
+    // 散音没有左手可滑，不给这一栏
+    expect(() => section(container, "走手音")).toThrow();
+
+    pick(container, "音色", "按");
+    // 泛音是虚按徽位取泛音，一滑就脱离节点，也不给
+    pick(container, "音色", "泛");
+    expect(() => section(container, "走手音")).toThrow();
+
+    pick(container, "音色", "按");
+    pick(container, "左手", "大");
+    pick(container, "徽位", "九");
+    pick(container, "分", "六分");
+    pick(container, "走手音", "绰");
+    pick(container, "右手", "勹");
+    pick(container, "弦序", "四");
+
+    fireEvent.click(confirmBtn());
+    const note = onAppend.mock.calls[0][0] as NoteColumn;
+    expect(note.jianzi.slide).toBe("绰");
+    expect(note.jianzi.hui).toBe("九");
+    expect(note.jianzi.fen).toBe("六分");
+  });
+
+  it("从按音改判成泛音时，走手音会被清掉（不能留下弹不出的标记）", () => {
+    const { container } = render(<JianzipuKeyboard />);
+
+    pick(container, "音色", "按");
+    pick(container, "走手音", "注");
+    expect(option(container, "走手音", "注").className).toContain("bg-amber-700");
+
+    pick(container, "音色", "泛");
+    pick(container, "音色", "按");
+    // 回到按音时不该还留着「注」
+    expect(option(container, "走手音", "注").className).not.toContain("bg-amber-700");
+  });
+
+  // 急 与绰/注 共用字体里的同一个槽位，但读法不同：界面分「走手音」「弹法」两组，
+  // 数据上是同一个 slide 字段，所以选「急」会把「绰」顶掉。
+  it("「弹法」只有急一个键，选了会写入 slide 并顶掉走手音", () => {
+    const onAppend = vi.fn();
+    const { container } = render(<JianzipuKeyboard onAppend={onAppend} />);
+
+    expect(() => section(container, "弹法")).toThrow();
+
+    pick(container, "音色", "按");
+    const urgentGroup = section(container, "弹法");
+    expect(urgentGroup.querySelectorAll("button")).toHaveLength(1);
+
+    pick(container, "走手音", "绰");
+    pick(container, "弹法", "急");
+    // 同一个槽位，互斥：绰 被顶掉
+    expect(option(container, "走手音", "绰").className).not.toContain("bg-amber-700");
+    expect(option(container, "弹法", "急").className).toContain("bg-amber-700");
+
+    pick(container, "左手", "大");
+    pick(container, "徽位", "九");
+    pick(container, "右手", "勹");
+    pick(container, "弦序", "四");
+    fireEvent.click(confirmBtn());
+
+    const note = onAppend.mock.calls[0][0] as NoteColumn;
+    expect(note.jianzi.slide).toBe("急");
   });
 
   it("再次点击已选按键等于取消选择", () => {
@@ -174,6 +243,7 @@ describe("JianzipuKeyboard", () => {
       leftFinger: "大",
       hui: "九",
       fen: "三分",
+      slide: null,
       rightAction: "勹",
       stringNumber: "五",
     });
@@ -234,6 +304,7 @@ describe("JianzipuKeyboard", () => {
         leftFinger: null,
         hui: null,
         fen: null,
+        slide: null,
         rightAction: "勹",
         stringNumber: "五",
       },
@@ -273,6 +344,7 @@ describe("JianzipuKeyboard", () => {
         leftFinger: null,
         hui: null,
         fen: null,
+        slide: null,
         rightAction: "勹",
         stringNumber: "五",
       },
@@ -347,6 +419,32 @@ describe("JianzipuKeyboard", () => {
 
     expect(onAppend).not.toHaveBeenCalled();
     expect(input.value).toBe("da gou");
+  });
+
+  // 打字打谱最怕「回车没反应」：读不懂要说话，别静默丢弃。
+  it("纯拼音回车给出提示，不只留在输入框里", () => {
+    const { container } = render(<JianzipuKeyboard />);
+    fireEvent.click(screen.getByRole("button", { name: "拼音" }));
+    const input = container.querySelector("input[type='text']") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "da gou" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(container.textContent).toContain("先把拼音选成汉字");
+  });
+
+  it("汉字写不完整时不追加谱字，并说明缺什么", () => {
+    const onAppend = vi.fn();
+    const { container } = render(<JianzipuKeyboard onAppend={onAppend} />);
+    fireEvent.click(screen.getByRole("button", { name: "拼音" }));
+    const input = container.querySelector("input[type='text']") as HTMLInputElement;
+
+    // 缺弦序，isComplete 不成立
+    fireEvent.change(input, { target: { value: "大九勾" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onAppend).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("没读懂这个谱字");
   });
 
   it("拼音为空时提交按钮禁用", () => {

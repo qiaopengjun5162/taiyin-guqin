@@ -88,7 +88,7 @@ describe("JianpuTranslator single mode", () => {
 
   it("renders inputs and translate button", () => {
     const { container } = render(<JianpuTranslator onSelect={vi.fn()} />);
-    expect(container.textContent).toContain("翻译");
+    expect(container.textContent).toContain("查音位");
   });
 
   it("calls onSelect with an array when clicking a candidate", async () => {
@@ -99,7 +99,7 @@ describe("JianpuTranslator single mode", () => {
     fireEvent.change(container.querySelectorAll("select")[1] as HTMLSelectElement, {
       target: { value: "5" },
     });
-    fireEvent.click(getByText("翻译"));
+    fireEvent.click(getByText("查音位"));
 
     await waitFor(() => {
       expect(getByText("散挑一")).toBeInTheDocument();
@@ -123,7 +123,7 @@ describe("JianpuTranslator single mode", () => {
     fireEvent.change(container.querySelectorAll("select")[1] as HTMLSelectElement, {
       target: { value: "5" },
     });
-    fireEvent.click(getByText("翻译"));
+    fireEvent.click(getByText("查音位"));
 
     await waitFor(() => {
       expect(getByText("散挑一")).toBeInTheDocument();
@@ -137,7 +137,7 @@ describe("JianpuTranslator single mode", () => {
     fireEvent.change(container.querySelectorAll("select")[1] as HTMLSelectElement, {
       target: { value: "5" },
     });
-    fireEvent.click(getByText("翻译"));
+    fireEvent.click(getByText("查音位"));
 
     await waitFor(() => {
       expect(getByText("散挑一")).toBeInTheDocument();
@@ -148,7 +148,7 @@ describe("JianpuTranslator single mode", () => {
     });
 
     expect(queryByText("散挑一")).not.toBeInTheDocument();
-    expect(getByText("调式已变更，请重新翻译")).toBeInTheDocument();
+    expect(getByText("调式已变更，请重新查音位")).toBeInTheDocument();
   });
 
   it("shows WASM initialization error and disables translate", () => {

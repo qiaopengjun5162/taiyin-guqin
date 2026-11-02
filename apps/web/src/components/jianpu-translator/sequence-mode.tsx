@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import type { NoteColumn } from "@/lib/types";
-import { jianziToText, createEmptyState } from "@/lib/jianzi";
+import { createEmptyState } from "@/lib/jianzi";
 import { translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
 import { selectCandidates } from "@/lib/api";
+import { useNotePreview } from "@/lib/use-note-preview";
 import {
   parseJianpuString,
   type ParsedJianpuNote,
@@ -12,7 +13,8 @@ import {
 } from "@/lib/jianpu-parser";
 import type { JianziCandidate } from "@/lib/generated/taiyin";
 import { buildJianziState, candidateToNoteColumn } from "./candidate";
-import type { Tuning } from "./types";
+import { CandidateChip } from "./candidate-chip";
+import { TUNING_TO_ID, type Tuning } from "./types";
 
 export function SequenceMode({
   tuning,
@@ -35,6 +37,8 @@ export function SequenceMode({
   const [error, setError] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiHint, setAiHint] = useState<string | null>(null);
+
+  const preview = useNotePreview(TUNING_TO_ID[tuning]);
 
   async function handleTranslate() {
     const parsed = parseJianpuString(input);
@@ -171,9 +175,9 @@ export function SequenceMode({
         onChange={(e) => setInput(e.target.value)}
         placeholder="例如：5 6 1 2 | 3 5 6 -"
         rows={2}
-        className="w-full px-2 py-1 rounded border border-amber-700/20 bg-transparent text-amber-100/70 text-sm placeholder:text-amber-700/30 resize-none"
+        className="w-full px-2 py-1 rounded border border-amber-700/20 bg-transparent text-stone-700 text-sm placeholder:text-stone-400 resize-none"
       />
-      <p className="text-[9px] tracking-wider text-amber-700/40">
+      <p className="text-[9px] tracking-wider text-amber-800/60">
         支持：· 高八度　, 低八度　| 小节线　- 延音　_ 八分　__ 十六分　. 附点
       </p>
       <div className="flex items-center gap-2">
@@ -203,7 +207,7 @@ export function SequenceMode({
                 </button>
               </>
             ) : (
-              <span className="text-[10px] tracking-wider text-amber-600/50">
+              <span className="text-[10px] tracking-wider text-stone-500">
                 调式已变更，请重新翻译
               </span>
             )}
@@ -214,7 +218,7 @@ export function SequenceMode({
               清空
             </button>
             {aiHint && (
-              <span className="text-[10px] tracking-wider text-amber-600/50">
+              <span className="text-[10px] tracking-wider text-stone-500">
                 {aiHint}
               </span>
             )}
@@ -225,31 +229,35 @@ export function SequenceMode({
         <p className="text-[10px] tracking-wider text-red-400/80">{error}</p>
       )}
       {notes.length > 0 && notesTuning === tuning && (
-        <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+        <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto pr-1">
           {notes.map((item, noteIdx) => (
             <div
               key={`${noteIdx}-${item.raw}`}
-              className="flex items-center gap-2 px-2 py-1 rounded border border-amber-700/10 bg-amber-900/5"
+              className="flex items-center gap-2 rounded border border-amber-700/15 bg-amber-900/5 px-2 py-1"
             >
-              <span className="w-8 shrink-0 text-center text-xs text-amber-100/60">
+              <span className="w-8 shrink-0 text-center text-xs text-stone-600">
                 {item.raw}
               </span>
-              <div className="flex flex-wrap gap-1.5">
-                {candidatesPerNote[noteIdx]?.map((c, candIdx) => (
-                  <button
-                    key={candIdx}
-                    onClick={() => selectCandidate(noteIdx, candIdx)}
-                    className={`px-1.5 py-0.5 text-xs rounded border ${
-                      selectedIndex[noteIdx] === candIdx
-                        ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
-                        : "border-amber-700/20 text-amber-100/70 hover:bg-amber-900/20"
-                    }`}
-                    title={`评分: ${c.score}`}
-                  >
-                    {jianziToText(buildJianziState(c))}
-                  </button>
-                ))}
+              {/* 一个音常有三十多个落点，横排滑动看，不要把每个音拉成十几行 */}
+              <div className="flex flex-1 gap-1.5 overflow-x-auto pb-1">
+                {candidatesPerNote[noteIdx]?.map((c, candIdx) => {
+                  const state = buildJianziState(c);
+                  return (
+                    <div key={candIdx} className="w-[72px] shrink-0">
+                      <CandidateChip
+                        state={state}
+                        score={c.score}
+                        selected={selectedIndex[noteIdx] === candIdx}
+                        onPick={() => selectCandidate(noteIdx, candIdx)}
+                        onPreview={() => preview(state)}
+                      />
+                    </div>
+                  );
+                })}
               </div>
+              <span className="w-5 shrink-0 text-right text-[9px] text-stone-500">
+                {candidatesPerNote[noteIdx]?.length ?? 0}
+              </span>
             </div>
           ))}
         </div>

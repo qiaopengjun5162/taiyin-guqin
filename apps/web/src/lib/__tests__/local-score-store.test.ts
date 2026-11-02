@@ -1,11 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { NoteColumn } from "../types";
 import {
+  __resetLocalScoresForTests,
+  getScoresSnapshot,
+  getServerScoresSnapshot,
   localCreateScore,
   localDeleteScore,
   localGetScore,
   localListScores,
   localUpdateScore,
+  subscribeScores,
 } from "../local-score-store";
 import { isBrowserOnlyMode, scoreStorageMode } from "../api";
 
@@ -13,6 +17,7 @@ const NOTES = [] as NoteColumn[];
 
 beforeEach(() => {
   window.localStorage.clear();
+  __resetLocalScoresForTests();
 });
 
 describe("local-score-store（纯前端模式曲谱存储）", () => {
@@ -94,6 +99,78 @@ describe("local-score-store（纯前端模式曲谱存储）", () => {
     expect(localListScores()).toEqual([]);
     window.localStorage.setItem("taiyin.scores.v1", '"string"');
     expect(localListScores()).toEqual([]);
+  });
+
+  it("创建时记录定弦，未指定落正调", () => {
+    expect(localCreateScore("默认", NOTES).tuning).toBe("zhengdiao");
+    expect(localCreateScore("紧五弦", NOTES, "ruibin").tuning).toBe("ruibin");
+    expect(localGetScore(localCreateScore("慢三弦", NOTES, "manjiao").id).tuning).toBe("manjiao");
+  });
+
+  it("更新定弦；不传 tuning 时保留原值", () => {
+    const created = localCreateScore("原调", NOTES, "zhengdiao");
+    expect(localUpdateScore(created.id, { tuning: "ruibin" }).tuning).toBe("ruibin");
+    expect(localUpdateScore(created.id, { title: "改名" }).tuning).toBe("ruibin");
+  });
+
+  it("旧存档没有 tuning 字段时补成正调，不丢整条记录", () => {
+    // 早期版本曲谱没有定弦字段（那时只有正调可用）。
+    // 这里直接绕过 API 写原始 JSON，模拟真实的旧数据。
+    window.localStorage.setItem(
+      "taiyin.scores.v1",
+      JSON.stringify([
+        { id: "legacy-1", title: "旧谱", notes: [], created_at: "t", updated_at: "t" },
+      ]),
+    );
+    const list = localListScores();
+    expect(list).toHaveLength(1);
+    expect(list[0].title).toBe("旧谱");
+    expect(list[0].tuning).toBe("zhengdiao");
+  });
+
+  it("存档里的定弦是坏值时也补成正调", () => {
+    window.localStorage.setItem(
+      "taiyin.scores.v1",
+      JSON.stringify([{ id: "x", title: "坏调", notes: [], tuning: "youma" }]),
+    );
+    expect(localListScores()[0].tuning).toBe("zhengdiao");
+  });
+});
+
+describe("订阅（useSyncExternalStore 用）", () => {
+  it("服务端快照恒为空，避免水合不一致", () => {
+    localCreateScore("有谱", NOTES);
+    expect(getScoresSnapshot()).toHaveLength(1);
+    expect(getServerScoresSnapshot()).toEqual([]);
+  });
+
+  it("写入后通知订阅者，退订后不再收到", () => {
+    const seen: number[] = [];
+    const unsubscribe = subscribeScores(() => seen.push(getScoresSnapshot().length));
+
+    expect(getScoresSnapshot()).toEqual([]);
+
+    const created = localCreateScore("新谱", NOTES);
+    expect(seen).toEqual([1]);
+
+    localUpdateScore(created.id, { title: "改名" });
+    expect(seen).toEqual([1, 1]);
+
+    localDeleteScore(created.id);
+    expect(seen).toEqual([1, 1, 0]);
+
+    unsubscribe();
+    localCreateScore("退订后", NOTES);
+    expect(seen).toEqual([1, 1, 0]);
+  });
+
+  it("快照引用稳定：未写入时反复读取是同一个数组", () => {
+    localCreateScore("稳定", NOTES);
+    const first = getScoresSnapshot();
+    expect(getScoresSnapshot()).toBe(first);
+
+    localCreateScore("再写一首", NOTES);
+    expect(getScoresSnapshot()).not.toBe(first);
   });
 });
 

@@ -6,6 +6,7 @@ import {
   parseJianziText,
   getRhythmLineCount,
   durationToBeats,
+  pitchSlide,
 } from "../jianzi";
 import type { JianziState } from "../types";
 
@@ -22,6 +23,7 @@ describe("createEmptyState", () => {
       leftFinger: null,
       hui: null,
       fen: null,
+      slide: null,
       rightAction: null,
       stringNumber: null,
     });
@@ -60,7 +62,8 @@ describe("jianziToText", () => {
   it("maps all right action abbreviations to GSUB names", () => {
     const cases: [string, string][] = [
       ["勹", "勾"], ["木", "抹"], ["乚", "挑"], ["乇", "托"],
-      ["丁", "打"], ["尸", "擘"], ["倽", "摘"],
+      // 尸 走「劈」：字体没有「擘」的整字连字（实测散成 3em），「劈」有
+      ["丁", "打"], ["尸", "劈"], ["倽", "摘"],
     ];
     for (const [short, full] of cases) {
       expect(jianziToText(make({ toneType: "散", rightAction: short, stringNumber: "一" }))).toBe(`散${full}一`);
@@ -73,6 +76,33 @@ describe("jianziToText", () => {
 
   it("按音 no prefix", () => {
     expect(jianziToText(make({ toneType: "按", leftFinger: "名", hui: "九", rightAction: "木", stringNumber: "四" }))).toBe("名九抹四");
+  });
+
+  // 走手音：分数必须在绰/注之前——这是字体连字规则，
+  // 「大九六绰勾四」拼成整字，「大九绰六勾四」会散成两串（实测 1em vs 2em）。
+  it("走手音排在分数之后、右手指法之前", () => {
+    expect(
+      jianziToText(make({ toneType: "按", leftFinger: "大", hui: "九", fen: "六分", slide: "绰", rightAction: "勾", stringNumber: "四" })),
+    ).toBe("大九六绰勾四");
+    expect(
+      jianziToText(make({ toneType: "按", leftFinger: "大", hui: "九", slide: "注", rightAction: "勾", stringNumber: "四" })),
+    ).toBe("大九注勾四");
+  });
+
+  it("泛音不输出走手音", () => {
+    expect(
+      jianziToText(make({ toneType: "泛", leftFinger: "大", hui: "九", slide: "绰", rightAction: "勾", stringNumber: "四" })),
+    ).toBe("泛 大九勾四");
+  });
+
+  // 急 与绰/注 占字体里同一个槽位，顺序规则也一样
+  it("急 也排在分数之后、右手指法之前", () => {
+    expect(
+      jianziToText(make({ toneType: "按", leftFinger: "大", hui: "九", fen: "六分", slide: "急", rightAction: "勾", stringNumber: "四" })),
+    ).toBe("大九六急勾四");
+    expect(
+      jianziToText(make({ toneType: "按", leftFinger: "大", hui: "九", slide: "急", rightAction: "勾", stringNumber: "四" })),
+    ).toBe("大九急勾四");
   });
 
   it("includes fen when present", () => {
@@ -168,6 +198,79 @@ describe("parseJianziText", () => {
     expect(r!.rightAction).toBe("木");
   });
 
+  // ── 走手音（绰/注） ──────────────────────────────
+  it("parses 大九绰勾四（绰写在徽位后）", () => {
+    const r = parseJianziText("大九绰勾四");
+    expect(r).not.toBeNull();
+    expect(r!.slide).toBe("绰");
+    expect(r!.hui).toBe("九");
+    expect(r!.rightAction).toBe("勾");
+  });
+
+  it("parses 大九六注勾四（注写在分数后，字体要求的顺序）", () => {
+    const r = parseJianziText("大九六注勾四");
+    expect(r).not.toBeNull();
+    expect(r!.hui).toBe("九");
+    expect(r!.fen).toBe("六分");
+    expect(r!.slide).toBe("注");
+  });
+
+  // 人按口语习惯常把绰写在分数前面，两种顺序都要接住
+  it("parses 大九绰六勾四（绰写在分数前）并归位成 分数+绰", () => {
+    const r = parseJianziText("大九绰六勾四");
+    expect(r).not.toBeNull();
+    expect(r!.fen).toBe("六分");
+    expect(r!.slide).toBe("绰");
+    // 序列化时必须把分数排在绰前面，否则字体连字不成立
+    expect(jianziToText(r!)).toBe("大九六绰勾四");
+  });
+
+  it("泛音不收走手音（虚按徽位滑不动）", () => {
+    const r = parseJianziText("泛 大九绰勾四");
+    expect(r).not.toBeNull();
+    expect(r!.toneType).toBe("泛");
+    expect(r!.slide).toBeNull();
+  });
+
+  it("散音忽略走手音", () => {
+    const r = parseJianziText("散绰勾四");
+    expect(r).not.toBeNull();
+    expect(r!.toneType).toBe("散");
+    expect(r!.slide).toBeNull();
+  });
+
+  // ── 急（急弹记号） ──────────────────────────────
+  it("parses 大九急勾四（急与绰/注 同槽互斥）", () => {
+    const r = parseJianziText("大九急勾四");
+    expect(r).not.toBeNull();
+    expect(r!.hui).toBe("九");
+    expect(r!.slide).toBe("急");
+    expect(r!.rightAction).toBe("勾");
+  });
+
+  it("parses 大九急六勾四 并归位成 分数+急", () => {
+    const r = parseJianziText("大九急六勾四");
+    expect(r!.fen).toBe("六分");
+    expect(r!.slide).toBe("急");
+    expect(jianziToText(r!)).toBe("大九六急勾四");
+  });
+
+  // 急 是弹法记号，音高不滑——音频链路要能筛掉它，
+  // 否则会被滑音分支当成「注」处理，音高先高后落，等于弹错。
+  it("pitchSlide 只放行绰/注，急 与 null 都返回 null", () => {
+    expect(pitchSlide("绰")).toBe("绰");
+    expect(pitchSlide("注")).toBe("注");
+    expect(pitchSlide("急")).toBeNull();
+    expect(pitchSlide(null)).toBeNull();
+  });
+
+  it("泛音不收「急」（虚按徽位谈不上急弹）", () => {
+    const r = parseJianziText("泛 大九急勾四");
+    expect(r).not.toBeNull();
+    expect(r!.toneType).toBe("泛");
+    expect(r!.slide).toBeNull();
+  });
+
   it("returns null for empty text", () => {
     expect(parseJianziText("")).toBeNull();
     expect(parseJianziText("  ")).toBeNull();
@@ -193,6 +296,26 @@ describe("parseJianziText", () => {
   it("still parses full-form 食/名 alongside radicals", () => {
     expect(parseJianziText("食九勾三")!.leftFinger).toBe("食");
     expect(parseJianziText("名九勾三")!.leftFinger).toBe("名");
+  });
+
+  // 字体只做了「名」「食」的整字连字，偏旁「夕」「亻」连不成字。
+  // 实测：夕九勾四 / 亻九勾四 各散成 3em，名九勾四 / 食九勾四 是 1em。
+  // 键盘默认给的偏偏是偏旁字形，所以序列化时必须换成全字。
+  it("序列化把偏旁 夕/亻 换成字体认得的 名/食", () => {
+    const ring = parseJianziText("夕九勾三")!;
+    expect(ring.leftFinger).toBe("夕");
+    expect(jianziToText(ring)).toBe("名九勾三");
+
+    const index = parseJianziText("亻九勾三")!;
+    expect(index.leftFinger).toBe("亻");
+    expect(jianziToText(index)).toBe("食九勾三");
+  });
+
+  it("全字 名/食 不会被映射再转一次手", () => {
+    const s = parseJianziText("名九六绰勾四")!;
+    expect(jianziToText(s)).toBe("名九六绰勾四");
+    const t = parseJianziText("食九勾三")!;
+    expect(jianziToText(t)).toBe("食九勾三");
   });
 
   it("parses hui 十一 and 十二", () => {

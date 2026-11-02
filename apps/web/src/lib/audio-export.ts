@@ -10,6 +10,7 @@
 import type { NoteColumn, NoteType } from "./types";
 import { buildSchedule } from "./player";
 import { CONCERT_PITCH_DEFAULT } from "./concert-pitch";
+import { DEFAULT_TUNING, type TuningId } from "./tuning";
 import { schedulePluck, scheduleClick, TONE_PROFILE } from "./audio-synth";
 
 function tailOf(toneType: NoteType | null): number {
@@ -27,6 +28,8 @@ export interface RenderOptions {
   sampleRate?: number;
   /** A4 基准频率，默认 440；导出音轨需与播放时的琴音高一致。 */
   concertPitch?: number;
+  /** 定弦，默认正调；决定谱字（弦/徽）对应的真实音高。 */
+  tuning?: TuningId;
 }
 
 /**
@@ -46,13 +49,14 @@ export async function renderScoreToBuffer(
     leadInBars = 0,
     sampleRate = 44100,
     concertPitch = CONCERT_PITCH_DEFAULT,
+    tuning = DEFAULT_TUNING,
   } = opts;
   const beatMs = 60000 / bpm;
   const beatSec = beatMs / 1000;
   const beatOffset = 0.05; // 与实时播放一样的起拍前导
   const leadInBeats = leadInBars * beatsPerBar;
   const startOffset = leadInBeats * beatSec;
-  const schedule = buildSchedule(notes, beatMs, concertPitch);
+  const schedule = buildSchedule(notes, beatMs, concertPitch, tuning);
   const total = schedule.reduce(
     (end, s) => Math.max(end, s.start + s.duration + tailOf(s.toneType)),
     0,
@@ -62,7 +66,7 @@ export async function renderScoreToBuffer(
 
   for (const s of schedule) {
     if (s.freq !== null) {
-      schedulePluck(ctx, s.freq, s.start + startOffset, s.duration, s.toneType);
+      schedulePluck(ctx, s.freq, s.start + startOffset, s.duration, s.toneType, s.slide);
     }
   }
 

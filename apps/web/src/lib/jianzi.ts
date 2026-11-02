@@ -1,4 +1,4 @@
-import type { JianziState, Duration } from "./types";
+import type { JianziState, Duration, PitchSlide, SlideMark, NoteType } from "./types";
 
 /** 判断减字是否已完成（各音色类型所需字段不同）。 */
 export function isComplete(state: JianziState): boolean {
@@ -24,6 +24,7 @@ export function createEmptyState(): JianziState {
     leftFinger: null,
     hui: null,
     fen: null,
+    slide: null,
     rightAction: null,
     stringNumber: null,
   };
@@ -47,6 +48,20 @@ export function fenToGlyph(fen: string): string {
   return FEN_GLYPH[fen] ?? fen.replace(/分$/, "");
 }
 
+/**
+ * 左手指法 → 字体真正认得的字形字符。
+ *
+ * 传统减字里食指写「亻」（取"食"左半）、名指写「夕」（取"名"左半），
+ * 键盘也是照这个给的按钮。但字体里**只有全字「食」「名」的连字**，
+ * 偏旁字根本没有成字连字——实测「夕九勾四」散成 3em、「亻九勾四」3em，
+ * 而「名九勾四」「食九勾四」都是整字 1em。
+ * 所以序列化时统一换成全字；解析仍两种都收，老谱子照样能读回来。
+ */
+const LEFT_FINGER_GLYPH: Record<string, string> = {
+  夕: "名",
+  亻: "食",
+};
+
 /** 键盘显示字符 → 字体 GSUB 引擎期望的触发字符 */
 const RIGHT_ACTION_GLYPH: Record<string, string> = {
   勹: "勾",
@@ -54,9 +69,13 @@ const RIGHT_ACTION_GLYPH: Record<string, string> = {
   乚: "挑",
   乇: "托",
   丁: "打",
-  尸: "擘",
+  // 「擘」在字体里没有整字连字（实测「大九六擘四」散成 3em 的长串），
+  // 「劈」有。两者在减字谱里是同一个指法的两种写法，统一交给「劈」渲染。
+  尸: "劈",
   倽: "摘",
   剔: "剔",
+  // 旧数据/粘贴文本里可能直接是「擘」
+  擘: "劈",
 };
 
 /** 将减字状态序列化为忘机减字谱字体可渲染的文本 */
@@ -77,9 +96,14 @@ export function jianziToText(jianzi: JianziState): string {
     text += "泛 ";
   }
 
-  if (jianzi.leftFinger) text += jianzi.leftFinger;
+  if (jianzi.leftFinger)
+    text += LEFT_FINGER_GLYPH[jianzi.leftFinger] ?? jianzi.leftFinger;
   if (jianzi.hui) text += jianzi.hui;
   if (jianzi.fen) text += fenToGlyph(jianzi.fen);
+  // ⚠ 顺序是字体连字规则，不是排版偏好：
+  //   「大九六绰勾四」拼成整字，写成「大九绰六勾四」就散成两串（实测 1em vs 2em）。
+  //   所以分数必须在前，绰/注在后。
+  if (jianzi.slide && jianzi.toneType !== "泛") text += jianzi.slide;
   if (jianzi.rightAction)
     text += RIGHT_ACTION_GLYPH[jianzi.rightAction] ?? jianzi.rightAction;
   if (jianzi.stringNumber) text += jianzi.stringNumber;
@@ -102,6 +126,26 @@ const HUI_CHARS = new Set([
 const FEN_DIGITS = new Set(["一", "二", "三", "四", "五", "六", "七", "八", "九"]);
 /** 弦序字符集 */
 const STRING_CHARS = new Set(["一", "二", "三", "四", "五", "六", "七"]);
+/** 装饰记号字符集（绰=下方向上滑，注=上方向下滑，急=急弹） */
+const SLIDE_CHARS = new Set(["绰", "注", "急"]);
+
+/**
+ * 装饰记号只存在于按音：散音是空弦、泛音要虚按徽位，都滑不动 / 谈不上急弹。
+ * （实测字体里「散急勾四」也连不成整字，散成 1.33em。）
+ */
+export function canHaveSlide(toneType: NoteType | null): boolean {
+  return toneType === "按";
+}
+
+/**
+ * 只挑出会滑动音高的记号（绰/注）。
+ *
+ * 「急」是弹法记号，音高不动——把它混进滑音分支会把急弹当成注音弹，
+ * 音高先高后落，等于弹错。所以音频链路一律过这道筛子。
+ */
+export function pitchSlide(slide: SlideMark | null): PitchSlide | null {
+  return slide === "绰" || slide === "注" ? slide : null;
+}
 
 /** 将文本（如"大九勾四"）解析为减字状态 */
 export function parseJianziText(text: string): JianziState | null {
@@ -190,6 +234,13 @@ export function parseJianziText(text: string): JianziState | null {
   //    减字里分数只写数字（七徽六分 → 「大七六勾四」），也兼容旧写法「六分」。
   //    两字徽位后可能带一个「徽」分隔字（见 jianziToText 的说明），先跳过。
   if (remaining.startsWith("徽")) remaining = remaining.slice(1);
+  // 绰/注 允许写在分数前或后：字体的连字规则只认「分数在前」，
+  // 但人打字时按口语顺序（「大九绰六勾四」）来的更多，两处都接住，
+  // 序列化时再统一排成字体要的顺序。
+  if (remaining.length > 0 && SLIDE_CHARS.has(remaining[0])) {
+    result.slide = remaining[0] as SlideMark;
+    remaining = remaining.slice(1);
+  }
   if (remaining.startsWith("半")) {
     result.fen = "半";
     remaining = remaining.slice(1);
@@ -198,6 +249,12 @@ export function parseJianziText(text: string): JianziState | null {
     remaining = remaining.slice(1);
     if (remaining.startsWith("分")) remaining = remaining.slice(1);
   }
+  if (!result.slide && remaining.length > 0 && SLIDE_CHARS.has(remaining[0])) {
+    result.slide = remaining[0] as SlideMark;
+    remaining = remaining.slice(1);
+  }
+  // 泛音是虚按徽位取泛音，滑不动；写进来也不收，免得谱面和听感对不上
+  if (result.toneType === "泛") result.slide = null;
 
   // 5. 右手指法
   const allActions = [

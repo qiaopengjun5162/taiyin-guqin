@@ -5,7 +5,7 @@
  *   - 截图：html-to-image 捕获 DOM 时自然入画
  *   - 打印：@media print 显示，位于乐谱区底部
  */
-export function ExportFooter({ title }: { title: string }) {
+export function ExportFooter({ title, tuning }: { title: string; tuning?: string }) {
   return (
     <div
       id="export-footer"
@@ -19,6 +19,10 @@ export function ExportFooter({ title }: { title: string }) {
         <p className="text-[10px] tracking-wider text-stone-300">
           《{title}》
         </p>
+      )}
+      {/* 定弦是谱子的一部分：打印出来给别人弹，没这一行就得靠猜 */}
+      {tuning && (
+        <p className="text-[10px] tracking-wider text-stone-400">定弦 {tuning}</p>
       )}
     </div>
   );

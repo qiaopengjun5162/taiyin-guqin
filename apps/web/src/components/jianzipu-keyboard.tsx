@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { SavedJianziBar } from "./saved-jianzi-bar";
 import {
   type JianziState,
   type NoteColumn,
@@ -27,6 +28,7 @@ import {
   RAPID_SLOT_LABEL,
 } from "@/lib/jianzi-rapid";
 import { JianzipuPreview } from "./jianzipu-preview";
+import { JianziExplainPanel } from "./jianzi-explain-panel";
 
 type Section =
   | "toneType"
@@ -34,8 +36,16 @@ type Section =
   | "leftFinger"
   | "hui"
   | "fen"
+  | "slide"
   | "rightAction"
   | "stringNumber";
+
+/**
+ * 装饰记号拆两组摆：绰/注 是走手音（真的滑音），急 是弹法（音高不动）。
+ * 数据层是同一个 slide 字段——字体只有这一个槽位，三者互斥。
+ */
+const SLIDE_ONLY = DEFAULT_KEYBOARD.slides.filter((s) => s !== "急");
+const URGENT_ONLY = DEFAULT_KEYBOARD.slides.filter((s) => s === "急");
 
 /**
  * 减字键盘主组件。
@@ -93,6 +103,12 @@ export function JianzipuKeyboard({
         next.leftFinger = null;
         next.hui = null;
         next.fen = null;
+        next.slide = null;
+      }
+      // 走手音只在按音上成立：改判成散/泛时必须清掉，
+      // 否则谱面会留一个弹不出来的标记
+      if (section === "toneType" && value !== "按") {
+        next.slide = null;
       }
       return next;
     });
@@ -159,8 +175,16 @@ export function JianzipuKeyboard({
 
       {/* ── 预览区（连打模式在输入框旁自带实时预览） ── */}
       {inputMode !== "rapid" && (
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex w-full flex-col items-center gap-2">
           <JianzipuPreview state={state} />
+          <JianziExplainPanel state={state} />
+          <SavedJianziBar
+            current={state}
+            onPick={(picked) => {
+              setState({ ...picked });
+              setPinyinText(jianziToText(picked));
+            }}
+          />
         </div>
       )}
 
@@ -194,11 +218,14 @@ export function JianzipuKeyboard({
             value={pinyinText}
             onChange={setPinyinText}
             onSubmit={(text) => {
-              if (!text.trim()) return;
-              // 纯拼音（未经过候选词替换成汉字）解析不出减字：此时直接忽略，
-              // 否则会往谱面追加一个全空的谱字列。保留输入让用户继续选候选。
-              const parsed = /[一-鿿]/.test(text) ? parseJianziText(text) : null;
-              if (!parsed) return;
+              if (!text.trim()) return false;
+              // 纯拼音（未经过候选词替换成汉字）解析不出减字：
+              // 返回 false 让输入框把原因说出来，别让回车石沉大海。
+              if (!/[一-鿿]/.test(text)) return false;
+              const parsed = parseJianziText(text);
+              // 散音分支只做「尽力而为」的解析，缺字段也返回对象——
+              // 这里必须再验一次完整性，否则会往谱面追加一个空壳谱字。
+              if (!parsed || !isComplete(parsed)) return false;
               // 编辑模式下保留原有简谱/时值数据
               const note: NoteColumn = {
                 id: defaultNote?.id ?? crypto.randomUUID(),
@@ -210,6 +237,7 @@ export function JianzipuKeyboard({
               };
               onAppend?.(note);
               setPinyinText("");
+              return true;
             }}
           />
         </div>
@@ -332,6 +360,26 @@ export function JianzipuKeyboard({
                   onSelect={(v) => handleSelect("fen", v)}
                 />
               )}
+              {/* 装饰记号：绰/注 是按音的走手音（滑音），急 是急弹记号。
+                  字体把三者压进同一个槽位（互斥、三选一），所以写的是同一个字段；
+                  但读法不同，界面上分两组摆，免得以为「急」也会滑音。
+                  散音没有左手可滑，泛音是虚按徽位一滑就脱离节点，都不给这两栏。 */}
+              {state.toneType === "按" && (
+                <>
+                  <SectionGroup
+                    label="走手音"
+                    items={SLIDE_ONLY}
+                    active={state.slide}
+                    onSelect={(v) => handleSelect("slide", v)}
+                  />
+                  <SectionGroup
+                    label="弹法"
+                    items={URGENT_ONLY}
+                    active={state.slide}
+                    onSelect={(v) => handleSelect("slide", v)}
+                  />
+                </>
+              )}
               <SectionGroup
                 label="右手"
                 items={DEFAULT_KEYBOARD.rightActions}
@@ -435,11 +483,28 @@ function PinyinInput({
 }: {
   value: string;
   onChange: (v: string) => void;
-  onSubmit: (text: string) => void;
+  /** 返回 true = 已入谱；false = 没读懂，输入框要说明原因。 */
+  onSubmit: (text: string) => boolean;
 }) {
   const [matches, setMatches] = useState<string[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [reject, setReject] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /** 提交并给出失败原因——打字打谱最怕回车没反应。 */
+  function submit(raw: string) {
+    const text = raw.trim();
+    if (!text) return;
+    if (onSubmit(text)) {
+      setReject(null);
+      return;
+    }
+    setReject(
+      /[一-鿿]/.test(text)
+        ? "没读懂这个谱字：按「左手 + 徽位 + 分数 + 绰/注/急 + 右手 + 弦」的顺序写，例：大九六绰勾四"
+        : "先把拼音选成汉字，再回车入谱",
+    );
+  }
 
   /** 获取当前最后一个 token */
   function getCurrentToken(val: string): string {
@@ -449,6 +514,7 @@ function PinyinInput({
 
   function handleChange(val: string) {
     onChange(val);
+    setReject(null);
     const token = getCurrentToken(val);
     if (token) {
       const results = lookupPinyin(token);
@@ -471,7 +537,7 @@ function PinyinInput({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[11px] tracking-[0.15em] text-stone-500">
-        输入汉字（如 大九勾四）或拼音（如 da gou），敲回车确认。
+        输入汉字（如 大九勾四 / 大九六绰勾四）或拼音（如 da gou），敲回车入谱。
       </p>
       <div className="flex gap-2 relative">
         <div className="flex-1 relative">
@@ -485,7 +551,7 @@ function PinyinInput({
                 selectMatch(matches[selectedIdx]);
                 e.preventDefault();
               } else if (e.key === "Enter") {
-                onSubmit(text);
+                submit(text);
               } else if (e.key === "ArrowDown") {
                 setSelectedIdx((i) => Math.min(i + 1, matches.length - 1));
                 e.preventDefault();
@@ -522,13 +588,18 @@ function PinyinInput({
           )}
         </div>
         <button
-          onClick={() => onSubmit(text)}
+          onClick={() => submit(text)}
           disabled={!text.trim()}
           className="px-4 py-2 text-sm rounded bg-stone-800 text-amber-50 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-stone-700 active:scale-[0.98] transition-all duration-200"
         >
           提交
         </button>
       </div>
+      {reject && (
+        <p className="text-[11px] leading-relaxed text-amber-700/80" role="status">
+          {reject}
+        </p>
+      )}
     </div>
   );
 }
@@ -551,6 +622,12 @@ function RapidInput({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const parsed = parseRapidInput(buffer, toneType);
+  // 串里写了音色前缀（s/f/a）时，按钮的高亮跟着串走，
+  // 否则会出现「明明打着 a（按音），上面还亮着散」的错位。
+  const prefixTone = parsed.tokens.find((t) => t.slot === "toneType")?.value as
+    | NoteType
+    | undefined;
+  const activeTone = prefixTone ?? toneType;
 
   function handleChange(raw: string) {
     const next = normalizeRapidInput(raw);
@@ -570,13 +647,18 @@ function RapidInput({
       <SectionGroup
         label="音色"
         items={DEFAULT_KEYBOARD.toneTypes}
-        active={toneType}
+        active={activeTone}
         onSelect={(v) => onToneType(v as NoteType)}
       />
 
-      <div className="flex flex-col items-center gap-3">
+      <div className="flex w-full flex-col items-center gap-3">
         {/* 平时不占一个空框：只有识别出槽位才显示实时预览 */}
-        {parsed.tokens.length > 0 && <JianzipuPreview state={parsed.state} />}
+        {parsed.tokens.length > 0 && (
+          <>
+            <JianzipuPreview state={parsed.state} />
+            <JianziExplainPanel state={parsed.state} />
+          </>
+        )}
         <input
           ref={inputRef}
           autoFocus
@@ -586,10 +668,22 @@ function RapidInput({
             if (e.key === "Escape") {
               setBuffer("");
               e.preventDefault();
+              return;
+            }
+            // 回车 = 明确表态：自动逻辑不敢判的歧义串（如按音界面下打 g4），
+            // 由用户自己按最优解读入谱，不用回去点音色按钮。
+            if (e.key === "Enter" && buffer) {
+              const forced = parseRapidInput(buffer, toneType, { force: true });
+              if (forced.complete) {
+                onCommit(forced.state);
+                setBuffer("");
+                setCommitted((n) => n + 1);
+              }
+              e.preventDefault();
             }
           }}
           placeholder={
-            toneType === "散" ? "例：g4（勾四）" : "例：djg4（大九勾四）"
+            toneType === "散" ? "例：g4 · sg3 · mt6" : "例：d9g4 · d9f6cg4 · ad13g4"
           }
           className="w-full px-3 py-2 text-base tracking-[0.3em] text-center rounded border border-stone-300/50 bg-[#f8f3eb] text-stone-800 placeholder:text-stone-400/40 placeholder:tracking-normal outline-none focus:border-amber-600/40 focus:ring-1 focus:ring-amber-600/20 transition-all"
         />
@@ -598,7 +692,7 @@ function RapidInput({
         <div className="flex flex-wrap items-center justify-center gap-1.5 min-h-[26px]">
           {parsed.tokens.length === 0 ? (
             <span className="text-[11px] tracking-[0.15em] text-stone-400">
-              按减字书写顺序打，打满自动成字
+              按减字书写顺序打，打满自动成字（音色可写 s/f/a）
             </span>
           ) : (
             parsed.tokens.map((t, i) => (
@@ -612,7 +706,7 @@ function RapidInput({
               </span>
             ))
           )}
-          {parsed.nextSlot && (
+          {buffer && parsed.nextSlot && (
             <span className="px-2 py-0.5 text-[11px] rounded border border-dashed border-stone-300 text-stone-400">
               下一个：{RAPID_SLOT_LABEL[parsed.nextSlot]}
             </span>
@@ -634,7 +728,7 @@ function RapidInput({
 
       <details className="w-full rounded border border-stone-700/10 bg-stone-700/[0.03]">
         <summary className="px-3 py-2 text-[11px] tracking-[0.15em] text-stone-500 cursor-pointer select-none">
-          连打速查表（三/四/十分别为 s / ss / sss）
+          连打速查表（徽位打数字，音色可写 s/f/a）
         </summary>
         <ul className="px-3 pb-3 space-y-1.5">
           {RAPID_CHEATSHEET.map((row) => (

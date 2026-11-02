@@ -21,6 +21,7 @@ function makeJianzi(
     leftFinger,
     hui,
     fen,
+    slide: null,
     rightAction,
     stringNumber,
   };

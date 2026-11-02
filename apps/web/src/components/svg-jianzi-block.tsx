@@ -51,6 +51,13 @@ const STRING_MAP: Record<string, string> = {
   "五": "str_5", "六": "str_6", "七": "str_7",
 };
 
+/** 装饰记号 → SVG 字形键。字体里三者同槽位、互斥，SVG 也共用一个槽。 */
+const SLIDE_MAP: Record<string, string> = {
+  "绰": "mod_chuo",
+  "注": "mod_zhu",
+  "急": "mod_ji",
+};
+
 // ── glyph rendering helper ────────────────────
 
 interface BBox {
@@ -107,13 +114,22 @@ export function SvgJianziBlock({
   const lhKey = leftFinger ? LEFT_FINGER_MAP[leftFinger] ?? null : null;
   const huiKey = hui ? HUI_MAP[hui] : null;
   const fenKey = fen ? FEN_MAP[fen] : null;
+  // 装饰记号：泛音滑不动（一滑就脱离徽位节点），只给按音画；
+  // 绰/注/急 三个字形共用字体里的同一个槽位，SVG 用同一处槽位落下
+  const slideKey =
+    toneType !== "泛" && state.slide
+      ? SLIDE_MAP[state.slide] ?? null
+      : null;
   const actionKey = state.rightAction ? RIGHT_ACTION_MAP[state.rightAction] ?? null : null;
+  /** 抹（木）不是半包围外壳：字体把弦序排在木的下方，不在木的肚子里。 */
+  const isFlatAction = actionKey === "rh_mo";
   const strKey = state.stringNumber ? STRING_MAP[state.stringNumber] : null;
 
   const topEntry = topKey ? SVG_PATHS[topKey] : null;
   const lhEntry = lhKey ? SVG_PATHS[lhKey] : null;
   const huiEntry = huiKey ? SVG_PATHS[huiKey] : null;
   const fenEntry = fenKey ? SVG_PATHS[fenKey] : null;
+  const slideEntry = slideKey ? SVG_PATHS[slideKey] : null;
   const actionEntry = actionKey ? SVG_PATHS[actionKey] : null;
   const strEntry = strKey ? SVG_PATHS[strKey] : null;
 
@@ -121,7 +137,8 @@ export function SvgJianziBlock({
   const textFinger: string | null =
     leftFinger && !lhEntry ? (leftFinger === "亻" ? "食" : leftFinger) : null;
 
-  const hasAnything = topEntry || lhEntry || huiEntry || fenEntry || actionEntry || strEntry || textFinger;
+  const hasAnything =
+    topEntry || lhEntry || huiEntry || fenEntry || slideEntry || actionEntry || strEntry || textFinger;
   if (!hasAnything) return null;
 
   // fontSize may contain "px" like "36px" or "24px"
@@ -144,11 +161,17 @@ export function SvgJianziBlock({
         </div>
       )}
 
-      {/* ── 左手指法（左上象限） ── */}
+      {/* ── 左手指法（左上象限） ──
+          「注」是三点水，字体把它排在谱字左沿、把「大」整体右移让位。
+          SVG 里靠这里让槽：有注时左手指法缩一点、往右挪，给三点水腾出左沿。 */}
       {lhEntry?.bbox && (
         <div
           className="absolute"
-          style={{ top: "17%", left: "3%", width: "34%", height: "24%" }}
+          style={
+            state.slide === "注" && toneType !== "泛"
+              ? { top: "17%", left: "15%", width: "30%", height: "24%" }
+              : { top: "17%", left: "3%", width: "34%", height: "24%" }
+          }
         >
           <GlyphSVG d={lhEntry.d} bbox={lhEntry.bbox} />
         </div>
@@ -209,21 +232,51 @@ export function SvgJianziBlock({
         </span>
       )}
 
-      {/* ── 右手外壳（下半部，半包围结构） ── */}
+      {/* ── 装饰记号（绰/注/急） ──
+          字体把这些笔画用 GPOS 压在谱字块里：绰是夹在「大」和徽位之间的一个短竖，
+          注是沿左沿排开的三点水，急是同一位置的横折（与绰同槽）。
+          SVG 没有 GPOS，位置靠这里的槽位给。
+          槽宽高比贴着字形本身（绰 226×213≈1.06、急 274×218≈1.26、注 223×670≈0.33），
+          扁槽会让 preserveAspectRatio=meet 把字形缩得很小。 */}
+      {slideEntry?.bbox && (
+        <div
+          className="absolute"
+          style={
+            state.slide === "注"
+              ? { top: "14%", left: "0%", width: "21%", height: "48%" }
+              : { top: "28%", left: "30%", width: "22%", height: "16%" }
+          }
+        >
+          <GlyphSVG d={slideEntry.d} bbox={slideEntry.bbox} />
+        </div>
+      )}
+
+      {/* ── 右手（下半部） ──
+          勾/挑/劈/打/摘 是半包围外壳，弦序嵌在壳里；
+          「抹」（木）不是包围结构——字体把木排在中间、弦序排在它**下面**，
+          所以抹要收窄让出底部，否则「四」会被木的撇捺压掉。 */}
       {actionEntry?.bbox && (
         <div
           className="absolute"
-          style={{ bottom: "1%", left: "0", width: "100%", height: "56%" }}
+          style={
+            isFlatAction
+              ? { bottom: "19%", left: 0, width: "100%", height: "42%" }
+              : { bottom: "1%", left: 0, width: "100%", height: "56%" }
+          }
         >
           <GlyphSVG d={actionEntry.d} bbox={actionEntry.bbox} />
         </div>
       )}
 
-      {/* ── 弦序内核（嵌入右手壳内） ── */}
+      {/* ── 弦序（嵌入右手壳内；抹时排在木下方） ── */}
       {strEntry?.bbox && actionEntry && (
         <div
           className="absolute left-1/2 -translate-x-1/2"
-          style={{ bottom: "19%", width: "28%", height: "20%" }}
+          style={
+            isFlatAction
+              ? { bottom: "0%", width: "32%", height: "17%" }
+              : { bottom: "19%", width: "28%", height: "20%" }
+          }
         >
           <GlyphSVG d={strEntry.d} bbox={strEntry.bbox} />
         </div>

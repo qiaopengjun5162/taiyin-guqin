@@ -264,3 +264,88 @@ describe("scheduleClick · 节拍点击声", () => {
     expect(random).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 走手音（绰/注）：不是画个偏旁就完事，得真的听见音高滑过来。
+ *
+ * 这里直接对渲染出的缓冲做自相关测音高——它不是「调没调用某个参数」的
+ * 形式化断言，而是从波形反推音高。绰应该起低后高，注起高后低。
+ */
+describe("schedulePluck 走手音滑音", () => {
+  /** 在 [startSec, startSec+winSec] 窗内用自相关测基频。 */
+  function pitchAt(
+    data: Float32Array,
+    sr: number,
+    startSec: number,
+    winSec = 0.06,
+    minF = 250,
+    maxF = 700,
+  ): number {
+    const start = Math.floor(startSec * sr);
+    const n = Math.min(Math.floor(winSec * sr), data.length - start);
+    const minLag = Math.floor(sr / maxF);
+    const maxLag = Math.min(Math.floor(sr / minF), n - 1);
+    let best = -1;
+    let bestLag = minLag;
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let dot = 0;
+      let e1 = 0;
+      let e2 = 0;
+      for (let i = 0; i < n - lag; i++) {
+        dot += data[start + i] * data[start + i + lag];
+        e1 += data[start + i] * data[start + i];
+        e2 += data[start + i + lag] * data[start + i + lag];
+      }
+      const r = dot / Math.sqrt(e1 * e2 + 1e-12);
+      if (r > best) {
+        best = r;
+        bestLag = lag;
+      }
+    }
+    return sr / bestLag;
+  }
+
+  it("绰：起音在本位下方，滑到本位后停住", () => {
+    const ctx = makeCtx();
+    schedulePluck(asBase(ctx), 440, 0, 1.0, "按", "绰");
+    const data = ctx.buffers[0].getChannelData(0);
+    const head = pitchAt(data, 44100, 0.02, 0.05);
+    const settled = pitchAt(data, 44100, 0.4, 0.06);
+    // 200 音分下起音 → 440 × 2^(-200/1200) ≈ 392Hz
+    expect(head).toBeGreaterThan(350);
+    expect(head).toBeLessThan(412);
+    expect(settled).toBeGreaterThan(425);
+    expect(settled).toBeLessThan(455);
+    expect(head).toBeLessThan(settled - 15);
+  });
+
+  it("注：起音在本位上方，向下滑到本位", () => {
+    const ctx = makeCtx();
+    schedulePluck(asBase(ctx), 440, 0, 1.0, "按", "注");
+    const data = ctx.buffers[0].getChannelData(0);
+    const head = pitchAt(data, 44100, 0.02, 0.05);
+    const settled = pitchAt(data, 44100, 0.4, 0.06);
+    expect(head).toBeGreaterThan(470);
+    expect(head).toBeLessThan(520);
+    expect(settled).toBeGreaterThan(425);
+    expect(settled).toBeLessThan(455);
+    expect(head).toBeGreaterThan(settled + 15);
+  });
+
+  it("不给走手音时音高全程平稳（不走分数延迟分支）", () => {
+    const ctx = makeCtx();
+    schedulePluck(asBase(ctx), 440, 0, 1.0, "按", null);
+    const data = ctx.buffers[0].getChannelData(0);
+    const a = pitchAt(data, 44100, 0.02, 0.06);
+    const b = pitchAt(data, 44100, 0.4, 0.06);
+    expect(Math.abs(a - 440)).toBeLessThan(12);
+    expect(Math.abs(b - 440)).toBeLessThan(12);
+  });
+
+  it("滑音缓冲仍有声音，不是空轨", () => {
+    const ctx = makeCtx();
+    schedulePluck(asBase(ctx), 440, 0, 1.0, "按", "绰");
+    const data = ctx.buffers[0].getChannelData(0);
+    expect(rms(data, 0, Math.floor(0.3 * 44100))).toBeGreaterThan(0.01);
+  });
+});

@@ -16,7 +16,12 @@ function needsSvg(state: JianziState): boolean {
     // 十一～十三徽是两字徽位。字体能把「十三」排进右上象限，但再接一位
     // 分数时会把分数甩到左下角（实测「大十三六勾四」的「六」跑到「大」下方），
     // 记成别的音位。这类组合交给 SVG 积木：位置由槽位决定，不看连字规则。
-    (hui.length > 1 && state.fen !== null)
+    (hui.length > 1 && state.fen !== null) ||
+    // 「抹」+ 装饰记号字体没有对应连字（实测「大九六绰抹四」「大九六急抹四」
+    // 都散成 1.5em），而「抹」单独用是好的——所以只在这个组合下降级，别一刀切。
+    // 注意用 Boolean()：旧存档里 slide 字段整个不存在（undefined），
+    // 写成 `!== null` 会把所有老谱子误判成有走手音、统统降级成 SVG。
+    (Boolean(state.slide) && (ra === "抹" || ra === "木"))
   );
 }
 

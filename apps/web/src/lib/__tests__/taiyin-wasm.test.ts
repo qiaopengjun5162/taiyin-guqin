@@ -47,8 +47,11 @@ describe("taiyin-wasm · 初始化状态机", () => {
 
     expect(w.getWasmLoadState()).toBe("ready");
     expect(glue.init).toHaveBeenCalledTimes(1);
-    // 必须显式传 wasm 路径：打包后 import.meta.url 指向 chunk，自动解析会 404
-    expect(glue.init).toHaveBeenCalledWith("wasm/taiyin_core_bg.wasm");
+    // 必须显式传 wasm 路径：打包后 import.meta.url 指向 chunk，自动解析会 404。
+    // 而且要是绝对路径——相对路径在无尾斜杠的地址下会丢 basePath。
+    expect(glue.init).toHaveBeenCalledWith(
+      `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/wasm/taiyin_core_bg.wasm`,
+    );
   });
 
   it("已 ready 后再 initWasm 不重复加载", async () => {

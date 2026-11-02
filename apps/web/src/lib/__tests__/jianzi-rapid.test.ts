@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   parseRapidInput,
   normalizeRapidInput,
-  RAPID_SLOT_ORDER,
+  RAPID_SLOTS_BY_TONE,
 } from "../jianzi-rapid";
+import { jianziToText } from "../jianzi";
 
 describe("normalizeRapidInput", () => {
   it("去掉空白与标点、转小写", () => {
@@ -26,7 +27,11 @@ describe("parseRapidInput · 散音", () => {
   });
 
   it("散音只有两槽，顺序为右手→弦序", () => {
-    expect(RAPID_SLOT_ORDER["散"]).toEqual(["rightAction", "stringNumber"]);
+    expect(RAPID_SLOTS_BY_TONE["散"]).toEqual(["rightAction", "stringNumber"]);
+  });
+
+  it("散音槽位里没有走手音——空弦滑不动", () => {
+    expect(RAPID_SLOTS_BY_TONE["散"]).not.toContain("slide");
   });
 
   it("s 在三弦位 → 三，ss → 四", () => {
@@ -98,14 +103,17 @@ describe("parseRapidInput · 未完成与容错", () => {
   });
 
   it("识别结果带上音色，节奏位留空", () => {
-    const r = parseRapidInput("g4", "泛");
+    const r = parseRapidInput("mqt3", "泛");
+    expect(r.complete).toBe(true);
     expect(r.state.toneType).toBe("泛");
     expect(r.state.rhythmMode).toBeNull();
   });
 
   it("泛音需要完整四槽（含左手与徽位）", () => {
     expect(parseRapidInput("mqt3", "泛").complete).toBe(true);
-    expect(parseRapidInput("gt3", "泛").complete).toBe(false);
+    // 「dg4」少了徽位。不能用「gt3」做反例了：散音兜底会把它接成「散勾剔三」，
+    // 那是一条合法的散音谱字，判完成反而是对的。
+    expect(parseRapidInput("dg4", "泛").complete).toBe(false);
   });
 });
 
@@ -141,5 +149,134 @@ describe("parseRapidInput · 十三徽与全部分位", () => {
       expect(r.state.fen, key).toBe(fen);
       expect(r.complete, key).toBe(true);
     }
+  });
+});
+
+describe("parseRapidInput · 音色写进串（对齐文源输入法 SG3）", () => {
+  it("sg3 → 散勾三；按音模式下也能直接打散音", () => {
+    const r = parseRapidInput("sg3", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.toneType).toBe("散");
+    expect(r.state.rightAction).toBe("勹");
+    expect(r.state.stringNumber).toBe("三");
+  });
+
+  it("fd9g4 → 泛音大九勾四", () => {
+    const r = parseRapidInput("fd9g4", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.toneType).toBe("泛");
+    expect(r.state.leftFinger).toBe("大");
+    expect(r.state.hui).toBe("九");
+  });
+
+  it("a 前缀显式声明按音", () => {
+    const r = parseRapidInput("ad9g4", "散");
+    expect(r.complete).toBe(true);
+    expect(r.state.toneType).toBe("按");
+  });
+
+  it("无音色前缀时不抢当前音色：完整的泛音照旧是泛音", () => {
+    expect(parseRapidInput("mqt3", "泛").state.toneType).toBe("泛");
+  });
+
+  it("散音兜底：g4 在按音模式下不抢跑，回车才按散勾四入谱", () => {
+    // 「g4」在按音语法里是「跪 + 四徽」，是个还没打完的前半截；
+    // 自动逻辑不敢替你拍板，否则打「d1」时会提前成「散打一」把后面的字全吞掉。
+    expect(parseRapidInput("g4", "按").complete).toBe(false);
+    const forced = parseRapidInput("g4", "按", { force: true });
+    expect(forced.complete).toBe(true);
+    expect(forced.state.toneType).toBe("散");
+    expect(forced.state.stringNumber).toBe("四");
+  });
+
+  it("显式前缀不受影响：sg4 在按音模式下直接成字", () => {
+    const r = parseRapidInput("sg4", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.toneType).toBe("散");
+  });
+
+  it("兜底不抢按音的首槽：d 仍是「大」而不是「打」", () => {
+    expect(parseRapidInput("d", "按").state.leftFinger).toBe("大");
+  });
+});
+
+describe("parseRapidInput · 徽位改用数字", () => {
+  it("d9g4 / d13g4 / d10g4", () => {
+    expect(parseRapidInput("d9g4", "按").state.hui).toBe("九");
+    expect(parseRapidInput("d13g4", "按").state.hui).toBe("十三");
+    expect(parseRapidInput("d10g4", "按").state.hui).toBe("十");
+    expect(parseRapidInput("d1g4", "按").state.hui).toBe("一");
+    expect(parseRapidInput("d11g4", "按").state.hui).toBe("十一");
+  });
+
+  it("「十三」不会被读成「一徽三分」", () => {
+    const r = parseRapidInput("d13g4", "按");
+    expect(r.state.hui).toBe("十三");
+    expect(r.state.fen).toBeNull();
+  });
+
+  it("分位仍要 f 前缀，避免和徽位数字撞车", () => {
+    const r = parseRapidInput("d13f6g4", "按");
+    expect(r.state.hui).toBe("十三");
+    expect(r.state.fen).toBe("六分");
+    expect(r.complete).toBe(true);
+  });
+});
+
+describe("parseRapidInput · 走手音（绰/注/急）", () => {
+  it("c=绰、z=注、j=急", () => {
+    expect(parseRapidInput("d9cg4", "按").state.slide).toBe("绰");
+    expect(parseRapidInput("d9zg4", "按").state.slide).toBe("注");
+    expect(parseRapidInput("d9jg4", "按").state.slide).toBe("急");
+    for (const s of ["d9cg4", "d9zg4", "d9jg4"]) {
+      expect(parseRapidInput(s, "按").complete, s).toBe(true);
+    }
+  });
+
+  it("z 在右手位是「摘」，不是注", () => {
+    const r = parseRapidInput("d9z4", "按");
+    expect(r.state.slide).toBeNull();
+    expect(r.state.rightAction).toBe("倽");
+    expect(r.complete).toBe(true);
+  });
+
+  it("分数 + 走手音一起打，序列化顺序仍是字体要的「分数在前」", () => {
+    const r = parseRapidInput("d9f6cg4", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.fen).toBe("六分");
+    expect(r.state.slide).toBe("绰");
+    expect(jianziToText(r.state)).toBe("大九六绰勾四");
+  });
+});
+
+describe("parseRapidInput · 音色双向兜底", () => {
+  it("界面停在散音时，完整的按音串照样出按音", () => {
+    const r = parseRapidInput("d9g4", "散");
+    expect(r.complete).toBe(true);
+    expect(r.state.toneType).toBe("按");
+    expect(r.state.hui).toBe("九");
+  });
+
+  it("界面停在按音时，纯右手串出散音", () => {
+    // t 不是左手指法，按音语法读不下去 → 兜底成立
+    const r = parseRapidInput("t7", "按");
+    expect(r.state.toneType).toBe("散");
+    expect(r.state.rightAction).toBe("乚");
+  });
+
+  it("回归：d1 在按音模式下不许提前成「散打一」", () => {
+    // 这正是把「d13g4」打成「3g4」卡在框里的元凶
+    expect(parseRapidInput("d1", "按").complete).toBe(false);
+    expect(parseRapidInput("d13g4", "按").complete).toBe(true);
+  });
+
+  it("泛音不被兜底抢走：界面选了泛音就打泛音", () => {
+    const r = parseRapidInput("mqt3", "泛");
+    expect(r.state.toneType).toBe("泛");
+  });
+
+  it("泛音也不会被误猜成按音：不写 f 就按界面音色走", () => {
+    // 同样的串在散音界面下兜底成按音（名七挑三），这是按音，不是泛音
+    expect(parseRapidInput("mqt3", "散").state.toneType).toBe("按");
   });
 });

@@ -7,6 +7,7 @@ import { SvgJianziBlock } from "@/components/svg-jianzi-block";
 import { recognizeJianziSheet, ApiError } from "@/lib/api";
 import { schedulePluck } from "@/lib/audio-synth";
 import { jianziToFrequency, jianziToJianpu } from "@/lib/jianzi-pitch";
+import { usePitchContext } from "@/lib/use-pitch-context";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -36,6 +37,8 @@ export function JianziSheetRecognizer({
 }: {
   onImport: (notes: NoteColumn[]) => void;
 }) {
+  // 导入时反推的音高必须按当前定弦，否则慢三弦/紧五弦那张谱会整体错半音
+  const { tuning, concertPitch } = usePitchContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cells, setCells] = useState<
@@ -110,7 +113,7 @@ export function JianziSheetRecognizer({
   }, [grid, edits]);
 
   function handlePlay(state: JianziState) {
-    const freq = jianziToFrequency(state);
+    const freq = jianziToFrequency(state, { tuning, concertPitch });
     if (freq == null) return;
     const ctx = ctxRef.current ??= new AudioContext();
     if (ctx.state === "suspended") void ctx.resume();
@@ -134,7 +137,7 @@ export function JianziSheetRecognizer({
         unparsed += 1;
         continue;
       }
-      const jp = jianziToJianpu(parsed);
+      const jp = jianziToJianpu(parsed, { tuning, concertPitch });
       notes.push({
         id: crypto.randomUUID(),
         jianpuNumber: jp?.number ?? null,

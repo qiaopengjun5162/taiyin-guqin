@@ -128,6 +128,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
 
 import Home from "@/app/page";
 import { ApiError } from "@/lib/api";
+import { resetTuningCache } from "@/lib/tuning";
 
 const EXAMPLE = "沧海一声笑";
 
@@ -147,6 +148,10 @@ async function loadExample() {
 
 beforeEach(() => {
   Object.values(h).forEach((fn) => fn.mockReset());
+  // 定弦是「偏好 + 曲谱属性」双身份，存在 localStorage 里且有模块级缓存；
+  // 不清理的话上一个用例切过的调会漏给下一个用例。
+  window.localStorage.clear();
+  resetTuningCache();
   // jsdom 没有实现 scrollIntoView，点击音符列会走到这里
   Element.prototype.scrollIntoView = vi.fn();
   h.renderScoreToBuffer.mockResolvedValue({ length: 1024 } as unknown as AudioBuffer);
@@ -276,6 +281,8 @@ describe("Home · 音频导出", () => {
       withMetronome: true,
       leadInBars: 2,
       concertPitch: 440,
+      // 定弦随曲谱一起交给渲染层：谱字音高靠它算，导出才和播放一致
+      tuning: "zhengdiao",
     });
 
     await waitFor(() => expect(h.downloadWav).toHaveBeenCalledTimes(1));
@@ -390,6 +397,7 @@ describe("Home · 保存与加载", () => {
           leftFinger: null,
           hui: null,
           fen: null,
+          slide: null,
           rightAction: "勹",
           stringNumber: "五",
         },
@@ -408,6 +416,45 @@ describe("Home · 保存与加载", () => {
 
     await waitFor(() => expect(noteColumns(container).length).toBe(1));
     expect((screen.getByLabelText("曲谱名称") as HTMLInputElement).value).toBe("旧曲");
+  });
+
+  it("保存时把当前定弦一起提交", async () => {
+    await loadExample();
+
+    fireEvent.change(screen.getByLabelText("定弦（调式）"), { target: { value: "ruibin" } });
+    fireEvent.click(screen.getByLabelText("保存"));
+
+    await waitFor(() => expect(h.createScore).toHaveBeenCalledTimes(1));
+    // 第三个参数就是定弦：不随谱走的话，换台机器打开就按正调反推，差半音
+    expect(h.createScore.mock.calls[0][2]).toBe("ruibin");
+  });
+
+  it("加载蕤宾调的曲谱后定弦跟着切过去", async () => {
+    h.listScores.mockResolvedValue([
+      {
+        id: "s1",
+        title: "紧五弦曲",
+        tuning: "ruibin",
+        created_at: "2026-10-01T00:00:00Z",
+        updated_at: "2026-10-02T00:00:00Z",
+      },
+    ]);
+    h.getScore.mockResolvedValue({
+      id: "s1",
+      title: "紧五弦曲",
+      tuning: "ruibin",
+      notes: [],
+      created_at: "",
+      updated_at: "",
+    });
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+    fireEvent.click(await screen.findByText("紧五弦曲"));
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("定弦（调式）") as HTMLSelectElement).value).toBe("ruibin"),
+    );
   });
 });
 
@@ -537,7 +584,7 @@ describe("Home · 简谱转减字", () => {
     expect(noteColumns(container).length).toBe(0);
 
     fireEvent.change(screen.getByLabelText("简谱数字"), { target: { value: "5" } });
-    fireEvent.click(screen.getByRole("button", { name: "翻译" }));
+    fireEvent.click(screen.getByRole("button", { name: "查音位" }));
 
     await waitFor(() => expect(h.translateJianpuToJianzi).toHaveBeenCalledTimes(1));
     // 传给 WASM 的载荷带上了数字/八度/调式
@@ -547,7 +594,8 @@ describe("Home · 简谱转减字", () => {
       tuning: "zheng",
     });
 
-    const candidate = await screen.findByTitle("评分: 90");
+    // 候选是带字形的卡片，读屏名统一以「录入此音位」结尾
+    const [candidate] = await screen.findAllByRole("button", { name: /录入此音位$/ });
     fireEvent.click(candidate);
 
     await waitFor(() => expect(noteColumns(container).length).toBe(1));
@@ -558,7 +606,7 @@ describe("Home · 简谱转减字", () => {
     render(<Home />);
 
     fireEvent.change(screen.getByLabelText("简谱数字"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "翻译" }));
+    fireEvent.click(screen.getByRole("button", { name: "查音位" }));
 
     await waitFor(() => expect(screen.getByText("WASM 未初始化")).toBeTruthy());
   });
@@ -577,6 +625,7 @@ describe("Home · 曲谱删除", () => {
       leftFinger: null,
       hui: null,
       fen: null,
+      slide: null,
       rightAction: "勹",
       stringNumber: "五",
     },

@@ -12,6 +12,37 @@ const mockExamples = [
 ];
 
 describe("SaveLoadToolbar", () => {
+  it("有音符时给出 MIDI 导出按钮，点击回调 onExportMidi", () => {
+    const onExportMidi = vi.fn();
+    const { getByLabelText, rerender } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        onExportMidi={onExportMidi}
+        hasNotes
+        saveStatus="idle"
+      />,
+    );
+    fireEvent.click(getByLabelText("导出 MIDI"));
+    expect(onExportMidi).toHaveBeenCalledTimes(1);
+
+    // 没音符时不该出现（导空谱没有意义）
+    rerender(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        onExportMidi={onExportMidi}
+        hasNotes={false}
+        saveStatus="idle"
+      />,
+    );
+    expect(() => getByLabelText("导出 MIDI")).toThrow();
+  });
+
   it("renders title input and action buttons", () => {
     const { container } = render(
       <SaveLoadToolbar

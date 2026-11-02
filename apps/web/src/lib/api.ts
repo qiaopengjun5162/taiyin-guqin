@@ -1,4 +1,5 @@
 import type { NoteColumn } from "./types";
+import { DEFAULT_TUNING, isTuningId, type TuningId } from "./tuning";
 import {
   localCreateScore,
   localDeleteScore,
@@ -87,6 +88,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export interface ScoreListItem {
   id: string;
   title: string;
+  /**
+   * 该谱的定弦。后端总会给值（建表默认正调），
+   * 但读端仍按 `isTuningId` 校验后再用——老接口/手工改库都可能给出意料外的字符串。
+   */
+  tuning: TuningId;
   created_at: string;
   updated_at: string;
 }
@@ -95,34 +101,46 @@ export interface Score extends ScoreListItem {
   notes: NoteColumn[];
 }
 
+/**
+ * 兜底校验后端返回的定弦。
+ *
+ * 正常情况后端只会存三种合法值，但接口层不该信任网络数据：
+ * 万一拿到未知字符串，退回正调也比让 `openMidi[index]` 取到 undefined 崩掉好。
+ */
+function normalizeTuning<T extends { tuning: TuningId }>(score: T): T {
+  return isTuningId(score.tuning) ? score : { ...score, tuning: DEFAULT_TUNING };
+}
+
 export async function createScore(
   title: string,
   notes: NoteColumn[],
+  tuning: TuningId = DEFAULT_TUNING,
 ): Promise<Score> {
-  if (isBrowserOnlyMode()) return localCreateScore(title, notes);
+  if (isBrowserOnlyMode()) return localCreateScore(title, notes, tuning);
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, notes }),
+    body: JSON.stringify({ title, notes, tuning }),
   });
-  return handleResponse(res);
+  return normalizeTuning(await handleResponse<Score>(res));
 }
 
 export async function listScores(): Promise<ScoreListItem[]> {
   if (isBrowserOnlyMode()) return localListScores();
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`);
-  return handleResponse(res);
+  const list = await handleResponse<ScoreListItem[]>(res);
+  return list.map(normalizeTuning);
 }
 
 export async function getScore(id: string): Promise<Score> {
   if (isBrowserOnlyMode()) return localGetScore(id);
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`);
-  return handleResponse(res);
+  return normalizeTuning(await handleResponse<Score>(res));
 }
 
 export async function updateScore(
   id: string,
-  data: { title?: string; notes?: NoteColumn[] },
+  data: { title?: string; notes?: NoteColumn[]; tuning?: TuningId },
 ): Promise<Score> {
   if (isBrowserOnlyMode()) return localUpdateScore(id, data);
   const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
@@ -130,7 +148,7 @@ export async function updateScore(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return handleResponse(res);
+  return normalizeTuning(await handleResponse<Score>(res));
 }
 
 export async function deleteScore(id: string): Promise<void> {

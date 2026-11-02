@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { RAPID_CHEATSHEET } from "@/lib/jianzi-rapid";
 
 export const metadata: Metadata = {
   title: "减字谱 · 太音科普 | 古琴减字谱",
@@ -22,6 +23,8 @@ const GLYPHS: { label: string; pos: string; meaning: string }[] = [
   { label: "徽位", pos: "右上角", meaning: "十三徽及徽分（标明按弦位置）" },
   { label: "乚", pos: "旁部", meaning: "右手指法：食指「挑」" },
   { label: "勹", pos: "旁部", meaning: "右手指法：中指「勾」" },
+  { label: "绰", pos: "旁部", meaning: "走手音：按音从本位下方滑上来（只用于按音）" },
+  { label: "注", pos: "旁部", meaning: "走手音：按音从本位上方向下滑下来（只用于按音）" },
   { label: "大写数字", pos: "下半部", meaning: "弦数（七弦，写几即第几弦）" },
 ];
 
@@ -94,6 +97,47 @@ export default function JianzipuPage() {
         </div>
       </section>
 
+      {/* ── 键盘速录：打字即打谱 ── */}
+      <section className="mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+        <div className="p-5">
+          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+            打字即打谱 · 键盘速录
+          </p>
+          <p className="mb-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
+            按减字的书写顺序打「音色 + 左手 + 徽位数字 + 分数 + 走手音 + 右手 + 弦数」，
+            打满自动成字，不必碰鼠标。例：大九勾四 →{" "}
+            <code className="text-[var(--vermillion)]">d9g4</code>；散勾三 →{" "}
+            <code className="text-[var(--vermillion)]">sg3</code>；大九六分绰勾四 →{" "}
+            <code className="text-[var(--vermillion)]">ad9f6cg4</code>。
+          </p>
+          <div className="space-y-1.5">
+            {RAPID_CHEATSHEET.map((row) => (
+              <div
+                key={row.title}
+                className="flex items-baseline gap-3 text-[12px] leading-[1.8] text-[var(--ink-light)]"
+              >
+                <span className="shrink-0 w-14 text-center text-[var(--vermillion)] font-bold font-calligraphy">
+                  {row.title}
+                </span>
+                <span className="flex-1 text-[11px]">{row.text}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
+            反过来也通：把码整段粘回编辑器「减字码入谱」，就能还原成可播放、可导出的曲谱。
+            同一串码，既是给眼睛看的注释，也是一份能搬运的存档。粘回时记得带上音色前缀——
+            同一个「大九勾四」，按音是{" "}
+            <code className="text-[var(--vermillion)]">ad9g4</code>，泛音是{" "}
+            <code className="text-[var(--vermillion)]">fd9g4</code>；少了开头那个字母，
+            按音与泛音就分不开了。节奏也一起搬：码后加{" "}
+            <code className="text-[var(--vermillion)]">:8</code> 是八分音符，附点再加{" "}
+            <code className="text-[var(--vermillion)]">.</code>，
+            <code className="text-[var(--vermillion)]">r:4</code> 是四分休止。
+          </p>
+        </div>
+      </section>
+
       {/* ── 减字谱 × 太音 ── */}
       <section className="mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
@@ -128,6 +172,12 @@ export default function JianzipuPage() {
           className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
         >
           ← 回到减字谱编辑器
+        </Link>
+        <Link
+          href="/zidian"
+          className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
+        >
+          减字字典 · 字全表
         </Link>
       </div>
     </main>

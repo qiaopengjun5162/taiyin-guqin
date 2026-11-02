@@ -15,6 +15,7 @@ function state(partial: Partial<JianziState>): JianziState {
     leftFinger: null,
     hui: null,
     fen: null,
+    slide: null,
     rightAction: null,
     stringNumber: null,
     ...partial,
@@ -94,58 +95,56 @@ describe("jianziToFrequency", () => {
 });
 
 describe("frequencyToJianpu", () => {
-  it("maps open 六弦 C3 to 1,", () => {
-    expect(frequencyToJianpu(130.81)).toEqual({ number: "1", octave: "," });
+  it("F1 → 1（未标记八度）", () => {
+    expect(frequencyToJianpu(43.65)).toEqual({ number: "1", octave: "" });
   });
-  it("maps open 七弦 D3 to 2,", () => {
-    expect(frequencyToJianpu(146.83)).toEqual({ number: "2", octave: "," });
+  it("F2 → 1·", () => {
+    expect(frequencyToJianpu(87.31)).toEqual({ number: "1", octave: "·" });
   });
-  it("maps C4 to 1 (无八度)", () => {
-    expect(frequencyToJianpu(261.63)).toEqual({ number: "1", octave: "" });
+  it("F3 → 1··", () => {
+    expect(frequencyToJianpu(174.61)).toEqual({ number: "1", octave: "··" });
   });
-  it("maps G4 to 5 (无八度)", () => {
-    expect(frequencyToJianpu(392.0)).toEqual({ number: "5", octave: "" });
+  it("C2（散一弦）→ 5", () => {
+    expect(frequencyToJianpu(65.41)).toEqual({ number: "5", octave: "" });
   });
-  it("maps C5 to 1· 与 C6 到 1·· (高两个八度范围)", () => {
-    expect(frequencyToJianpu(523.25)).toEqual({ number: "1", octave: "·" });
-    expect(frequencyToJianpu(1046.5)).toEqual({ number: "1", octave: "··" });
+  it("C3 → 5·", () => {
+    expect(frequencyToJianpu(130.81)).toEqual({ number: "5", octave: "·" });
   });
-  it("maps 一弦空弦 C2 到 1,, (低两个八度，不再上移)", () => {
-    expect(frequencyToJianpu(65.41)).toEqual({ number: "1", octave: ",," });
+  it("C4 → 5··", () => {
+    expect(frequencyToJianpu(261.63)).toEqual({ number: "5", octave: "··" });
   });
-  it("returns null for non-positive frequency", () => {
+  it("零或负值返回 null", () => {
     expect(frequencyToJianpu(0)).toBeNull();
     expect(frequencyToJianpu(-1)).toBeNull();
   });
 });
 
 describe("jianziToJianpu", () => {
-  it("derives 简谱 for open string", () => {
+  it("derives 简谱 for open string 六弦 (C3 → 5·)", () => {
     expect(jianziToJianpu(state({ toneType: "散", stringNumber: "六" }))).toEqual({
-      number: "1",
-      octave: ",",
+      number: "5",
+      octave: "·",
     });
   });
-  it("derives 低二八度 for 一弦空弦 C2", () => {
-    // 一弦空弦为 C2，应落于低两个八度（",,"），验证不再被上移八度
+  it("derives 5 for 一弦空弦 C2 (1=F，不再错写成 1,,)", () => {
     expect(jianziToJianpu(state({ toneType: "散", stringNumber: "一" }))).toEqual({
-      number: "1",
-      octave: ",,"
+      number: "5",
+      octave: "",
     });
     expect(jianziToFrequency(state({ toneType: "散", stringNumber: "一" }))).toBeCloseTo(
       65.41,
       1,
     );
   });
-  it("derives 简谱 for 七徽按音 (C4)", () => {
+  it("derives 5·· for 六弦七徽按音 (C4)", () => {
     expect(
       jianziToJianpu(state({ toneType: "按", stringNumber: "六", hui: "七" })),
-    ).toEqual({ number: "1", octave: "" });
+    ).toEqual({ number: "5", octave: "··" });
   });
-  it("derives 简谱 for 九徽按音 (G4)", () => {
+  it("derives 1·· for 三弦七徽按音 (F3)", () => {
     expect(
-      jianziToJianpu(state({ toneType: "按", stringNumber: "六", hui: "九" })),
-    ).toEqual({ number: "5", octave: "" });
+      jianziToJianpu(state({ toneType: "按", stringNumber: "三", hui: "七" })),
+    ).toEqual({ number: "1", octave: "··" });
   });
   it("returns null when pitch cannot be derived", () => {
     expect(

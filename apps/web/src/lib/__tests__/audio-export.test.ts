@@ -65,6 +65,7 @@ function note(overrides: Partial<NoteColumn> = {}): NoteColumn {
       leftFinger: null,
       hui: null,
       fen: null,
+      slide: null,
       rightAction: "勹",
       stringNumber: "五",
     },
@@ -80,6 +81,7 @@ const REST: NoteColumn = note({
     leftFinger: null,
     hui: null,
     fen: null,
+    slide: null,
     rightAction: null,
     stringNumber: null,
   },
@@ -104,7 +106,9 @@ describe("renderScoreToBuffer", () => {
     expect(pluck).toHaveBeenCalledTimes(1);
     const [ctx, freq, time, duration, toneType] = pluck.mock.calls[0];
     expect(ctx).toBeInstanceOf(FakeOfflineAudioContext);
-    expect(freq).toBeCloseTo(261.63, 1); // 简谱 1 = C4
+    // 谱字是「散 · 五弦」，音高就取五弦空弦 A2（110Hz）；
+    // 简谱写成 1 只是相对音高标注，不再覆盖谱字的实际音位。
+    expect(freq).toBeCloseTo(110, 1);
     expect(time).toBe(0);
     expect(duration).toBe(1); // bpm 60 → 四分音符 1 秒
     expect(toneType).toBe("散");

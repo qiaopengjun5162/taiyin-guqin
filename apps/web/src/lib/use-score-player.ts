@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { NoteColumn } from "./types";
 import { buildSchedule } from "./player";
 import { CONCERT_PITCH_DEFAULT } from "./concert-pitch";
+import { DEFAULT_TUNING, type TuningId } from "./tuning";
 import { schedulePluck, TONE_PROFILE } from "./audio-synth";
 
 /**
@@ -17,11 +18,13 @@ import { schedulePluck, TONE_PROFILE } from "./audio-synth";
  *
  * @param bpm 速度（拍/分钟），默认 120；调速后下次播放生效。
  * @param concertPitch A4 频率（默认 440）；古琴整床偏低时用它对齐。
+ * @param tuning 定弦：决定空弦音，从而决定「散/按/泛」谱字的真实音高。
  */
 export function useScorePlayer(
   notes: NoteColumn[],
   bpm: number = 120,
   concertPitch: number = CONCERT_PITCH_DEFAULT,
+  tuning: TuningId = DEFAULT_TUNING,
 ) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
@@ -67,7 +70,7 @@ export function useScorePlayer(
     }
 
     const beatMs = 60000 / bpm;
-    const schedule = buildSchedule(notes, beatMs, concertPitch);
+    const schedule = buildSchedule(notes, beatMs, concertPitch, tuning);
     // 起始音符的时间基准，用作整体左移偏移
     const offset = schedule[startIndex]?.start ?? 0;
     const t0 = ctx.currentTime + 0.05;
@@ -77,7 +80,14 @@ export function useScorePlayer(
       .map((s, i) => ({ s, i }))
       .filter(({ i, s }) => i >= startIndex && s.freq !== null)
       .map(({ s }) =>
-        schedulePluck(ctx, s.freq as number, t0 + (s.start - offset), s.duration, s.toneType),
+        schedulePluck(
+          ctx,
+          s.freq as number,
+          t0 + (s.start - offset),
+          s.duration,
+          s.toneType,
+          s.slide,
+        ),
       );
 
     playingRef.current = true;
@@ -96,7 +106,7 @@ export function useScorePlayer(
     );
     const remaining = Math.max(0, total - offset);
     timerRef.current = setTimeout(stop, remaining * 1000 + 100);
-  }, [notes, stop, bpm, concertPitch]);
+  }, [notes, stop, bpm, concertPitch, tuning]);
 
   // 乐谱变更时自动停止播放，防止旧音频继续发声
   useEffect(() => {

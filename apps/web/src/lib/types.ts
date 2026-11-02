@@ -6,6 +6,25 @@ export type NoteType = "散" | "泛" | "按";
 /** 节奏模式——决定时值的解释方式。 */
 export type RhythmMode = "板" | "散" | "宕";
 
+/**
+ * 会改变音高走向的两个记号 —— 只有它们走「滑音」合成分支。
+ * 单独拎出来是因为「急」不会让音高滑动，混进来会把急弹当注音弹。
+ */
+export type PitchSlide = "绰" | "注";
+
+/**
+ * 谱字上的装饰记号——字体把它们压在同一个槽位里（徽分之后、右手指法之前），
+ * 所以同一个谱字只能带一个，互斥。
+ *
+ * - 绰：从本位**下方**滑上来，落在减字标注的徽位上（本位是终点）。
+ * - 注：从本位**上方**滑下来。
+ * - 急：急弹记号，标的是「这一声弹得急促」，不改音高。
+ *
+ * 绰/注 改变的是音高走向，不是装饰：同一谱字有没有绰，弹出来是两回事。
+ * 只有按音能有这几样——散音是空弦、泛音要虚按在徽位节点上，都滑不了。
+ */
+export type SlideMark = PitchSlide | "急";
+
 /** 减字键盘状态——一个正在拼装中的谱字。 */
 export interface JianziState {
   toneType: NoteType | null;
@@ -13,6 +32,8 @@ export interface JianziState {
   leftFinger: string | null;
   hui: string | null;
   fen: string | null;
+  /** 装饰记号（绰/注/急）；写在分数之后、右手指法之前——字体连字规则要求如此。 */
+  slide: SlideMark | null;
   rightAction: string | null;
   stringNumber: string | null;
 }
@@ -24,6 +45,7 @@ export interface KeyboardConfig {
   leftFingers: string[];
   huiPositions: string[];
   fenOptions: string[];
+  slides: SlideMark[];
   rightActions: string[];
   stringNumbers: string[];
 }
@@ -56,6 +78,9 @@ export const DEFAULT_KEYBOARD: KeyboardConfig = {
     "一分", "二分", "三分", "四分", "五分",
     "六分", "七分", "八分", "九分", "半",
   ],
+  // 装饰记号：绰（下方向上滑到本位）、注（上方向下滑到本位）、急（急弹）。
+  // 字体把它们压进同一个槽位，所以三选一；顺序同样有硬要求——分数在前、记号在后。
+  slides: ["绰", "注", "急"],
   // 传统减字偏旁写法：乇=托 尸=劈/擘 木=抹 乚=挑 勹=勾 剔 丁=打 倽=摘
   // 复合指法（双指法连字）：字体 GSUB 原生支持 抹挑/勾剔/抹勾/打摘
   // （"仰托"字体无连字规则，仅解析器容错支持，不提供录入）

@@ -37,8 +37,15 @@ afterEach(() => {
 });
 
 describe("api: scores CRUD", () => {
-  it("createScore POSTs title+notes and returns the created score", async () => {
-    const created = { id: "s1", title: "流水", notes: [], created_at: "t", updated_at: "t" };
+  it("createScore POSTs title+notes（未指定定弦时落正调）", async () => {
+    const created = {
+      id: "s1",
+      title: "流水",
+      notes: [],
+      tuning: "zhengdiao",
+      created_at: "t",
+      updated_at: "t",
+    };
     fetchMock.mockResolvedValue(jsonResponse(created));
     const { createScore } = await import("@/lib/api");
 
@@ -51,19 +58,38 @@ describe("api: scores CRUD", () => {
     expect(url).toContain("/api/v1/scores");
     expect(options.method).toBe("POST");
     expect(options.headers).toEqual({ "Content-Type": "application/json" });
-    expect(JSON.parse(options.body)).toEqual({ title: "流水", notes });
+    // 定弦必须随谱一起提交：它决定这套减字弹出来是哪个音
+    expect(JSON.parse(options.body)).toEqual({ title: "流水", notes, tuning: "zhengdiao" });
+  });
+
+  it("createScore 指定定弦时原样提交（蕤宾调）", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "s2", tuning: "ruibin" }));
+    const { createScore } = await import("@/lib/api");
+
+    await createScore("紧五弦", [], "ruibin");
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).tuning).toBe("ruibin");
   });
 
   it("listScores GETs the collection without a body", async () => {
-    fetchMock.mockResolvedValue(jsonResponse([{ id: "s1" }]));
+    fetchMock.mockResolvedValue(jsonResponse([{ id: "s1", tuning: "ruibin" }]));
     const { listScores } = await import("@/lib/api");
 
     const result = await listScores();
 
-    expect(result).toEqual([{ id: "s1" }]);
+    expect(result).toEqual([{ id: "s1", tuning: "ruibin" }]);
     const [url, options] = fetchMock.mock.calls[0];
     expect(url).toContain("/api/v1/scores");
     expect(options?.method).toBeUndefined();
+  });
+
+  it("后端给出不认识的定弦时退回正调，不让坏值流到音高推算里", async () => {
+    // 手工改库 / 老接口都可能给出意料外的字符串；
+    // 让它一路走到 openMidi[index] 只会拿到 undefined。
+    fetchMock.mockResolvedValue(jsonResponse([{ id: "s1", tuning: "youma" }]));
+    const { listScores } = await import("@/lib/api");
+
+    expect(await listScores()).toEqual([{ id: "s1", tuning: "zhengdiao" }]);
   });
 
   it("getScore puts the id in the path (no query string leakage)", async () => {

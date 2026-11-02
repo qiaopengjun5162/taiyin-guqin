@@ -12,6 +12,8 @@ import {
 } from "@/lib/jianzi-template";
 import { schedulePluck } from "@/lib/audio-synth";
 import { jianziToFrequency, jianziToJianpu } from "@/lib/jianzi-pitch";
+import { usePitchContext } from "@/lib/use-pitch-context";
+import { getTuningById } from "@/lib/tuning";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -70,6 +72,9 @@ const LOW_CONFIDENCE = 0.2;
  * 仅用于建立"这个减字听起来是什么弦"的直觉。
  */
 export function JianziRecognizer() {
+  // 反推音高依赖当前定弦与基准音：蕤宾调五弦、慢角调三弦各差一个半音
+  const { tuning, concertPitch } = usePitchContext();
+  const tuningName = getTuningById(tuning).name;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [glyph, setGlyph] = useState<string | null>(null);
@@ -128,7 +133,7 @@ export function JianziRecognizer() {
 
   function handlePlay() {
     if (!state) return;
-    const freq = jianziToFrequency(state);
+    const freq = jianziToFrequency(state, { tuning, concertPitch });
     if (freq == null) return;
     const ctx = ctxRef.current ??= new AudioContext();
     if (ctx.state === "suspended") void ctx.resume();
@@ -196,7 +201,7 @@ export function JianziRecognizer() {
             {state && (
               <button
                 onClick={handlePlay}
-                disabled={jianziToFrequency(state) == null}
+                disabled={jianziToFrequency(state, { tuning, concertPitch }) == null}
                 title="试听（按减字精确推算音高）"
                 className="px-2 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-400 hover:text-stone-200 hover:border-amber-600/50 disabled:opacity-40 transition-all"
               >
@@ -247,8 +252,8 @@ export function JianziRecognizer() {
               </p>
             )}
             {state && (() => {
-              const jp = jianziToJianpu(state);
-              const freq = jianziToFrequency(state);
+              const jp = jianziToJianpu(state, { tuning, concertPitch });
+              const freq = jianziToFrequency(state, { tuning, concertPitch });
               if (!jp || freq == null) {
                 return (
                   <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
@@ -258,7 +263,7 @@ export function JianziRecognizer() {
               }
               return (
                 <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
-                  试听为「{state.stringNumber}弦」{state.toneType}音 · 约简谱 {jp.number}{jp.octave}（{freq.toFixed(1)}Hz）
+                  试听为「{state.stringNumber}弦」{state.toneType}音 · 约简谱 {jp.number}{jp.octave}（{freq.toFixed(1)}Hz · {tuningName}推定）
                 </p>
               );
             })()}

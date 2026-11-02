@@ -6,14 +6,21 @@ import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
 import { JianziRecognizer } from "@/components/jianzi-recognizer";
 import { JianziSheetRecognizer } from "@/components/jianzi-sheet-recognizer";
+import { PracticePlayer } from "@/components/practice-player";
+import { RecorderPanel } from "@/components/recorder-panel";
+import { PracticeLogPanel } from "@/components/practice-log-panel";
+import { TunerPanel } from "@/components/tuner-panel";
+import { QinBoard } from "@/components/qin-board";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog } from "@/components/load-dialog";
 import { ExportFooter } from "@/components/export-footer";
 import { JianpuTranslator } from "@/components/jianpu-translator";
+import { JianziCodeImport } from "@/components/jianzi-code-import";
 import { useExportImage } from "@/lib/use-export-image";
 import { useScoreHistory } from "@/lib/use-score-history";
 import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
+import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
 import { useMetronome } from "@/lib/use-metronome";
 import {
@@ -26,6 +33,16 @@ import {
   subscribeConcertPitch,
 } from "@/lib/concert-pitch";
 import { renderScoreToBuffer, downloadWav } from "@/lib/audio-export";
+import { scoreToMidi, downloadMidi } from "@/lib/midi-export";
+import {
+  TUNINGS,
+  getServerTuning,
+  getTuning,
+  getTuningById,
+  setTuning,
+  subscribeTuning,
+  type TuningId,
+} from "@/lib/tuning";
 import * as api from "@/lib/api";
 import Link from "next/link";
 
@@ -90,11 +107,28 @@ export default function Home() {
     getConcertPitch,
     getServerConcertPitch,
   );
+  // 定弦：同一组减字在不同定弦上音高不同（紧五弦差半音），
+  // 所以它既是「偏好」也是「曲谱属性」——保存时随谱走，加载时还原。
+  const tuning = useSyncExternalStore(subscribeTuning, getTuning, getServerTuning);
+  // 定弦显示名（名字 + 别名/宫音）。导出文本与打印页脚共用同一份写法。
+  const tuningLabel = `${getTuningById(tuning).name} · ${getTuningById(tuning).alias}`;
   const [linkMetronome, setLinkMetronome] = useState(true);
   const [exportWithCountIn, setExportWithCountIn] = useState(true);
   const [showRecognizer, setShowRecognizer] = useState(false);
+  const [showPractice, setShowPractice] = useState(false);
+  const [showPracticeLog, setShowPracticeLog] = useState(false);
+  const [practiceLogTab, setPracticeLogTab] = useState<"record" | "log">("record");
+  const [showTuner, setShowTuner] = useState(false);
+  const [showBoard, setShowBoard] = useState(false);
   const [recognizerTab, setRecognizerTab] = useState<"single" | "sheet">("single");
-  const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(score, bpm, concertPitch);
+  // 录入区两种进法：点选简谱转减字，或把减字码整段粘回来。
+  const [inputTab, setInputTab] = useState<"jianpu" | "code">("jianpu");
+  const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(
+    score,
+    bpm,
+    concertPitch,
+    tuning,
+  );
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -227,9 +261,9 @@ export default function Home() {
     setSaveStatus("saving");
     try {
       if (currentScoreId) {
-        await api.updateScore(currentScoreId, { title: scoreTitle, notes: score });
+        await api.updateScore(currentScoreId, { title: scoreTitle, notes: score, tuning });
       } else {
-        const created = await api.createScore(scoreTitle, score);
+        const created = await api.createScore(scoreTitle, score, tuning);
         setCurrentScoreId(created.id);
       }
       setSaveStatus("saved");
@@ -276,6 +310,9 @@ export default function Home() {
       const scoreData = await api.getScore(id);
       commitScore(() => scoreData.notes);
       commitScoreTitle(scoreData.title);
+      // 回到这首谱自己的定弦：换定弦后再加载，若沿用当前设置，
+      // 接着往里加的音就会按错定弦反推（差半音且不易察觉）。
+      setTuning(scoreData.tuning);
       setCurrentScoreId(scoreData.id);
       setShowLoadDialog(false);
       setEditingIndex(null);
@@ -294,10 +331,31 @@ export default function Home() {
     setEditingIndex(null);
   }
 
-  /** 导出纯文本对照谱 */
+  /**
+   * 导出纯文本对照谱。
+   *
+   * 除了简谱 / 减字 / 歌词，还带上每个减字的**编码**（`ad9g4` 这种）：
+   * 减字那一行离开我们的字体就是一堆生僻字，码却是谁都能看、能照着敲的。
+   * 编码在 Rust 端算；引擎没起来时退回不带码的三行，不让导出整个失败。
+   */
   function handleExportText() {
-    const text = formatScoreAsText(score, { title: scoreTitle, beatsPerBar });
-    downloadTextFile(text, `${scoreTitle || "taiyin-score"}.txt`);
+    void (async () => {
+      let codes: (string | null)[] | undefined;
+      try {
+        codes = await encodeJianziBatch(score.map((note) => note.jianzi));
+      } catch {
+        codes = undefined;
+      }
+      const text = formatScoreAsText(score, {
+        title: scoreTitle,
+        beatsPerBar,
+        tuning: tuningLabel,
+        codes,
+        // 时值跟着码走：导出的文本能被「减字码入谱」原样读回，节奏不丢。
+        annotateRhythm: true,
+      });
+      downloadTextFile(text, `${scoreTitle || "taiyin-score"}.txt`);
+    })();
   }
 
   /** 导出旋律为 WAV 音频（离线渲染，与播放音色一致） */
@@ -310,6 +368,7 @@ export default function Home() {
         withMetronome: linkMetronome,
         leadInBars: exportWithCountIn ? 2 : 0,
         concertPitch,
+        tuning,
       });
       downloadWav(buffer, `${scoreTitle || "taiyin-score"}.wav`);
     } catch {
@@ -317,6 +376,19 @@ export default function Home() {
     } finally {
       setIsExportingAudio(false);
     }
+  }
+
+  /** 导出标准 MIDI 谱（可导入打谱软件 / DAW；音高为正调推定） */
+  function handleExportMidi() {
+    if (score.length === 0) return;
+    const bytes = scoreToMidi(score, {
+      title: scoreTitle || "taiyin-score",
+      bpm,
+      beatsPerBar,
+      concertPitch,
+      tuning,
+    });
+    downloadMidi(bytes, `${scoreTitle || "taiyin-score"}.mid`);
   }
 
   return (
@@ -372,7 +444,7 @@ export default function Home() {
             </div>
           </div>
         )}
-        {score.length > 0 && <ExportFooter title={scoreTitle} />}
+        {score.length > 0 && <ExportFooter title={scoreTitle} tuning={tuningLabel} />}
       </div>
 
       {/* ── 工具栏：标题 + 保存 / 加载 / 导出 ── */}
@@ -387,6 +459,7 @@ export default function Home() {
         onExportSvg={exportSvg}
         onExportText={handleExportText}
         onExportWav={handleExportWav}
+        onExportMidi={handleExportMidi}
         isExportingAudio={isExportingAudio}
         examples={EXAMPLE_SCORES}
         onLoadExample={handleLoadExample}
@@ -499,6 +572,30 @@ export default function Home() {
         />
       </div>
 
+      {/* ── 定弦（调式）：七根空弦各自的音高。同一组减字换定弦就换音高，
+             所以它跟基准音是两个独立维度：定弦定弦间音程，基准音定整体高低。 ── */}
+      <div className="no-print mt-1 w-full max-w-md flex items-center gap-3 py-1.5">
+        <span className="text-[10px] tracking-wider text-amber-600/50 whitespace-nowrap">
+          定弦
+        </span>
+        <select
+          value={tuning}
+          onChange={(e) => setTuning(e.target.value as TuningId)}
+          aria-label="定弦（调式）"
+          title={`${getTuningById(tuning).hint}\n切换只影响之后录入时按哪种定弦反推音高；已录入音符的简谱不会被改写。保存时随谱一起存。`}
+          className="px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 outline-none focus:border-amber-600/50"
+        >
+          {TUNINGS.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <span className="flex-1 truncate text-[10px] tracking-wider text-amber-600/40">
+          {getTuningById(tuning).alias}
+        </span>
+      </div>
+
       {/* ── 基准音（A4）调节：古琴常整床偏低，按自己琴上的实际音高设 ── */}
       <div className="no-print mt-1 w-full max-w-md flex items-center gap-3 py-1.5">
         <span className="text-[10px] tracking-wider text-amber-600/50 whitespace-nowrap">
@@ -526,6 +623,7 @@ export default function Home() {
 
       {/* ── 加载对话框 ── */}
       <LoadDialog
+        key={showLoadDialog ? "load-open" : "load-closed"}
         open={showLoadDialog}
         onClose={() => setShowLoadDialog(false)}
         scores={savedScores}
@@ -556,15 +654,39 @@ export default function Home() {
             </div>
           )}
 
-          {/* 简谱转减字入口 */}
+          {/* 录入入口：简谱转减字 / 减字码入谱（同一块地方，两种进法） */}
           {editingIndex === null && (
             <div className="mb-4 p-3 rounded border border-amber-700/20 bg-amber-900/10">
-              <p className="mb-2 text-[10px] tracking-wider text-amber-600/60">简谱转减字</p>
-              <JianpuTranslator
-                onSelect={(notes) => {
-                  commitScore((prev) => [...prev, ...notes]);
-                }}
-              />
+              <div className="mb-2 flex items-center gap-2">
+                {[
+                  { key: "jianpu", label: "简谱转减字" },
+                  { key: "code", label: "减字码入谱" },
+                ].map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={() => setInputTab(t.key as "jianpu" | "code")}
+                    aria-pressed={inputTab === t.key}
+                    className={`min-h-[32px] px-2 py-0.5 text-[10px] tracking-wider rounded border transition-colors ${
+                      inputTab === t.key
+                        ? "border-amber-600/60 bg-amber-100 text-amber-900"
+                        : "border-amber-700/25 text-stone-500 hover:text-stone-700"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {inputTab === "jianpu" ? (
+                <JianpuTranslator
+                  onSelect={(notes) => {
+                    commitScore((prev) => [...prev, ...notes]);
+                  }}
+                />
+              ) : (
+                <JianziCodeImport
+                  onImport={(notes) => commitScore((prev) => [...prev, ...notes])}
+                />
+              )}
             </div>
           )}
 
@@ -626,6 +748,106 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ── 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音） ── */}
+      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+        <div className="p-5">
+          <button
+            onClick={() => setShowBoard((v) => !v)}
+            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+          >
+            {showBoard ? "收起琴面" : "＋ 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音）"}
+          </button>
+          {showBoard && (
+            <div className="mt-3">
+              <QinBoard />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 调音 · 定弦（定弦决定减字反推的音高） ── */}
+      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+        <div className="p-5">
+          <button
+            onClick={() => setShowTuner((v) => !v)}
+            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+          >
+            {showTuner ? "收起调音" : "＋ 调音 / 定弦（麦克风校弦 · 换调式）"}
+          </button>
+          {showTuner && (
+            <div className="mt-3">
+              <TunerPanel />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 跟录音练琴（对标华夏古琴网的「古琴播放器」） ── */}
+      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+        <div className="p-5">
+          <button
+            onClick={() => setShowPractice((v) => !v)}
+            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+          >
+            {showPractice ? "收起跟录音练" : "＋ 跟录音练（导入音频 / AB 循环 / 变速）"}
+          </button>
+          {showPractice && (
+            <div className="mt-3">
+              <PracticePlayer />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 练琴记录（对标「古琴助手」的录音器 + 打卡 + 统计） ── */}
+      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+        <div className="p-5">
+          <button
+            onClick={() => setShowPracticeLog((v) => !v)}
+            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+          >
+            {showPracticeLog ? "收起练琴记录" : "＋ 练琴记录（录音回听 · 打卡 · 周月统计）"}
+          </button>
+          {showPracticeLog && (
+            <div className="mt-3">
+              <div className="mb-3 flex items-center gap-2">
+                <button
+                  onClick={() => setPracticeLogTab("record")}
+                  aria-pressed={practiceLogTab === "record"}
+                  className={`min-h-[36px] px-2 py-1 text-[10px] tracking-wider rounded border transition-colors ${
+                    practiceLogTab === "record"
+                      ? "border-amber-600/50 bg-amber-800/15 text-stone-900"
+                      : "border-amber-700/25 text-stone-600 hover:border-amber-600/50"
+                  }`}
+                >
+                  录音
+                </button>
+                <button
+                  onClick={() => setPracticeLogTab("log")}
+                  aria-pressed={practiceLogTab === "log"}
+                  className={`min-h-[36px] px-2 py-1 text-[10px] tracking-wider rounded border transition-colors ${
+                    practiceLogTab === "log"
+                      ? "border-amber-600/50 bg-amber-800/15 text-stone-900"
+                      : "border-amber-700/25 text-stone-600 hover:border-amber-600/50"
+                  }`}
+                >
+                  打卡与统计
+                </button>
+              </div>
+              {practiceLogTab === "record" ? (
+                <RecorderPanel scoreTitle={scoreTitle} />
+              ) : (
+                <PracticeLogPanel scoreTitle={scoreTitle} />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── 页脚 ── */}
       <div className="no-print mt-auto pt-10 flex flex-col items-center gap-2">
         <p className="text-[11px] tracking-[0.15em] text-amber-700/30">
@@ -642,6 +864,12 @@ export default function Home() {
           className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
         >
           减字谱 · 科普
+        </Link>
+        <Link
+          href="/zidian"
+          className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
+        >
+          减字字典 · 字全表
         </Link>
       </div>
     </main>

@@ -10,6 +10,7 @@ interface SaveLoadToolbarProps {
   onExportSvg?: () => void;
   onExportText?: () => void;
   onExportWav?: () => void;
+  onExportMidi?: () => void;
   isExportingAudio?: boolean;
   examples?: ExampleScore[];
   onLoadExample?: (id: string) => void;
@@ -34,6 +35,7 @@ export function SaveLoadToolbar({
   onExportSvg,
   onExportText,
   onExportWav,
+  onExportMidi,
   isExportingAudio,
   examples,
   onLoadExample,
@@ -47,14 +49,14 @@ export function SaveLoadToolbar({
   storageMode = "server",
 }: SaveLoadToolbarProps) {
   return (
-    <div className="no-print mt-3 w-full max-w-md flex items-center gap-2">
+    <div className="no-print mt-3 w-full max-w-md flex flex-wrap items-center gap-2 gap-y-2">
       <button
         type="button"
         onClick={onUndo}
         disabled={!canUndo}
         aria-label="撤销"
         title="撤销 (Ctrl+Z / Cmd+Z)"
-        className="px-2 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500
+        className="px-2 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500
                    hover:text-stone-300 hover:border-amber-600/50
                    disabled:opacity-30 disabled:cursor-not-allowed transition-all"
       >
@@ -66,7 +68,7 @@ export function SaveLoadToolbar({
         disabled={!canRedo}
         aria-label="重做"
         title="重做 (Ctrl+Shift+Z / Cmd+Shift+Z)"
-        className="px-2 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500
+        className="px-2 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500
                    hover:text-stone-300 hover:border-amber-600/50
                    disabled:opacity-30 disabled:cursor-not-allowed transition-all"
       >
@@ -78,14 +80,14 @@ export function SaveLoadToolbar({
         onChange={(e) => onTitleChange(e.target.value)}
         onBlur={onTitleBlur}
         aria-label="曲谱名称"
-        className="flex-1 min-w-0 px-2 py-1.5 min-h-[44px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 placeholder-amber-700/40 outline-none focus:border-amber-600/50 transition-colors"
+        className="flex-1 min-w-[140px] px-2 py-1.5 min-h-[44px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 placeholder-amber-700/40 outline-none focus:border-amber-600/50 transition-colors"
         placeholder="曲谱名称"
       />
       <button
         onClick={onSave}
         disabled={!hasNotes || saveStatus === "saving"}
         aria-label="保存"
-        className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+        className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
       >
         {saveStatus === "saving" ? "保存中…" : saveStatus === "saved" ? "已保存" : saveStatus === "error" ? "保存失败" : "保存"}
       </button>
@@ -100,7 +102,7 @@ export function SaveLoadToolbar({
       <button
         onClick={onLoad}
         aria-label="加载曲谱"
-        className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
+        className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
       >
         加载
       </button>
@@ -114,7 +116,7 @@ export function SaveLoadToolbar({
             }
           }}
           aria-label="加载示例"
-          className="px-2 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 bg-transparent text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all outline-none"
+          className="px-2 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 bg-transparent text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all outline-none"
         >
           <option value="">示例</option>
           {examples.map((ex) => (
@@ -130,7 +132,7 @@ export function SaveLoadToolbar({
           disabled={isExporting}
           aria-label="导出图片（PNG）"
           title="导出位图（PNG，适合分享）"
-          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isExporting ? "导出中…" : "PNG"}
         </button>
@@ -141,7 +143,7 @@ export function SaveLoadToolbar({
           disabled={isExporting}
           aria-label="导出矢量图（SVG）"
           title="导出矢量图（SVG，无损缩放，适合排谱）"
-          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isExporting ? "导出中…" : "SVG"}
         </button>
@@ -150,9 +152,19 @@ export function SaveLoadToolbar({
         <button
           onClick={onExportText}
           aria-label="导出文本"
-          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
         >
           导出文本
+        </button>
+      )}
+      {hasNotes && onExportMidi && (
+        <button
+          onClick={onExportMidi}
+          aria-label="导出 MIDI"
+          title="标准 MIDI（.mid）：可导入 MuseScore / 打谱软件 / DAW / AI 歌声合成。音高为正调推定、A4=440 等分律；本机基准音只影响播放与 WAV，不影响此文件。走手音（绰/注）暂不写入 MIDI，导入后是直音"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
+        >
+          MIDI
         </button>
       )}
       {hasNotes && onExportWav && (
@@ -160,7 +172,7 @@ export function SaveLoadToolbar({
           onClick={onExportWav}
           disabled={isExportingAudio}
           aria-label="导出音频"
-          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isExportingAudio ? "导出中…" : "导出音频"}
         </button>

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useWasmInit } from "@/lib/taiyin-wasm";
+import { getServerTuning, getTuning, subscribeTuning } from "@/lib/tuning";
 import { SingleNoteMode } from "./jianpu-translator/single-note-mode";
 import { SequenceMode } from "./jianpu-translator/sequence-mode";
 import {
   TUNING_OPTIONS,
+  tuningFromId,
   type InputMode,
   type Tuning,
   type JianpuTranslatorProps,
@@ -13,7 +15,11 @@ import {
 
 export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
   const [mode, setMode] = useState<InputMode>("single");
-  const [tuning, setTuning] = useState<Tuning>("zheng");
+  // 默认跟随当前曲谱的定弦：在工具栏选了慢角调，这里还按正调算，
+  // 算出来的三弦会差半音——谱字看着对，弹出来是另一个音。
+  const [override, setOverride] = useState<Tuning | null>(null);
+  const scoreTuning = useSyncExternalStore(subscribeTuning, getTuning, getServerTuning);
+  const tuning = override ?? tuningFromId(scoreTuning);
   const { state: wasmState, error: wasmError } = useWasmInit();
 
   const wasmReady = wasmState === "ready";
@@ -30,8 +36,8 @@ export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
             onClick={() => setMode(m.key as InputMode)}
             className={`px-2 py-0.5 text-[10px] tracking-wider rounded border transition-colors ${
               mode === m.key
-                ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
-                : "border-amber-700/20 text-amber-100/50 hover:text-amber-100/70"
+                ? "border-amber-700/60 bg-amber-100 text-amber-900"
+                : "border-amber-700/20 text-stone-500 hover:text-stone-700"
             }`}
           >
             {m.label}
@@ -39,8 +45,8 @@ export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
         ))}
         <select
           value={tuning}
-          onChange={(e) => setTuning(e.target.value as Tuning)}
-          className="ml-auto px-2 py-0.5 text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 outline-none"
+          onChange={(e) => setOverride(e.target.value as Tuning)}
+          className="ml-auto px-2 py-0.5 text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-stone-700 outline-none"
         >
           {TUNING_OPTIONS.map((t) => (
             <option key={t.value} value={t.value}>
@@ -50,7 +56,7 @@ export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
         </select>
       </div>
       {wasmState === "loading" && (
-        <p className="text-[10px] tracking-wider text-amber-600/50">
+        <p className="text-[10px] tracking-wider text-stone-500">
           减字引擎加载中…
         </p>
       )}

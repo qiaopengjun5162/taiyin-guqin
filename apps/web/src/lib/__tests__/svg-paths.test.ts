@@ -10,11 +10,13 @@ const EXPECTED_KEYS = [
   // 复合指法（双指法连字）字形
   "rh_motiao", "rh_gouti", "rh_mogou", "rh_dazhai",
   "str_1", "str_2", "str_3", "str_4", "str_5", "str_6", "str_7",
+  // 装饰记号（绰/注/急）
+  "mod_chuo", "mod_zhu", "mod_ji",
 ];
 
 describe("SVG_PATHS data integrity", () => {
-  it("has 42 entries", () => {
-    expect(Object.keys(SVG_PATHS).length).toBe(42);
+  it("has 45 entries", () => {
+    expect(Object.keys(SVG_PATHS).length).toBe(45);
   });
 
   it("contains all expected keys", () => {
@@ -58,7 +60,8 @@ describe("SVG_PATHS naming convention", () => {
     for (const key of Object.keys(SVG_PATHS)) {
       const valid = key.startsWith("top_") || key.startsWith("lh_") ||
         key.startsWith("hui_") || key.startsWith("fen_") ||
-        key.startsWith("rh_") || key.startsWith("str_");
+        key.startsWith("rh_") || key.startsWith("str_") ||
+        key.startsWith("mod_");
       expect(valid, `${key}`).toBe(true);
     }
   });
