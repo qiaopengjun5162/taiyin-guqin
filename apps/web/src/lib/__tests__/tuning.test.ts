@@ -142,18 +142,18 @@ describe("减字音高跟着定弦走", () => {
     expect(zheng / man).toBeCloseTo(Math.pow(2, 1 / 12), 6);
   });
 
-  it("慢角调三弦散音反推出的是 7（E），不是别的", () => {
+  it("慢角调三弦散音反推出的是 7,（E2，比 F2 低半音），不是别的", () => {
     const s = state({ toneType: "散", stringNumber: "三" });
-    // 正调三弦 = F2（宫，1=F）→ 1·；慢角调三弦慢半音变 E2 → 7
-    expect(jianziToJianpu(s, { tuning: "zhengdiao" })).toEqual({ number: "1", octave: "·" });
-    expect(jianziToJianpu(s, { tuning: "manjiao" })).toEqual({ number: "7", octave: "" });
+    // 正调三弦 = F2（宫，1=F2）→ 1；慢角调三弦慢半音变 E2 → 7,
+    expect(jianziToJianpu(s, { tuning: "zhengdiao" })).toEqual({ number: "1", octave: "" });
+    expect(jianziToJianpu(s, { tuning: "manjiao" })).toEqual({ number: "7", octave: "," });
   });
 
   it("基准音一起参与：415Hz 下一弦散音 = 61.7Hz", () => {
     const s = state({ toneType: "散", stringNumber: "一" });
     expect(jianziToFrequency(s, { concertPitch: 415 })).toBeCloseTo(61.69, 1);
-    // 反推唱名不受影响（整床平移，音级不变）：散一弦 C2 → 5
-    expect(jianziToJianpu(s, { concertPitch: 415 })).toEqual({ number: "5", octave: "" });
+    // 反推唱名不受影响（整床平移，音级不变）：散一弦 C2 → 5,
+    expect(jianziToJianpu(s, { concertPitch: 415 })).toEqual({ number: "5", octave: "," });
   });
 });
 
