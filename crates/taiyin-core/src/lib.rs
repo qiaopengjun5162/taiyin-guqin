@@ -24,6 +24,9 @@ use ts_rs::TS;
 pub mod wasm;
 
 pub mod jianpu;
+pub mod jianzi_code;
+pub mod jianzi_dictionary;
+pub mod jianzi_stats;
 
 // ──────────────────────────────────────────────
 // 基础类型

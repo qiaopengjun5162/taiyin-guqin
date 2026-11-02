@@ -54,3 +54,66 @@ pub fn translate_jianpu_sequence_to_jianzi(input_json: &str) -> String {
     let result = crate::jianpu::translate_jianpu_sequence(&req.notes, tuning);
     serde_json::json!({ "candidates_per_note": result }).to_string()
 }
+
+/// 减字字典（字全表）—— 返回经筛选 / 搜索后的减字目录。
+///
+/// 输入 JSON: `{"tone":"","left":"","action":"","string":"","query":""}`（各字段均可省略）。
+/// 输出 JSON: `{"total":50,"entries":[{id,state,note?,common,searchText},...]}`。
+///
+/// 字典数据与筛选 / 搜索逻辑全部在 Rust（`jianzi_dictionary` 模块），
+/// 前端仅负责把结果渲染成卡片与试听。
+#[wasm_bindgen]
+pub fn get_jianzi_dictionary(input_json: &str) -> String {
+    match crate::jianzi_dictionary::get_jianzi_dictionary_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 减字字频统计 —— 给一首曲谱的减字，统计每个字出现次数、占比与写法变体。
+///
+/// 输入 JSON: `{"notes":[{toneType,leftFinger,hui,fen,slide,rightAction,stringNumber},...]}`
+/// 输出 JSON: `{"total":N,"rows":[{id,label,count,ratio,toneType,...,leftVariants,actionVariants},...]}`
+///
+/// 按归一化字形聚合：名/夕、食/亻、省写（乚/勹/木/丁…）都会合并为同一减字，
+/// 对应 LiberWord「系统自动合并所有标注」「每个字有多少变体」。
+#[wasm_bindgen]
+pub fn analyze_jianzi_frequency(input_json: &str) -> String {
+    match crate::jianzi_stats::get_jianzi_frequency_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 减字写法变体对照表 —— 返回 `[{canonical, variants, note}, ...]` JSON。
+#[wasm_bindgen]
+pub fn get_jianzi_variant_groups() -> String {
+    crate::jianzi_stats::get_jianzi_variant_groups_json()
+}
+
+/// 批量编码 —— 把一串减字压成码（如 `ad9g4`），供导出文本谱与按码检索。
+///
+/// 输入 JSON: `{"notes": [{"toneType":"散","rightAction":"勾","stringNumber":"三", ...}]}`
+/// 输出 JSON: `{"codes": ["sg3", null, ...]}`（不完整的字给 null，不让整批失败）
+#[wasm_bindgen]
+pub fn encode_jianzi_batch(input_json: &str) -> String {
+    match crate::jianzi_code::encode_batch_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 批量解码 —— 把整段粘回来的文本（码 + 简谱 + 减字 + 小节线混排）收回成减字。
+///
+/// 输入 JSON: `{"text": "ad9g4 sg3 | st5"}`
+/// 输出 JSON: `{"total":3,"ok":2,"failed":1,"entries":[{"code","state","error"}]}`
+///
+/// 这是「导出 → 再导入」闭环的另一半：码能整段粘回来变成曲谱，
+/// 才真的是一份可搬运的存档。切词与解码都在 Rust，前端只管渲染与建列。
+#[wasm_bindgen]
+pub fn decode_jianzi_batch(input_json: &str) -> String {
+    match crate::jianzi_code::decode_batch_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}

@@ -72,4 +72,159 @@ if (failures > 0) {
   console.error(`\n${failures} check(s) failed`);
   process.exit(1);
 }
+
+// 4. 减字字典（字全表）：返回 total/entries，且筛选生效
+const dictAll = JSON.parse(mod.get_jianzi_dictionary("{}"));
+check("dict: total = 50", dictAll.total === 50, `total=${dictAll.total}`);
+check("dict: returns 50 entries", dictAll.entries?.length === 50);
+const entry0 = dictAll.entries[0];
+check(
+  "dict: entry has id/state/searchText",
+  typeof entry0?.id === "string" &&
+    typeof entry0?.state?.toneType === "string" &&
+    typeof entry0?.searchText === "string",
+);
+const dictSan = JSON.parse(mod.get_jianzi_dictionary(JSON.stringify({ tone: "散" })));
+check("dict: tone filter (散) returns 8", dictSan.entries?.length === 8, `len=${dictSan.entries?.length}`);
+const dictQuery = JSON.parse(mod.get_jianzi_dictionary(JSON.stringify({ query: "泛音" })));
+check("dict: query 泛音 returns 8", dictQuery.entries?.length === 8, `len=${dictQuery.entries?.length}`);
+
+// 5. 减字字频 / 变体归并：名/夕、勾/勹 应合并为同一个减字
+const freq = JSON.parse(
+  mod.analyze_jianzi_frequency(
+    JSON.stringify({
+      notes: [
+        { toneType: "按", leftFinger: "名", hui: "九", fen: null, slide: null, rightAction: "勾", stringNumber: "四" },
+        { toneType: "按", leftFinger: "夕", hui: "九", fen: null, slide: null, rightAction: "勹", stringNumber: "四" },
+        { toneType: "散", leftFinger: null, hui: null, fen: null, slide: null, rightAction: "挑", stringNumber: "三" },
+      ],
+    }),
+  ),
+);
+check("freq: total = 3", freq.total === 3, `total=${freq.total}`);
+check("freq: 名/夕 + 勾/勹 merged into 2 rows", freq.rows?.length === 2, `rows=${freq.rows?.length}`);
+const merged = freq.rows?.find((r) => r.id === "名九勾四");
+check("freq: merged row 名九勾四 count = 2", merged?.count === 2, `count=${merged?.count}`);
+check(
+  "freq: variant forms recorded (left 名/夕, action 勾/勹)",
+  merged?.leftVariants?.length === 2 && merged?.actionVariants?.length === 2,
+);
+check("freq: ratio ~ 2/3", merged && Math.abs(merged.ratio - 2 / 3) < 1e-6, `ratio=${merged?.ratio}`);
+
+// 6. 变体对照表
+const variantGroups = JSON.parse(mod.get_jianzi_variant_groups());
+check("variants: groups non-empty", Array.isArray(variantGroups) && variantGroups.length >= 6);
+check(
+  "variants: 勾 group contains 勹",
+  variantGroups.some((g) => g.canonical === "勾" && g.variants.includes("勹")),
+);
+
+// 7. 减字编码：字典条目带码，码可批量生成，且编码规则与连打文法一致
+check(
+  "code: dict entry carries code",
+  typeof entry0?.code === "string" && entry0.code.length > 0,
+  `code=${entry0?.code}`,
+);
+const codedSan = dictAll.entries.find((e) => e.state.toneType === "散" && e.state.rightAction === "勾");
+check("code: 散勾三 = sg3", codedSan?.code === "sg3", `code=${codedSan?.code}`);
+const codedAn = dictAll.entries.find(
+  (e) => e.state.toneType === "按" && e.state.leftFinger === "大" && e.state.hui === "九" &&
+         e.state.rightAction === "勾" && e.state.stringNumber === "四",
+);
+check("code: 大九勾四 = ad9g4", codedAn?.code === "ad9g4", `code=${codedAn?.code}`);
+
+const batch = JSON.parse(
+  mod.encode_jianzi_batch(
+    JSON.stringify({
+      notes: [
+        { toneType: "散", leftFinger: null, hui: null, fen: null, slide: null, rightAction: "勾", stringNumber: "三" },
+        { toneType: "按", leftFinger: "夕", hui: "十", fen: "六分", slide: "注", rightAction: "挑", stringNumber: "六" },
+        { toneType: "泛", leftFinger: "大", hui: "七", fen: null, slide: null, rightAction: "抹", stringNumber: "二" },
+        { toneType: "按", leftFinger: "大", hui: null, fen: null, slide: null, rightAction: "勾", stringNumber: "四" },
+      ],
+    }),
+  ),
+);
+check("code: batch returns one code per note", batch.codes?.length === 4, `len=${batch.codes?.length}`);
+check("code: batch[0] = sg3", batch.codes?.[0] === "sg3", `got=${batch.codes?.[0]}`);
+check("code: batch[1] normalizes 夕→m and 注→z = am10f6zt6", batch.codes?.[1] === "am10f6zt6", `got=${batch.codes?.[1]}`);
+check("code: batch[2] = fd7m2", batch.codes?.[2] === "fd7m2", `got=${batch.codes?.[2]}`);
+check("code: incomplete note yields null", batch.codes?.[3] === null, `got=${batch.codes?.[3]}`);
+
+// 8. 减字解码：把整段粘回来的文本收回成减字（导出 → 再导入的闭环）
+const pasted = "# 花非花\n定弦：正调 · 1=F\n1·  |  2   |\nad9g4 | sg3 - st5\n共 3 音";
+const decoded = JSON.parse(mod.decode_jianzi_batch(JSON.stringify({ text: pasted })));
+check(
+  "decode: noise filtered, 3 codes parsed",
+  decoded.total === 3 && decoded.ok === 3 && decoded.failed === 0,
+  `total=${decoded.total} ok=${decoded.ok}`,
+);
+const d0 = decoded.entries?.[0]?.state;
+check(
+  "decode: ad9g4 → 按 · 大 · 九 · 勾 · 四",
+  d0?.toneType === "按" && d0?.leftFinger === "大" && d0?.hui === "九" &&
+    d0?.rightAction === "勾" && d0?.stringNumber === "四",
+  JSON.stringify(d0),
+);
+check("decode: sg3 → 散音", decoded.entries?.[1]?.state?.toneType === "散");
+check(
+  "decode: st5 → 挑五弦",
+  decoded.entries?.[2]?.state?.rightAction === "挑" && decoded.entries?.[2]?.state?.stringNumber === "五",
+);
+
+const badDecode = JSON.parse(mod.decode_jianzi_batch(JSON.stringify({ text: "ad9g4 d9g4" })));
+check(
+  "decode: 坏码单条失败、好码照常",
+  badDecode.ok === 1 && badDecode.failed === 1 && typeof badDecode.entries?.[1]?.error === "string",
+  `ok=${badDecode.ok} failed=${badDecode.failed}`,
+);
+check("decode: 坏码不带 state", badDecode.entries?.[1]?.state == null);
+
+// 编 → 粘回 → 解：三条码必须回到同一批减字
+const roundText = batch.codes.slice(0, 3).join(" ");
+const roundTrip = JSON.parse(mod.decode_jianzi_batch(JSON.stringify({ text: roundText })));
+check(
+  "decode: encode → paste → decode roundtrip",
+  roundTrip.ok === 3 &&
+    roundTrip.entries[1].state.leftFinger === "名" &&
+    roundTrip.entries[1].state.slide === "注" &&
+    roundTrip.entries[2].state.toneType === "泛",
+  JSON.stringify(roundTrip.entries?.map((e) => e.state)),
+);
+
+// 9. 时值随码走：`:1/:2/:4/:8/:16` + 附点 + 休止符 r
+// 这张表必须与 apps/web/src/lib/score-export.ts 的 DURATION_CODE 一致。
+const rhythm = JSON.parse(
+  mod.decode_jianzi_batch(
+    JSON.stringify({ text: "ad9g4:1 sg3:2 st5:4 am7f6cm2:8 fd9g4:16." }),
+  ),
+);
+check(
+  "rhythm: 1/2/4/8/16 mapped to 全/二分/四分/八分/十六分",
+  rhythm.entries.map((e) => e.duration).join(",") === "全,二分,四分,八分,十六分",
+  rhythm.entries.map((e) => e.duration).join(","),
+);
+check("rhythm: 附点只在标了的条目上", rhythm.entries[4].dotted === true && rhythm.entries[0].dotted === false);
+
+const rest = JSON.parse(mod.decode_jianzi_batch(JSON.stringify({ text: "r:2 sg3" })));
+check("rhythm: 休止符 r:2 算成功且带时值", rest.ok === 2 && rest.entries[0].isRest === true && rest.entries[0].duration === "二分");
+check(
+  "rhythm: 没写时值时为 null（前端退回四分）",
+  rest.entries[1].duration === null && rest.entries[1].isRest === false,
+  `duration=${rest.entries[1].duration}`,
+);
+
+const badRhythm = JSON.parse(mod.decode_jianzi_batch(JSON.stringify({ text: "ad9g4:5" })));
+check(
+  "rhythm: 认不出的时值报错而不是当四分",
+  badRhythm.failed === 1 && /时值/.test(badRhythm.entries[0].error ?? ""),
+  badRhythm.entries[0].error,
+);
+
+
+
+if (failures > 0) {
+  console.error(`\n${failures} check(s) failed`);
+  process.exit(1);
+}
 console.log("\nall wasm contract checks passed");
