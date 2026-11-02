@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, fireEvent, screen } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { act, render, fireEvent, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { TunerPanel } from "../tuner-panel";
 import { resetTuningCache } from "@/lib/tuning";
@@ -70,5 +70,119 @@ describe("TunerPanel", () => {
     fireEvent.click(screen.getByLabelText("开始调音"));
 
     expect(await screen.findByText(/麦克风权限被拒绝/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * 从「点开始」到「读出音高」这条主路径。
+ *
+ * 之前只测了各类失败提示，成功路径（建 AudioContext、每 80ms 取一帧、
+ * 取中位数、匹配最近弦）一行没跑过——而这正是用户 99% 的使用场景。
+ */
+const pitch = vi.hoisted(() => ({ detectPitch: vi.fn() }));
+vi.mock("@/lib/pitch-detect", () => ({ detectPitch: pitch.detectPitch }));
+
+class FakeAnalyser {
+  fftSize = 2048;
+  smoothingTimeConstant = 0;
+  context = { sampleRate: 44100 };
+  getFloatTimeDomainData(buf: Float32Array) {
+    buf.fill(0.1);
+  }
+}
+class FakeCtx {
+  state = "running";
+  sampleRate = 44100;
+  createMediaStreamSource() {
+    return { connect() {} };
+  }
+  createAnalyser() {
+    return new FakeAnalyser();
+  }
+  close() {
+    return Promise.resolve();
+  }
+}
+
+describe("TunerPanel · 听音主路径", () => {
+  let rafCallback: (() => void) | null = null;
+  let ticks = 0;
+  const stopTrack = vi.fn();
+
+  beforeEach(() => {
+    rafCallback = null;
+    ticks = 0;
+    stopTrack.mockClear();
+    pitch.detectPitch.mockReset();
+    pitch.detectPitch.mockReturnValue({ freq: 110, clarity: 0.92 });
+
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] })),
+      },
+    });
+    (window as unknown as { AudioContext: unknown }).AudioContext = FakeCtx;
+    vi.stubGlobal("requestAnimationFrame", (cb: () => void) => {
+      rafCallback = cb;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    // 每次读时钟前进 100ms，刚好越过「80ms 才算一次」的门槛
+    vi.spyOn(performance, "now").mockImplementation(() => (ticks += 100));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("读出 110Hz：认作五弦 A2 并报「准了」", async () => {
+    render(<TunerPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "开始调音" }));
+
+    await screen.findByTestId("tuner-readout");
+    // 拉起 raf 的第一帧
+    await act(async () => {
+      rafCallback?.();
+    });
+
+    expect(await screen.findByText("110.0 Hz")).toBeInTheDocument();
+    expect(screen.getByTestId("tuner-status")).toHaveTextContent(/准了/);
+    expect(screen.getByText(/目标 五弦 A2/)).toBeInTheDocument();
+  });
+
+  it("偏高时告诉用户往哪边拧", async () => {
+    pitch.detectPitch.mockReturnValue({ freq: 113, clarity: 0.9 });
+    render(<TunerPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "开始调音" }));
+
+    await screen.findByTestId("tuner-readout");
+    await act(async () => {
+      rafCallback?.();
+    });
+
+    const status = await screen.findByTestId("tuner-status");
+    expect(status).toHaveTextContent(/偏高/);
+    expect(status).toHaveTextContent(/逆时针放松五弦/);
+  });
+
+  it("点停止后读数收起并释放麦克风", async () => {
+    render(<TunerPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "开始调音" }));
+    await screen.findByTestId("tuner-readout");
+
+    fireEvent.click(screen.getByRole("button", { name: "停止调音" }));
+    expect(screen.queryByTestId("tuner-readout")).not.toBeInTheDocument();
+    expect(stopTrack).toHaveBeenCalled();
+  });
+
+  it("没有 Web Audio 时提示「不支持」，并关掉已拿到的麦克风", async () => {
+    (window as unknown as { AudioContext?: unknown }).AudioContext = undefined;
+    render(<TunerPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "开始调音" }));
+
+    expect(await screen.findByText(/不支持 Web Audio/)).toBeInTheDocument();
+    expect(stopTrack).toHaveBeenCalled();
   });
 });
