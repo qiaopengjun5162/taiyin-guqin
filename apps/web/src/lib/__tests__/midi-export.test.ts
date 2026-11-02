@@ -163,11 +163,11 @@ describe("scoreToMidi 速度与拍号", () => {
 });
 
 describe("scoreToMidi 音高与节奏", () => {
-  it("简谱 1=F：未标记「1」= F1(29)，「5」= C2(36)", () => {
+  it("简谱 1=F：未标记「1」= F2(41)，「5」= C3(48)", () => {
     const [c] = noteOns(parseSmf(scoreToMidi([makeNote({ jianpuNumber: "1" })])).events);
     const [g] = noteOns(parseSmf(scoreToMidi([makeNote({ jianpuNumber: "5" })])).events);
-    expect(c.data![0]).toBe(29);
-    expect(g.data![0]).toBe(36);
+    expect(c.data![0]).toBe(41);
+    expect(g.data![0]).toBe(48);
   });
 
   // 谱字写了「几弦几徽」，音高就该是那个位置的实际音高，而不是简谱那一列的相对音高：
@@ -207,15 +207,15 @@ describe("scoreToMidi 音高与节奏", () => {
     expect(man.data![0]).toBe(40); // E2
   });
 
-  it("八度记号 ±1 / ±2 各自平移 12 / 24（基准 1=F 的 F1=29）", () => {
+  it("八度记号 ±1 / ±2 各自平移 12 / 24（基准 1=F 的 F2=41）", () => {
     const pitch = (octave: NoteColumn["jianpuOctave"]) =>
       noteOns(parseSmf(scoreToMidi([makeNote({ jianpuNumber: "1", jianpuOctave: octave })])).events)[0]
         .data![0];
-    expect(pitch("")).toBe(29);
-    expect(pitch("·")).toBe(41);
-    expect(pitch("··")).toBe(53);
-    expect(pitch(",")).toBe(17);
-    expect(pitch(",,")).toBe(5);
+    expect(pitch("")).toBe(41);
+    expect(pitch("·")).toBe(53);
+    expect(pitch("··")).toBe(65);
+    expect(pitch(",")).toBe(29);
+    expect(pitch(",,")).toBe(17);
   });
 
   it("时值按四分音符 480 ticks 换算", () => {
@@ -254,7 +254,7 @@ describe("scoreToMidi 音高与节奏", () => {
     const ons = noteOns(evs);
     expect(ons).toHaveLength(1);
     expect(ons[0].tick).toBe(720);
-    expect(ons[0].data![0]).toBe(38); // 纯简谱「6」= 1=F 的 D2 (MIDI 38)
+    expect(ons[0].data![0]).toBe(50); // 纯简谱「6」= 1=F 的 D3 (MIDI 50)
   });
 
   it("发音留缝：默认 gate 0.9，四分音符响 432 ticks", () => {

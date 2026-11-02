@@ -35,17 +35,18 @@ const SEMITONES: Record<string, number> = {
 };
 
 /** 1=F 记谱下、八度 0 的「1」对应的 MIDI 号，与 Rust `midi_note` 的 `PITCH_BASE_MIDI` 一致。 */
-const PITCH_BASE_MIDI: number = 29;
+const PITCH_BASE_MIDI: number = 41;
 
 /** 八度记号 → 半音偏移（`·` +1 八度，`,` -1 八度，最多两重）。 */
 export function octaveToSemitones(octave: string): number {
   return octave === "·" ? 12 : octave === "··" ? 24 : octave === "," ? -12 : octave === ",," ? -24 : 0;
 }
 
-/** 简谱数字 + 八度偏移 → MIDI 音高号（1=F，未标记八度的「1」= F1 = MIDI 29）；不可播放返回 null。
+/** 简谱数字 + 八度偏移 → MIDI 音高号（1=F，未标记八度的「1」= F2 = MIDI 41）；不可播放返回 null。
  *
- * 与 Rust 候选引擎用同一套 1=F 坐标：1 为 F，八度 0 落在 F1。三种调式共用这套记谱，
- * 调式只决定每根空弦落在第几级，不改变简谱数字本身的音级——所以这里与调式无关。
+ * 与 Rust 候选引擎用同一套 1=F 坐标：1 为 F，八度 0 落在 F2（正调三弦）。
+ * 三种调式共用这套记谱，调式只决定每根空弦落在第几级，不改变简谱数字本身的音级——
+ * 所以这里与调式无关。
  * MIDI 号与基准音无关（MIDI 世界固定 A4=440 的等分律编号），不受 `concertPitch` 影响。
  */
 export function jianpuToMidi(number: string | null, octave: string): number | null {

@@ -19,22 +19,22 @@ function makeNote(overrides: Partial<NoteColumn> = {}): NoteColumn {
 }
 
 describe("jianpuToFrequency", () => {
-  it("1=F 记谱：未标记的「1」= F1（MIDI 29）≈ 43.65Hz", () => {
-    expect(jianpuToFrequency("1", "")).toBeCloseTo(43.65, 1);
+  it("1=F 记谱：未标记的「1」= F2（MIDI 41，正调三弦）≈ 87.31Hz", () => {
+    expect(jianpuToFrequency("1", "")).toBeCloseTo(87.31, 1);
   });
 
-  it("1=F 记谱：未标记的「5」= C2（散一弦）≈ 65.41Hz", () => {
-    expect(jianpuToFrequency("5", "")).toBeCloseTo(65.41, 1);
+  it("1=F 记谱：未标记的「5」= C3（六弦散音）≈ 130.81Hz", () => {
+    expect(jianpuToFrequency("5", "")).toBeCloseTo(130.81, 1);
   });
 
   it("applies octave offsets", () => {
-    expect(jianpuToFrequency("1", "·")).toBeCloseTo(87.31, 1); // F2
-    expect(jianpuToFrequency("1", ",")).toBeCloseTo(21.83, 1); // F0
+    expect(jianpuToFrequency("1", "·")).toBeCloseTo(174.61, 1); // F3
+    expect(jianpuToFrequency("1", ",")).toBeCloseTo(43.65, 1); // F1
   });
 
   it("applies double-octave offsets (±2)", () => {
-    expect(jianpuToFrequency("1", "··")).toBeCloseTo(174.61, 1); // F3
-    expect(jianpuToFrequency("1", ",,")).toBeCloseTo(10.91, 1); // F(-1)
+    expect(jianpuToFrequency("1", "··")).toBeCloseTo(349.23, 1); // F4
+    expect(jianpuToFrequency("1", ",,")).toBeCloseTo(21.83, 1); // F0
   });
 
   it("returns null for rests and missing numbers", () => {
@@ -42,8 +42,8 @@ describe("jianpuToFrequency", () => {
     expect(jianpuToFrequency(null, "")).toBeNull();
   });
 
-  it("默认以 A4=440 为基准，1=F 下「6」= D2 ≈ 73.42Hz", () => {
-    expect(jianpuToFrequency("6", "")).toBeCloseTo(73.42, 1);
+  it("默认以 A4=440 为基准，1=F 下「6」= D3 ≈ 146.83Hz", () => {
+    expect(jianpuToFrequency("6", "")).toBeCloseTo(146.83, 1);
   });
 
   it("改基准音时整谱等比平移，相对音程不变", () => {
@@ -52,7 +52,7 @@ describe("jianpuToFrequency", () => {
     // 415/440 的比例作用到每个音上
     expect(at415 / at440).toBeCloseTo(415 / 440, 6);
 
-    // 古琴常整床偏低：425Hz 时 F1 约低 60 音分（1200·log2(425/440) ≈ -59.6）
+    // 古琴常整床偏低：425Hz 时 F2 约低 60 音分（1200·log2(425/440) ≈ -59.6）
     const at425 = jianpuToFrequency("1", "", 425) as number;
     const cents = 1200 * Math.log2(at425 / at440);
     expect(cents).toBeCloseTo(-59.6, 0);
@@ -125,13 +125,13 @@ describe("音高来源：谱字优先，简谱兜底", () => {
   it("散音谱字给出该弦的实际音高（正调五弦 A2 ≈ 110Hz），纯简谱兜底也按 1=F", () => {
     const note = makeNote({ jianpuNumber: "5", jianzi: playedJianzi("散", "五") });
     expect(columnFrequency(note)).toBeCloseTo(110, 0);
-    // 纯简谱「5」现在按 1=F（宫=三弦F2）算 = C2 ≈ 65.4Hz，不再是用错的 1=C 的 G4=392
-    expect(jianpuToFrequency("5", "")).toBeCloseTo(65.41, 0);
+    // 纯简谱「5」按 1=F（宫=三弦F2）算 = C3 ≈ 130.8Hz，不再是用错的 1=C 的 G4=392
+    expect(jianpuToFrequency("5", "")).toBeCloseTo(130.81, 0);
   });
 
-  it("谱字残缺（只有音色没有弦序）时退回简谱（1=F 的 5 = C2）", () => {
+  it("谱字残缺（只有音色没有弦序）时退回简谱（1=F 的 5 = C3）", () => {
     const note = makeNote({ jianpuNumber: "5", jianzi: { ...createEmptyState(), toneType: "散" } });
-    expect(columnFrequency(note)).toBeCloseTo(65.41, 0);
+    expect(columnFrequency(note)).toBeCloseTo(130.81, 0);
   });
 
   it("纯减字谱（没有简谱）也能发声——以前整首是静音", () => {

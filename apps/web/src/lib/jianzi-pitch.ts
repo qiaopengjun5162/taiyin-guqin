@@ -156,10 +156,11 @@ export function jianziToFrequency(state: JianziState, ctx: PitchContext = {}): n
 /**
  * 频率 → 最接近的可表示简谱唱名（1=F 记谱，与 Rust 引擎一致）。
  *
- * 基准与 `jianpuToMidi` 同一套：未标记八度的「1」= F1（MIDI 29）。
- * 古琴低音区（一～五弦空弦及低按音）落在低八度记号，高音区（高徽按音/泛音）
- * 落于高八度记号。搜索范围在 ±2 八度（可表示记号的上限）；超出窗口的音高
- * 会吸附到最近的边界记号——纯显示用途，不影响播放（播放以减字为准）。
+ * 基准与 `jianpuToMidi` 同一套：未标记八度的「1」= F2（MIDI 41，正调三弦）。
+ * 古琴低音区（一～三弦空弦）落在低八度记号，中高音区（四五弦、按音/泛音）
+ * 落在无记号或高八度记号。搜索范围在 ±2 八度（可表示记号的上限）；
+ * 超出窗口的音高（如七弦一徽泛音 D6）会吸附到最近的边界记号——纯显示用途，
+ * 不影响播放（播放以减字为准）。
  */
 export function frequencyToJianpu(
   freq: number,
@@ -167,8 +168,8 @@ export function frequencyToJianpu(
 ): { number: JianpuNumber; octave: JianpuOctave } | null {
   if (!isFinite(freq) || freq <= 0) return null;
   const targetMidi = 69 + 12 * Math.log2(freq / concertPitch);
-  // 1=F 基准：未标记「1」= F1 = MIDI 29，与 player.jianpuToMidi 一致。
-  const BASE_MIDI = 29;
+  // 1=F 基准：未标记「1」= F2 = MIDI 41，与 player.jianpuToMidi 一致。
+  const BASE_MIDI = 41;
   const offsets: JianpuOctave[] = ["", "·", "··", ",", ",,"];
   const degrees: [JianpuNumber, number][] = [
     ["1", 0], ["2", 2], ["3", 4], ["4", 5], ["5", 7], ["6", 9], ["7", 11],

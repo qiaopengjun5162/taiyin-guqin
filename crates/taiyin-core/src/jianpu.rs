@@ -57,9 +57,11 @@ const DEGREE_SEMITONES: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
 
 /// 级数 1、八度 0 的绝对 MIDI 号。
 ///
-/// 定弦表把正调一弦（C2 = 36）记作 5（八度 0），故 1（八度 0）= F1 = 29。
-/// 八度编号以「一弦所在组」为 0，与古琴谱面写法一致。
-const PITCH_BASE_MIDI: i32 = 29;
+/// 以正调三弦（F2 = 41）为宫：散音三弦记作 1，一弦 C2 记作低八度的 5，
+/// 与琴人对着谱面唱出来的音高一致。若把 1 记成 F1（29），
+/// 整张谱会系统性低一个八度——简谱行看着「没问题」，一听就低了一整组。
+/// 八度编号以「三弦所在组」为 0。
+const PITCH_BASE_MIDI: i32 = 41;
 
 /// 级数 + 八度 → 绝对 MIDI 号（十二平均律取整后的名义值）。
 fn midi_note(pitch: Pitch) -> f64 {
@@ -507,12 +509,13 @@ mod tests {
     /// 一弦 C2=36、三弦 F2=41、六弦 C3=48、七弦 D3=50。
     #[test]
     fn test_pitch_midi_frame() {
-        assert_eq!(midi_note(Pitch::new(5, 0)), 36.0); // 一弦 C2
-        assert_eq!(midi_note(Pitch::new(1, 1)), 41.0); // 三弦 F2
-        assert_eq!(midi_note(Pitch::new(5, 1)), 48.0); // 六弦 C3
-        assert_eq!(midi_note(Pitch::new(6, 1)), 50.0); // 七弦 D3
-        assert_eq!(midi_note(Pitch::new(4, 1)), 46.0); // 蕤宾调五弦 B♭2
-        assert_eq!(midi_note(Pitch::new(7, 0)), 40.0); // 慢角调三弦 E2
+        // 1=F2（三弦为宫）：一弦 C2 落在低八度（5,），三弦 F2 就是 1。
+        assert_eq!(midi_note(Pitch::new(5, -1)), 36.0); // 一弦 C2
+        assert_eq!(midi_note(Pitch::new(1, 0)), 41.0); // 三弦 F2
+        assert_eq!(midi_note(Pitch::new(5, 0)), 48.0); // 六弦 C3
+        assert_eq!(midi_note(Pitch::new(6, 0)), 50.0); // 七弦 D3
+        assert_eq!(midi_note(Pitch::new(4, 0)), 46.0); // 蕤宾调五弦 B♭2
+        assert_eq!(midi_note(Pitch::new(7, -1)), 40.0); // 慢角调三弦 E2
     }
 
     /// 泛音是谐波，不是「散音往上数几级」：一徽 8 次、七徽 2 次。

@@ -77,10 +77,10 @@ export const EXAMPLE_SCORES: ExampleScore[] = [
     description: "全散音旋律，适合熟悉弦序与空弦音",
     notes: [
       // 6 5 3 5
-      makeNote("6", "", makeJianzi("散", "乚", "二")),
-      makeNote("5", "", makeJianzi("散", "乚", "一")),
+      makeNote("6", "", makeJianzi("散", "乚", "七")),
+      makeNote("5", "", makeJianzi("散", "乚", "六")),
       makeNote("3", "", makeJianzi("散", "乚", "五")),
-      makeNote("5", "", makeJianzi("散", "乚", "一")),
+      makeNote("5", "", makeJianzi("散", "乚", "六")),
       // 3 2 1 6,
       makeNote("3", "", makeJianzi("散", "乚", "五")),
       makeNote("2", "", makeJianzi("散", "乚", "四")),
@@ -96,9 +96,9 @@ export const EXAMPLE_SCORES: ExampleScore[] = [
       // 5 3 1
       makeNote("5", "", makeJianzi("散", "乚", "六")),
       makeNote("3", "", makeJianzi("散", "乚", "五")),
-      makeNote("1", "", makeJianzi("按", "乚", "三", "大", "九")),
+      makeNote("1", "", makeJianzi("散", "乚", "三")),
       // 2 3 5 —
-      makeNote("2", "", makeJianzi("按", "乚", "四", "大", "九")),
+      makeNote("2", "", makeJianzi("散", "乚", "四")),
       makeNote("3", "", makeJianzi("散", "乚", "五")),
       makeNote("5", "", makeJianzi("散", "勾", "六")),
       makeNote("5", "", makeJianzi("散", "乚", "六")),
@@ -108,7 +108,7 @@ export const EXAMPLE_SCORES: ExampleScore[] = [
     id: "huafeihua",
     title: "花非花（片段）",
     description:
-      "词：[唐]白居易；曲：黄自；徐波编配。1=C、4/4、中慢速。" +
+      "词：[唐]白居易；曲：黄自；徐波编配。1=F、4/4、中慢速（本站统一按 1=F 记谱，三弦为宫）。" +
       "数据参考杨青《古琴弹奏经典歌曲三十首》（人民音乐出版社）。" +
       "按音指法取通用指法以保证可演奏性，不保证与原谱指法完全一致。",
     notes: assignHuafeihuaLyrics([
@@ -118,85 +118,85 @@ export const EXAMPLE_SCORES: ExampleScore[] = [
 
       // ── 前奏 ──
       // (6 5 3)
-      makeNote("6", "", makeJianzi("按", "乚", "一", "大", "七")),
+      makeNote("6", "", makeJianzi("散", "乚", "七")),
       makeNote("5", "", makeJianzi("散", "勹", "六")),
       makeNote("3", "", makeJianzi("散", "乚", "五")),
       // (2 5)
-      makeNote("2", "", makeJianzi("按", "勹", "四", "大", "九")),
+      makeNote("2", "", makeJianzi("散", "勹", "四")),
       makeNote("5", "", makeJianzi("散", "勹", "六")),
       // (6)
-      makeNote("6", "", makeJianzi("散", "勹", "二")),
+      makeNote("6", "", makeJianzi("散", "勹", "七")),
       // (2 3 1 -)
-      makeNote("2", "", makeJianzi("按", "勹", "四", "大", "九")),
+      makeNote("2", "", makeJianzi("散", "勹", "四")),
       makeNote("3", "", makeJianzi("散", "乚", "五")),
-      makeNote("1", "", makeJianzi("散", "勹", "五"), "二分"),
+      makeNote("1", "", makeJianzi("散", "勹", "三"), "二分"),
 
       // ── 第一段歌词：花非花 雾非雾 ──
       // (6 5 5 3)
-      makeNote("6", "", makeJianzi("按", "乚", "一", "大", "七")),
+      makeNote("6", "", makeJianzi("散", "乚", "七")),
       makeNote("5", "", makeJianzi("散", "木", "六")),
       makeNote("5", "", makeJianzi("散", "乚", "六")),
       makeNote("3", "", makeJianzi("散", "木", "五")),
       // (1 5 2 1 6 -)
-      makeNote("1", "·", makeJianzi("按", "乚", "五", "大", "九")),
-      makeNote("5", "·", makeJianzi("散", "乚", "六")),
-      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "九")),
-      makeNote("1", "·", makeJianzi("散", "勹", "五")),
-      makeNote("6", "·", makeJianzi("散", "勹", "二")),
+      makeNote("1", "·", makeJianzi("按", "乚", "三", "大", "七")),
+      makeNote("5", "·", makeJianzi("按", "乚", "六", "大", "七")),
+      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "七")),
+      makeNote("1", "·", makeJianzi("按", "勹", "三", "大", "七")),
+      makeNote("6", "·", makeJianzi("按", "勹", "二", "大", "十")),
       makeNote("5", "", makeJianzi("散", "乚", "六"), "二分"),
 
       // ── 第二段歌词：夜半来 天明去 ──
       // (5 5 1 6. 5)
       makeNote("5", "", makeJianzi("散", "乚", "六")),
       makeNote("5", "", makeJianzi("散", "乚", "六")),
-      makeNote("1", "·", makeJianzi("按", "乚", "五", "大", "九")),
-      makeNote("6", "·", makeJianzi("散", "勹", "二"), "四分", true),
-      makeNote("5", "·", makeJianzi("散", "勹", "六")),
+      makeNote("1", "·", makeJianzi("按", "乚", "三", "大", "七")),
+      makeNote("6", "·", makeJianzi("按", "勹", "二", "大", "十"), "四分", true),
+      makeNote("5", "·", makeJianzi("按", "勹", "六", "大", "七")),
       // (3 2 1 2 -)
       makeNote("3", "", makeJianzi("散", "勹", "五")),
-      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "九")),
-      makeNote("1", "·", makeJianzi("散", "勹", "五")),
-      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "九")),
-      makeNote("1", "·", makeJianzi("散", "勹", "五"), "二分"),
+      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "七")),
+      makeNote("1", "·", makeJianzi("按", "勹", "三", "大", "七")),
+      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "七")),
+      makeNote("1", "·", makeJianzi("按", "勹", "三", "大", "七"), "二分"),
 
       // ── 第三段：来如春梦 不多时 去似朝云 无觅处 ──
       // (2 3 5 6 5)
-      makeNote("2", "", makeJianzi("按", "勹", "四", "大", "九")),
+      makeNote("2", "", makeJianzi("散", "勹", "四")),
       makeNote("3", "", makeJianzi("散", "丁", "五")),
       makeNote("5", "", makeJianzi("散", "乚", "六")),
-      makeNote("6", "", makeJianzi("散", "勹", "二")),
+      makeNote("6", "", makeJianzi("散", "勹", "七")),
       makeNote("5", "", makeJianzi("散", "勹", "六")),
       // (5 2 1 6 -)
       makeNote("5", "", makeJianzi("散", "勹", "六")),
-      makeNote("2", "·", makeJianzi("按", "勹", "四", "大", "九")),
-      makeNote("1", "·", makeJianzi("散", "勹", "五")),
-      makeNote("6", "·", makeJianzi("散", "勹", "二")),
-      makeNote("5", "·", makeJianzi("散", "勹", "六"), "二分"),
+      makeNote("2", "·", makeJianzi("按", "勹", "四", "大", "七")),
+      makeNote("1", "·", makeJianzi("按", "勹", "三", "大", "七")),
+      makeNote("6", "·", makeJianzi("按", "勹", "二", "大", "十")),
+      makeNote("5", "·", makeJianzi("按", "勹", "六", "大", "七"), "二分"),
       // (1 5 3 1 5 2)
-      makeNote("1", "·", makeJianzi("按", "乚", "五", "大", "九")),
-      makeNote("5", "·", makeJianzi("散", "乚", "六")),
-      makeNote("3", "·", makeJianzi("散", "乚", "五")),
-      makeNote("1", "·", makeJianzi("散", "勹", "五")),
-      makeNote("5", "·", makeJianzi("散", "乚", "六")),
-      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "九")),
+      makeNote("1", "·", makeJianzi("按", "乚", "三", "大", "七")),
+      makeNote("5", "·", makeJianzi("按", "乚", "六", "大", "七")),
+      makeNote("3", "·", makeJianzi("按", "乚", "五", "大", "七")),
+      makeNote("1", "·", makeJianzi("按", "勹", "三", "大", "七")),
+      makeNote("5", "·", makeJianzi("按", "乚", "六", "大", "七")),
+      makeNote("2", "·", makeJianzi("按", "乚", "四", "大", "七")),
       // (6 2 3 1 -)
-      makeNote("6", "·", makeJianzi("散", "勹", "二")),
-      makeNote("2", "·", makeJianzi("按", "勹", "四", "大", "九")),
-      makeNote("3", "·", makeJianzi("散", "木", "五")),
-      makeNote("1", "·", makeJianzi("散", "勹", "五"), "二分"),
+      makeNote("6", "·", makeJianzi("按", "勹", "二", "大", "十")),
+      makeNote("2", "·", makeJianzi("按", "勹", "四", "大", "七")),
+      makeNote("3", "·", makeJianzi("按", "木", "五", "大", "七")),
+      makeNote("1", "·", makeJianzi("按", "勹", "三", "大", "七"), "二分"),
     ]),
   },
   {
     id: "fanyinlianxi",
     title: "泛音练习",
-    description: "七徽、十徽泛音，体会清亮音色",
+    description: "七徽泛音（与散音同度的高八度），体会清亮音色",
     notes: [
-      makeNote("5", "", makeJianzi("泛", "乚", "七", "大", "七")),
-      makeNote("5", "", makeJianzi("泛", "乚", "四", "大", "七")),
-      makeNote("1", "", makeJianzi("泛", "乚", "三", "大", "十")),
-      makeNote("2", "", makeJianzi("泛", "乚", "四", "大", "十")),
-      makeNote("3", "", makeJianzi("泛", "乚", "五", "大", "十")),
-      makeNote("5", "", makeJianzi("泛", "乚", "七", "大", "七")),
+      makeNote("5", "·", makeJianzi("泛", "乚", "六", "大", "七")),
+      makeNote("5", "·", makeJianzi("泛", "乚", "六", "大", "七")),
+      makeNote("1", "·", makeJianzi("泛", "乚", "三", "大", "七")),
+      makeNote("2", "·", makeJianzi("泛", "乚", "四", "大", "七")),
+      makeNote("3", "·", makeJianzi("泛", "乚", "五", "大", "七")),
+      makeNote("5", "·", makeJianzi("泛", "乚", "六", "大", "七")),
     ],
   },
 ];

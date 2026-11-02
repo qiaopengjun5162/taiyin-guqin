@@ -96,9 +96,9 @@ describe("减字码入谱", () => {
     expect(notes).toHaveLength(2);
     expect(notes[0].jianzi).toEqual(SAN_GOU_SAN);
     expect(notes[1].jianzi).toEqual(AN_DA_9_GOU_4);
-    // 音高按正调反推（散勾三 = 三弦空弦 F2 = 1·）
+    // 音高按正调反推（散勾三 = 三弦空弦 F2 = 1）
     expect(notes[0].jianpuNumber).toBe("1");
-    expect(notes[0].jianpuOctave).toBe("·");
+    expect(notes[0].jianpuOctave).toBe("");
     // 时值跟码走：`:8.` 就是八分附点，不是一片四分
     expect(notes[0].duration).toBe("四分");
     expect(notes[0].jianpuDot).toBe(false);
