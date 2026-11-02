@@ -34,17 +34,25 @@ LAYOUT = {
     "lh":  ("34%", "24%", "top:17%;left:3%"),
     "hui": ("34%", "22%", "top:17%;right:3%"),
     "fen": ("11%", "12%", "top:38%;right:3%"),
+    # 走手音：绰是一个窄竖（夹在「大」和徽位之间），注是三点水（贴左沿）。
+    # 与 svg-jianzi-block.tsx 的 slideEntry 分支保持一致。
+    "mod_chuo": ("22%", "16%", "top:28%;left:30%"),
+    "mod_zhu":  ("21%", "48%", "top:14%;left:0%"),
+    # 急与绰同槽（字体里两者互斥，压在同一个位置）
+    "mod_ji":   ("22%", "16%", "top:28%;left:30%"),
     "rh":  ("100%", "56%", "bottom:1%;left:0"),
     "str": ("28%", "20%", "bottom:19%;left:50%;transform:translateX(-50%)"),
 }
 # 字形键前缀 -> 槽位名
 PREFIX_SLOT = [
     ("top_", "top"), ("lh_", "lh"), ("hui_", "hui"),
-    ("fen_", "fen"), ("rh_", "rh"), ("str_", "str"),
+    ("fen_", "fen"), ("mod_chuo", "mod_chuo"), ("mod_zhu", "mod_zhu"), ("mod_ji", "mod_ji"),
+    ("rh_", "rh"), ("str_", "str"),
 ]
 GROUP_LABEL = {
     "top": "顶帽（音色）", "lh": "左手指法", "hui": "徽位",
-    "fen": "分位", "rh": "右手指法（半包围外壳）", "str": "弦序（内核）",
+    "fen": "分位", "mod_chuo": "走手音·绰", "mod_zhu": "走手音·注", "mod_ji": "急弹·急",
+    "rh": "右手指法（半包围外壳）", "str": "弦序（内核）",
 }
 
 # ── 与 svg-jianzi-block.tsx 保持一致的映射 ──────────────────
