@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isRecordingSupported, pickMimeType, startRecording } from "../recorder";
+import { isRecordingSupported, micErrorMessage, pickMimeType, startRecording } from "../recorder";
 
 /** 最小可用的 MediaRecorder 假货：只模拟状态机与回调时序。 */
 class FakeMediaRecorder {
@@ -140,5 +140,75 @@ describe("录音会话", () => {
     session.cancel();
     // jsdom 没有真实 AudioContext，取不到电平也不该影响录音本身
     expect(Array.isArray(levels)).toBe(true);
+  });
+});
+
+describe("录音的出错路径（都要说人话，不能静默）", () => {
+  it("设备不存在 / 被占用 / 其他意外各有对应说明", () => {
+    const notFound = new Error("x");
+    notFound.name = "NotFoundError";
+    expect(micErrorMessage(notFound)).toMatch(/没有找到麦克风/);
+
+    const busy = new Error("x");
+    busy.name = "NotReadableError";
+    expect(micErrorMessage(busy)).toMatch(/被其他程序占用/);
+
+    expect(micErrorMessage("随便抛的字符串")).toMatch(/打不开麦克风/);
+  });
+
+  it("浏览器拒绝录音格式时释放麦克风并给出提示", async () => {
+    class RejectingRecorder {
+      static isTypeSupported = () => true;
+      constructor() {
+        throw new Error("no codec");
+      }
+    }
+    (window as unknown as { MediaRecorder: unknown }).MediaRecorder = RejectingRecorder;
+
+    await expect(startRecording()).rejects.toThrow(/拒绝了录音格式/);
+    expect(stopTrack).toHaveBeenCalled();
+  });
+
+  it("录音器自己报错时 reject，而不是永远挂着一个 Promise", async () => {
+    const session = await startRecording();
+    FakeMediaRecorder.instances[0].onerror?.();
+    // onerror 已把 deferred reject 掉；再 stop 拿到的是同一个已拒绝的 promise
+    await expect(session.stop()).rejects.toThrow(/录音中断/);
+    expect(stopTrack).toHaveBeenCalled();
+  });
+
+  it("暂停状态对外可见，暂停期间计时停止走", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const session = await startRecording();
+    vi.advanceTimersByTime(1000);
+    session.pause();
+    expect(session.paused).toBe(true);
+    const frozen = session.elapsedSeconds();
+    vi.advanceTimersByTime(3000);
+    expect(session.elapsedSeconds()).toBeCloseTo(frozen, 5);
+    session.resume();
+    expect(session.paused).toBe(false);
+    await session.stop();
+  });
+
+  it("录音器已自行停止（状态 inactive）时 stop 也能收尾", async () => {
+    const session = await startRecording();
+    const rec = FakeMediaRecorder.instances[0];
+    rec.state = "inactive"; // 模拟设备侧先停了
+    const result = await session.stop();
+    expect(result.blob).toBeInstanceOf(Blob);
+    expect(result.seconds).toBeGreaterThanOrEqual(0);
+    expect(stopTrack).toHaveBeenCalled();
+  });
+
+  it("stop 时底层抛错也要把已录到的内容交出来", async () => {
+    const session = await startRecording();
+    const rec = FakeMediaRecorder.instances[0];
+    rec.stop = () => {
+      throw new Error("device lost");
+    };
+    const result = await session.stop();
+    expect(result.blob).toBeInstanceOf(Blob);
+    expect(stopTrack).toHaveBeenCalled();
   });
 });

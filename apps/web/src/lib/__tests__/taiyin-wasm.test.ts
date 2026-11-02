@@ -9,17 +9,28 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
+import { EMPTY_FILTER } from "@/lib/jianzi-dictionary-types";
 
 const glue = vi.hoisted(() => ({
   init: vi.fn(),
   translate_jianpu_to_jianzi: vi.fn(),
   translate_jianpu_sequence_to_jianzi: vi.fn(),
+  get_jianzi_dictionary: vi.fn(),
+  encode_jianzi_batch: vi.fn(),
+  decode_jianzi_batch: vi.fn(),
+  analyze_jianzi_frequency: vi.fn(),
+  get_jianzi_variant_groups: vi.fn(),
 }));
 
 vi.mock("@/wasm/taiyin_core", () => ({
   default: glue.init,
   translate_jianpu_to_jianzi: glue.translate_jianpu_to_jianzi,
   translate_jianpu_sequence_to_jianzi: glue.translate_jianpu_sequence_to_jianzi,
+  get_jianzi_dictionary: glue.get_jianzi_dictionary,
+  encode_jianzi_batch: glue.encode_jianzi_batch,
+  decode_jianzi_batch: glue.decode_jianzi_batch,
+  analyze_jianzi_frequency: glue.analyze_jianzi_frequency,
+  get_jianzi_variant_groups: glue.get_jianzi_variant_groups,
 }));
 
 type Wasm = typeof import("@/lib/taiyin-wasm");
@@ -34,6 +45,11 @@ beforeEach(() => {
   glue.init.mockReset();
   glue.translate_jianpu_to_jianzi.mockReset();
   glue.translate_jianpu_sequence_to_jianzi.mockReset();
+  glue.get_jianzi_dictionary.mockReset();
+  glue.encode_jianzi_batch.mockReset();
+  glue.decode_jianzi_batch.mockReset();
+  glue.analyze_jianzi_frequency.mockReset();
+  glue.get_jianzi_variant_groups.mockReset();
   glue.init.mockResolvedValue(undefined);
 });
 
@@ -158,5 +174,131 @@ describe("taiyin-wasm · useWasmInit", () => {
 
     await waitFor(() => expect(result.current.state).toBe("error"));
     expect(result.current.error?.message).toBe("wasm 404");
+  });
+});
+
+/**
+ * 字典 / 编码 / 解码 / 字频 / 变体这五条通道全是「Rust 算、前端接线」，
+ * 前端唯一要保证的是：把 JSON 原样送过去、把回来的状态补成前端形状。
+ * 这里逐条钉住字段映射与错误分支——少一个 `rhythmMode` 或把 `null` 吞掉，
+ * UI 侧就是空白或静默少录一个字。
+ */
+describe("taiyin-wasm · 字典与减字码", () => {
+  const entry = {
+    id: "san-gou-san",
+    state: {
+      toneType: "散",
+      leftFinger: null,
+      hui: null,
+      fen: null,
+      slide: null,
+      rightAction: "勾",
+      stringNumber: "三",
+    },
+    note: "散音勾三弦",
+    common: true,
+    code: "sg3",
+    searchText: "散 勾 三 sg3",
+  };
+
+  it("getJianziDictionary 把筛选条件原样送 Rust，并补上 rhythmMode", async () => {
+    const w = await loadWasm();
+    glue.get_jianzi_dictionary.mockReturnValue(JSON.stringify({ total: 1, entries: [entry] }));
+
+    const out = await w.getJianziDictionary({ ...EMPTY_FILTER, tone: "散" });
+
+    expect(glue.get_jianzi_dictionary).toHaveBeenCalledWith(
+      JSON.stringify({ ...EMPTY_FILTER, tone: "散" }),
+    );
+    expect(out.total).toBe(1);
+    expect(out.entries[0].code).toBe("sg3");
+    expect(out.entries[0].state.rhythmMode).toBeNull();
+    expect(out.entries[0].state.rightAction).toBe("勾");
+  });
+
+  it("encodeJianziBatch 只送码表需要的字段，未填音色按散音", async () => {
+    const w = await loadWasm();
+    glue.encode_jianzi_batch.mockReturnValue(JSON.stringify({ codes: ["sg3", null] }));
+
+    const codes = await w.encodeJianziBatch([
+      { ...entry.state, rhythmMode: null } as never,
+    ]);
+
+    expect(codes).toEqual(["sg3", null]);
+    const payload = JSON.parse(glue.encode_jianzi_batch.mock.calls[0][0]);
+    expect(payload.notes[0].toneType).toBe("散");
+    expect(payload.notes[0]).not.toHaveProperty("rhythmMode");
+  });
+
+  it("encodeJianziBatch 遇到整体报错抛异常，缺 codes 时返回空数组", async () => {
+    const w = await loadWasm();
+    glue.encode_jianzi_batch.mockReturnValue(JSON.stringify({ error: "输入不是数组" }));
+    await expect(w.encodeJianziBatch([])).rejects.toThrow("输入不是数组");
+
+    glue.encode_jianzi_batch.mockReturnValue("{}");
+    expect(await w.encodeJianziBatch([])).toEqual([]);
+  });
+
+  it("decodeJianziBatch 透传时值/附点/休止，坏码保留原因", async () => {
+    const w = await loadWasm();
+    glue.decode_jianzi_batch.mockReturnValue(
+      JSON.stringify({
+        total: 2,
+        ok: 1,
+        failed: 1,
+        entries: [
+          { code: "sg3:8.", state: entry.state, error: null, duration: "八分", dotted: true, isRest: false },
+          { code: "d9g4", state: null, error: "码要以音色前缀开头（s/f/a）：d9g4" },
+        ],
+      }),
+    );
+
+    const out = await w.decodeJianziBatch("sg3:8. d9g4");
+
+    expect(out).toMatchObject({ total: 2, ok: 1, failed: 1 });
+    expect(out.entries[0].state?.rhythmMode).toBeNull();
+    expect(out.entries[0].duration).toBe("八分");
+    expect(out.entries[0].dotted).toBe(true);
+    // 缺字段的那条按「不是休止、没有时值」补齐，而不是抛错
+    expect(out.entries[1]).toMatchObject({ state: null, error: expect.stringContaining("音色前缀") });
+    expect(out.entries[1].duration).toBeNull();
+    expect(out.entries[1].isRest).toBe(false);
+  });
+
+  it("decodeJianziBatch 整体报错（比如没找到码）抛异常", async () => {
+    const w = await loadWasm();
+    glue.decode_jianzi_batch.mockReturnValue(JSON.stringify({ error: "没找到可解析的减字码" }));
+    await expect(w.decodeJianziBatch("随便写点中文")).rejects.toThrow("没找到可解析的减字码");
+  });
+
+  it("analyzeJianziFrequency 过滤掉没有音色的空列，再送回 Rust 统计", async () => {
+    const w = await loadWasm();
+    glue.analyze_jianzi_frequency.mockReturnValue(
+      JSON.stringify({ total: 3, rows: [{ id: "勾", label: "散勾", count: 2, ratio: 0.667 }] }),
+    );
+
+    const out = await w.analyzeJianziFrequency([
+      { ...entry.state, rhythmMode: null } as never,
+      { toneType: null, leftFinger: null, hui: null, fen: null, slide: null, rightAction: null, stringNumber: null, rhythmMode: null } as never,
+    ]);
+
+    const payload = JSON.parse(glue.analyze_jianzi_frequency.mock.calls[0][0]);
+    expect(payload.notes).toHaveLength(1);
+    expect(out.total).toBe(3);
+    expect(out.rows[0].id).toBe("勾");
+  });
+
+  it("analyzeJianziFrequency 报错时抛异常", async () => {
+    const w = await loadWasm();
+    glue.analyze_jianzi_frequency.mockReturnValue(JSON.stringify({ error: "格式错" }));
+    await expect(w.analyzeJianziFrequency([])).rejects.toThrow("格式错");
+  });
+
+  it("getJianziVariantGroups 直接解析变体表", async () => {
+    const w = await loadWasm();
+    glue.get_jianzi_variant_groups.mockReturnValue(
+      JSON.stringify([{ canonical: "勾", variants: ["勾", "勹"] }]),
+    );
+    expect(await w.getJianziVariantGroups()).toEqual([{ canonical: "勾", variants: ["勾", "勹"] }]);
   });
 });
