@@ -97,12 +97,28 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
 
 async fn fetch_score(pool: &PgPool, id: Uuid) -> AppResult<Score> {
     sqlx::query_as::<_, Score>(
-        "SELECT id, title, notes, created_at, updated_at FROM scores WHERE id = $1",
+        "SELECT id, title, notes, tuning, created_at, updated_at FROM scores WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::NotFound)
+}
+
+/// 合法定弦标识，与前端 `apps/web/src/lib/tuning.ts` 的 `TuningId` 一一对应。
+/// 两处要一起改，否则后端收下前端不认识的定弦，前端反推音高时只能退回正调。
+const VALID_TUNINGS: [&str; 3] = ["zhengdiao", "ruibin", "manjiao"];
+const DEFAULT_TUNING: &str = "zhengdiao";
+
+fn validate_tuning(tuning: &str) -> AppResult<()> {
+    if VALID_TUNINGS.contains(&tuning) {
+        Ok(())
+    } else {
+        Err(AppError::Validation(format!(
+            "未知定弦：{tuning}（可用：{}）",
+            VALID_TUNINGS.join(" / ")
+        )))
+    }
 }
 
 fn validate_title(title: &str) -> AppResult<()> {
@@ -331,13 +347,16 @@ async fn create_score(
 ) -> AppResult<Json<Score>> {
     let title = req.title.unwrap_or_else(|| "未命名曲谱".to_string());
     validate_title(&title)?;
+    let tuning = req.tuning.unwrap_or_else(|| DEFAULT_TUNING.to_string());
+    validate_tuning(&tuning)?;
 
     let score = sqlx::query_as::<_, Score>(
-        "INSERT INTO scores (title, notes) VALUES ($1, $2) \
-         RETURNING id, title, notes, created_at, updated_at",
+        "INSERT INTO scores (title, notes, tuning) VALUES ($1, $2, $3) \
+         RETURNING id, title, notes, tuning, created_at, updated_at",
     )
     .bind(&title)
     .bind(&req.notes)
+    .bind(&tuning)
     .fetch_one(&state.pool)
     .await?;
 
@@ -346,7 +365,7 @@ async fn create_score(
 
 async fn list_scores(State(state): State<AppState>) -> AppResult<Json<Vec<ScoreListItem>>> {
     let scores = sqlx::query_as::<_, ScoreListItem>(
-        "SELECT id, title, created_at, updated_at FROM scores ORDER BY updated_at DESC",
+        "SELECT id, title, tuning, created_at, updated_at FROM scores ORDER BY updated_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -369,13 +388,16 @@ async fn update_score(
     let title = req.title.unwrap_or(existing.title);
     validate_title(&title)?;
     let notes = req.notes.unwrap_or(existing.notes);
+    let tuning = req.tuning.unwrap_or(existing.tuning);
+    validate_tuning(&tuning)?;
 
     let score = sqlx::query_as::<_, Score>(
-        "UPDATE scores SET title = $1, notes = $2, updated_at = now() WHERE id = $3 \
-         RETURNING id, title, notes, created_at, updated_at",
+        "UPDATE scores SET title = $1, notes = $2, tuning = $3, updated_at = now() WHERE id = $4 \
+         RETURNING id, title, notes, tuning, created_at, updated_at",
     )
     .bind(&title)
     .bind(&notes)
+    .bind(&tuning)
     .bind(id)
     .fetch_one(&state.pool)
     .await?;
