@@ -8,6 +8,7 @@
  * 1. 单音翻译返回非空候选，枚举序列化与前端映射表兼容
  * 2. 序列翻译接受 {notes, tuning} 对象形式
  * 3. tuning 参数确实改变候选（蕤宾调五弦散音为 4）
+ * 4. 指法编排：候选与选中项同源、活动量齐全、时值真的进到代价表
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -108,6 +109,87 @@ check(
 check(
   "arrange: identical flag is boolean",
   typeof arranged.identical_to_greedy === "boolean",
+);
+
+// 急处换手：界面「快句里少 N 次换手」这句话的唯一来源
+check(
+  "arrange: rushed_moves present",
+  typeof arranged.stats?.rushed_moves === "number" &&
+    typeof arranged.greedy_stats?.rushed_moves === "number",
+  JSON.stringify(arranged.stats),
+);
+
+// 时值必须真的走进代价表。
+//
+// 同一段音高，全按十六分（2 单位）算与全按全音符（32 单位）算，
+// 倍率不同 —— 总代价不可能一样。这条同时挡住两种静默故障：
+// wasm 没重编（还在跑旧产物）、duration_units 在 JSON 边界上被丢掉。
+const pitches = [
+  { number: 5, octave: 0 },
+  { number: 6, octave: 0 },
+  { number: 1, octave: 1 },
+  { number: 2, octave: 1 },
+  { number: 3, octave: 1 },
+];
+const costWith = (units) =>
+  JSON.parse(
+    mod.arrange_jianpu_sequence_to_jianzi(
+      JSON.stringify({
+        notes: pitches.map((p) => ({ ...p, duration_units: units })),
+        tuning: "zheng",
+      }),
+    ),
+  ).total_cost;
+const fastCost = costWith(2);
+const slowCost = costWith(32);
+check(
+  "arrange: duration_units reaches the cost model",
+  typeof fastCost === "number" &&
+    typeof slowCost === "number" &&
+    fastCost !== slowCost,
+  `fast=${fastCost} slow=${slowCost}`,
+);
+
+// 不给时值必须与「全四分」等价：老调用方（只传音高）的结果不许悄悄变
+const noUnits = costWith(undefined);
+const quarters = costWith(8);
+check(
+  "arrange: unspecified duration == quarter notes",
+  noUnits === quarters,
+  `none=${noUnits} quarter=${quarters}`,
+);
+
+// 时值要真的**改变落点**，而不只是改一个数字。
+//
+// 用一段含 4（清角）、7（变宫）与高八度的旋律：这些音没有散音可用，
+// 必须落指，于是「贴着走」还是「四处游走」才有得选。
+// 八分连奏时手来不及动，编排应该把落点收拢；二分音符之后则可以放开。
+// 这条失败通常意味着两件事之一：代价表里时值又被忽略了，
+// 或者阈值调得让倍率不再影响任何选择——两种都该回来看一眼。
+const articulate = [
+  [4, 1], [7, 1], [4, 2], [7, 2], [1, 2], [3, 2],
+  [4, 1], [3, 1], [2, 1], [4, 1], [7, 0], [6, 0],
+];
+const picksWith = (units) =>
+  JSON.parse(
+    mod.arrange_jianpu_sequence_to_jianzi(
+      JSON.stringify({
+        notes: articulate.map(([number, octave]) => ({
+          number,
+          octave,
+          duration_units: units,
+        })),
+        tuning: "zheng",
+      }),
+    ),
+  ).candidates_per_note.map((c) => `${c[0].note.note_type}${c[0].note.string_number}`);
+
+const fastPicks = picksWith(4);
+const slowPicks = picksWith(32);
+check(
+  "arrange: tempo actually changes the fingering",
+  fastPicks.some((pick, i) => pick !== slowPicks[i]),
+  `八分与二分的落点完全一样：${fastPicks.join(",")}`,
 );
 // 换弦次数不可能超过相邻音对数（5 个音最多 4 次）
 check(
