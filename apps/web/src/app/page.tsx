@@ -21,6 +21,7 @@ import { useExportImage } from "@/lib/use-export-image";
 import { useScoreHistory } from "@/lib/use-score-history";
 import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
+import { buildScoreShareUrl, readSharedScoreId } from "@/lib/share-link";
 import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
 import { useMetronome } from "@/lib/use-metronome";
@@ -101,6 +102,8 @@ export default function Home() {
   const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 成功/中性提示（如「分享链接已复制」），与红色错误框分开，避免误读成失败
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [isExportingAudio, setIsExportingAudio] = useState(false);
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   const [bpm, setBpm] = useState(120);
@@ -136,6 +139,9 @@ export default function Home() {
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const infoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 分享链接只自动加载一次（防 StrictMode 双跑 / 重渲染重复拉取） */
+  const sharedLoadedRef = useRef(false);
   const { exportPng, exportSvg, isExporting } = useExportImage({
     containerRef: exportRef,
     title: scoreTitle,
@@ -147,10 +153,42 @@ export default function Home() {
     errorTimerRef.current = setTimeout(() => setErrorMessage(null), 4000);
   }
 
+  function showInfo(message: string) {
+    setInfoMessage(message);
+    if (infoTimerRef.current) clearTimeout(infoTimerRef.current);
+    infoTimerRef.current = setTimeout(() => setInfoMessage(null), 4000);
+  }
+
   useEffect(() => {
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      if (infoTimerRef.current) clearTimeout(infoTimerRef.current);
     };
+  }, []);
+
+  // 分享直达：URL 带 ?score=<id> 时自动加载该社区谱（仅首次挂载执行一次）
+  useEffect(() => {
+    if (sharedLoadedRef.current) return;
+    const sharedId = readSharedScoreId(window.location.search);
+    if (!sharedId) return;
+    sharedLoadedRef.current = true;
+    void (async () => {
+      try {
+        const data = await api.getScore(sharedId);
+        commitScore(() => data.notes);
+        commitScoreTitle(data.title);
+        setTuning(data.tuning);
+        setCurrentScoreId(data.id);
+      } catch {
+        showError(
+          storageMode === "server"
+            ? "分享的曲谱不存在或已删除"
+            : "打开分享曲谱需要连接社区后端，请先在设置里填写后端地址",
+        );
+      }
+    })();
+    // 只在首次挂载读一次 URL；sharedLoadedRef 防 StrictMode / 重渲染重复拉取
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** 全局撤销/重做快捷键 */
@@ -281,6 +319,25 @@ export default function Home() {
       setSaveStatus("error");
       showError(err instanceof api.ApiError ? err.message : "保存失败，请检查网络或后端状态");
       setTimeout(() => setSaveStatus("idle"), 3000);
+    }
+  }
+
+  /**
+   * 复制当前谱的分享直达链接（`?score=<id>`）。
+   * 只有已发布到社区（有服务器 id）的谱才可分享——本机 id 换设备打不开。
+   */
+  async function handleShareScore() {
+    if (storageMode !== "server" || !currentScoreId) {
+      showError("请先「发布到社区」，再分享链接");
+      return;
+    }
+    const url = buildScoreShareUrl(currentScoreId);
+    try {
+      await navigator.clipboard.writeText(url);
+      showInfo("分享链接已复制");
+    } catch {
+      // 非安全上下文（http）或剪贴板权限被拒：退回手动复制
+      window.prompt("复制分享链接", url);
     }
   }
 
@@ -518,10 +575,15 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── 全局错误提示 ── */}
+      {/* ── 全局错误 / 中性提示 ── */}
       {errorMessage && (
         <div className="no-print mt-4 w-full max-w-md px-3 py-2 rounded border border-red-400/30 bg-red-900/20 text-[11px] tracking-wider text-red-200/80">
           {errorMessage}
+        </div>
+      )}
+      {infoMessage && (
+        <div className="no-print mt-4 w-full max-w-md px-3 py-2 rounded border border-emerald-500/30 bg-emerald-900/20 text-[11px] tracking-wider text-emerald-200/80">
+          {infoMessage}
         </div>
       )}
 
@@ -557,6 +619,8 @@ export default function Home() {
         onTitleBlur={() => commitScoreTitle(scoreTitle)}
         onSave={handleSave}
         onLoad={openLoadDialog}
+        onShare={handleShareScore}
+        canShare={storageMode === "server" && currentScoreId !== null}
         onExportPng={exportPng}
         onExportSvg={exportSvg}
         onExportText={handleExportText}

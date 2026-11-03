@@ -328,4 +328,40 @@ describe("SaveLoadToolbar", () => {
     );
     expect(container.querySelector("select")).not.toBeInTheDocument();
   });
+
+  it("canShare 时显示分享按钮并回调 onShare", () => {
+    const onShare = vi.fn();
+    const { getByLabelText } = render(
+      <SaveLoadToolbar
+        title="平沙落雁"
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        onShare={onShare}
+        canShare
+        hasNotes
+        saveStatus="idle"
+        storageMode="server"
+      />,
+    );
+    fireEvent.click(getByLabelText("复制分享链接"));
+    expect(onShare).toHaveBeenCalledTimes(1);
+  });
+
+  it("canShare 为假（未发布到社区）时不显示分享按钮", () => {
+    const { queryByLabelText } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        onShare={vi.fn()}
+        canShare={false}
+        hasNotes
+        saveStatus="idle"
+        storageMode="browser"
+      />,
+    );
+    expect(queryByLabelText("复制分享链接")).toBeNull();
+  });
 });

@@ -172,6 +172,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // 分享链接用例会改写 URL，复位避免 query 串到后续用例
+  window.history.replaceState({}, "", "/");
 });
 
 describe("Home · 空谱与示例", () => {
@@ -788,5 +790,59 @@ describe("Home · 本机→社区一键迁移", () => {
     await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
     expect(h.createScore).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+});
+
+describe("Home · 曲谱分享链接", () => {
+  const SHARED = {
+    id: "abc",
+    title: "平沙落雁",
+    tuning: "zhengdiao" as const,
+    notes: [],
+    created_at: "",
+    updated_at: "",
+  };
+
+  it("URL 带 ?score= 时自动加载该社区谱，并出现分享按钮", async () => {
+    storeState.storageMode = "server";
+    window.history.replaceState({}, "", "/?score=abc");
+    h.getScore.mockResolvedValue(SHARED);
+
+    render(<Home />);
+
+    await waitFor(() => expect(h.getScore).toHaveBeenCalledWith("abc"));
+    await waitFor(() =>
+      expect((screen.getByLabelText("曲谱名称") as HTMLInputElement).value).toBe("平沙落雁"),
+    );
+    // 加载后记下服务器 id，分享按钮随之出现
+    expect(await screen.findByLabelText("复制分享链接")).toBeTruthy();
+  });
+
+  it("点分享按钮把含 ?score= 的链接写入剪贴板", async () => {
+    storeState.storageMode = "server";
+    window.history.replaceState({}, "", "/?score=abc");
+    h.getScore.mockResolvedValue(SHARED);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    render(<Home />);
+    fireEvent.click(await screen.findByLabelText("复制分享链接"));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText.mock.calls[0][0]).toContain("score=abc");
+    await waitFor(() => expect(screen.getByText("分享链接已复制")).toBeTruthy());
+  });
+
+  it("分享的曲谱不存在时给出提示", async () => {
+    storeState.storageMode = "server";
+    window.history.replaceState({}, "", "/?score=gone");
+    h.getScore.mockRejectedValue(new Error("not found"));
+
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByText("分享的曲谱不存在或已删除")).toBeTruthy());
   });
 });

@@ -1,5 +1,32 @@
 # 更新日志
 
+## [0.17.0] - 2026-11-03
+
+### 新增（曲谱分享直达链接）
+
+- **社区谱可被链接直达**：静态导出（GitHub Pages）没有服务端路由，分享改走 URL query
+  `https://<host>/taiyin-guqin/?score=<id>`。页面挂载时读 query、自动拉取该谱并载入编辑器，
+  琴友点开链接即看到同一首谱。
+- 新增 `lib/share-link.ts`（纯逻辑，便于单测）：
+  - `readSharedScoreId(search)`：从 query string 取 `score`，缺省/空串返回 `null`，去首尾空白。
+  - `buildScoreShareUrl(id, href?)`：保留 origin 与 basePath（`/taiyin-guqin`），
+    **清掉已有 query / hash** 后只留 `?score=<id>`，id 做 URL 编码。
+- `SaveLoadToolbar` 新增「分享」按钮（`onShare` / `canShare`）：仅当当前谱已发布到社区
+  （server 模式且有服务器 id）时出现——本机 id 换设备打不开，不提供无效分享。
+- `page.tsx` 新增 `handleShareScore`：`navigator.clipboard.writeText` 复制链接，
+  成功给中性提示「分享链接已复制」；剪贴板不可用（http / 权限被拒）退回 `prompt` 手动复制。
+- 新增中性提示通道 `infoMessage`（绿色框，4s 自动消失），与红色错误框分开，避免成功信息被误读成失败。
+- 分享链接打不开时按模式给不同提示：server 模式「分享的曲谱不存在或已删除」；
+  未连后端「打开分享曲谱需要连接社区后端，请先在设置里填写后端地址」。
+
+### 测试
+
+- `share-link.test.ts` +8：取 id、无参数、空/空白、混合参数去空白、保留 basePath、
+  清 query/hash、URL 编码、无 href 退化相对链接。
+- `save-load-toolbar.test.tsx` +2（18 例）：`canShare` 显示并回调、未发布时不显示。
+- `page-interactions.test.tsx` +3（38 例）：`?score=` 自动加载并出现分享按钮、
+  点分享写入含 `score=` 的剪贴板并提示、分享谱不存在时提示；`afterEach` 复位 URL 防串味。
+
 ## [0.16.0] - 2026-11-03
 
 ### 新增（本机 → 社区一键迁移）

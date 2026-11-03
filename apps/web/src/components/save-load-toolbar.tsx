@@ -6,6 +6,10 @@ interface SaveLoadToolbarProps {
   onTitleBlur?: () => void;
   onSave: () => void;
   onLoad: () => void;
+  /** 复制当前谱的分享直达链接 */
+  onShare?: () => void;
+  /** 当前谱已发布到社区（有服务器 id）时才可分享 */
+  canShare?: boolean;
   onExportPng?: () => void;
   onExportSvg?: () => void;
   onExportText?: () => void;
@@ -32,6 +36,8 @@ export function SaveLoadToolbar({
   onTitleBlur,
   onSave,
   onLoad,
+  onShare,
+  canShare,
   onExportPng,
   onExportSvg,
   onExportText,
@@ -123,6 +129,16 @@ export function SaveLoadToolbar({
       >
         加载
       </button>
+      {canShare && onShare && (
+        <button
+          onClick={onShare}
+          aria-label="复制分享链接"
+          title="复制这首谱的直达链接：琴友打开即可看到同一首谱"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
+        >
+          分享
+        </button>
+      )}
       {examples && examples.length > 0 && onLoadExample && (
         <select
           value=""
