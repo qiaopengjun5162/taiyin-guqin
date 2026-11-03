@@ -142,6 +142,13 @@ export interface PathStats {
   finger_shifts: number;
   /** 散 / 泛 / 按 之间的切换次数。 */
   technique_switches: number;
+  /**
+   * 「赶不上的换手」次数：前一个音是八分或更短，手却要换弦或挪位。
+   *
+   * 比单纯数换弦更贴近弹琴时的抱怨：换三次弦落在二分音符之间叫从容，
+   * 落在十六分连奏里叫弹不出来。
+   */
+  rushed_moves: number;
 }
 
 /** 全局指法编排结果。候选与选中项出自同一次计算，索引天然对齐。 */
@@ -164,7 +171,19 @@ const EMPTY_STATS: PathStats = {
   string_changes: 0,
   finger_shifts: 0,
   technique_switches: 0,
+  rushed_moves: 0,
 };
+
+/**
+ * 补齐缺失字段。
+ *
+ * wasm 产物在浏览器里是带缓存的：用户可能拿到「有编排、没有 rushed_moves」的旧文件。
+ * 少一个字段就让 `greedy - stats` 变成 NaN，文案会静默退化成一串空话——
+ * 补 0 至少还是「这项没省」这个诚实的答案。
+ */
+function normalizeStats(stats: Partial<PathStats> | undefined): PathStats {
+  return { ...EMPTY_STATS, ...stats };
+}
 
 /**
  * 整段简谱的全局指法编排（Rust 端 Viterbi 动态规划）。
@@ -172,9 +191,13 @@ const EMPTY_STATS: PathStats = {
  * 逐音贪心只看前一个音，容易在第一音就锁死一个孤立但舒服的落点，
  * 后面每个音都在补偿；编排把整句当路径求全局最优，整句更少换把、更少跨弦。
  * 算法在 Rust（`jianpu::arrange_sequence`），这里只做 JSON 桥接。
+ *
+ * `duration_units` 是这个音占多少「1/8 拍」（四分 = 8）。Rust 端用它判断
+ * 手有没有时间换把：八分连八分里的换把按 1.5 倍计费，二分音符之后的按 0.6 倍。
+ * 不给的话一律按四分音符处理，与加这个参数之前的结果完全一致。
  */
 export async function arrangeJianpuSequence(
-  notes: { number: number; octave: number }[],
+  notes: { number: number; octave: number; duration_units?: number }[],
   tuning: string,
 ): Promise<JianpuArrangement> {
   const wasm = await getWasm();
@@ -186,8 +209,8 @@ export async function arrangeJianpuSequence(
     candidates_per_note: raw.candidates_per_note ?? [],
     selections: raw.selections ?? [],
     total_cost: raw.total_cost ?? 0,
-    stats: raw.stats ?? EMPTY_STATS,
-    greedy_stats: raw.greedy_stats ?? EMPTY_STATS,
+    stats: normalizeStats(raw.stats),
+    greedy_stats: normalizeStats(raw.greedy_stats),
     identical_to_greedy: Boolean(raw.identical_to_greedy),
   };
 }
@@ -195,9 +218,13 @@ export async function arrangeJianpuSequence(
 /**
  * 把编排结果说成一句人话。
  *
- * 只说琴人能直接感觉到的三件事（换弦 / 音色切换 / 挪手），并且**只说真的减少了的**：
- * 编排换了落点但移动次数没变时，不该编一句「已优化」来邀功；本来就最顺的时候，
- * 更应该直说「这条已经是最顺的」——否则用户下次不信这个按钮。
+ * 只说琴人能直接感觉到的四件事（快句换手 / 换弦 / 音色切换 / 挪手），
+ * 并且**只说真的减少了的**：编排换了落点但移动次数没变时，不该编一句「已优化」来邀功；
+ * 本来就最顺的时候，更应该直说「这条已经是最顺的」——否则用户下次不信这个按钮。
+ *
+ * 反过来，如果有指标**变多**了，也要说出来。全局编排在长音之后允许手多走一趟，
+ * 换来的是快句里不再换手——这个取舍是对的，但用户盯着列表数换弦次数时会发现对不上，
+ * 不说就成了另一种撒谎。
  */
 export function describeArrangement(result: JianpuArrangement): string {
   if (result.identical_to_greedy) {
@@ -205,6 +232,8 @@ export function describeArrangement(result: JianpuArrangement): string {
   }
 
   const parts: string[] = [];
+  const rushedSaved =
+    result.greedy_stats.rushed_moves - result.stats.rushed_moves;
   const stringSaved =
     result.greedy_stats.string_changes - result.stats.string_changes;
   const toneSaved =
@@ -212,6 +241,8 @@ export function describeArrangement(result: JianpuArrangement): string {
   const shiftSaved =
     result.greedy_stats.finger_shifts - result.stats.finger_shifts;
 
+  // 急处换手排最前：它是「弹得动 / 弹不动」的分界线，换弦次数只是它的粗略代理
+  if (rushedSaved > 0) parts.push(`快句里少 ${rushedSaved} 次换手`);
   if (stringSaved > 0) parts.push(`少 ${stringSaved} 次换弦`);
   if (toneSaved > 0) parts.push(`少 ${toneSaved} 次音色切换`);
   if (shiftSaved > 0) parts.push(`少 ${shiftSaved} 次挪手`);
@@ -219,7 +250,12 @@ export function describeArrangement(result: JianpuArrangement): string {
   if (parts.length === 0) {
     return "已重排：落点换了，手的移动次数和逐音挑选一样";
   }
-  return `已编排：${parts.join("、")}`;
+
+  const extra =
+    Math.max(0, -stringSaved) + Math.max(0, -shiftSaved);
+  const caveat =
+    extra > 0 ? `；换手总数多 ${extra} 次，但都落在来得及的地方` : "";
+  return `已编排：${parts.join("、")}${caveat}`;
 }
 
 /**

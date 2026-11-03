@@ -16,12 +16,28 @@ pub struct JianpuNote {
     pub number: u8,
     /// 八度偏移：0 = 中央组，+1 = 高八度 (·)，-1 = 低八度 (,)。
     pub octave: i8,
+    /// 时值，单位是 1/8 拍（四分音符 = 8、八分 = 4、二分 = 16）。
+    ///
+    /// `None` 表示调用方没给时值：一切按四分音符处理，
+    /// 不带时值的老调用方行为完全不变（编排结果与加这个字段之前一模一样）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_units: Option<u32>,
 }
 
 impl JianpuNote {
-    /// 创建一个简谱音符。
+    /// 创建一个简谱音符（不带时值）。
     pub fn new(number: u8, octave: i8) -> Self {
-        Self { number, octave }
+        Self {
+            number,
+            octave,
+            duration_units: None,
+        }
+    }
+
+    /// 补上时值（1/8 拍为单位）。用于让编排知道「这个音留了多少时间给手」。
+    pub fn with_duration(mut self, units: u32) -> Self {
+        self.duration_units = Some(units);
+        self
     }
 }
 
@@ -554,11 +570,43 @@ const HARMONIC_PRESSED_SWITCH_COST: i64 = 36;
 /// 或者该换一处落点。轻轻罚一点，让 DP 在「有更顺的替代」时才挪。
 const REPEAT_SAME_SPOT_COST: i64 = 6;
 
+/// 「半拍及更短」的时值上限（1/8 拍为单位）：八分 = 4、附点八分 = 6。
+const FAST_NOTE_UNITS: u32 = 6;
+
+/// 「一拍半及更长」的时值下限：附点四分 = 12、二分 = 16、全音符 = 32。
+const SLOW_NOTE_UNITS: u32 = 12;
+
+/// 时间紧时的代价倍率：同样的动作，在八分连八分的句子里要贵一半。
+const RUSHED_FACTOR: f64 = 1.5;
+
+/// 有气口时的代价倍率：按住一个二分音符，手有的是时间走过去。
+const RELAXED_FACTOR: f64 = 0.6;
+
+/// 这个音留给左手多少时间。
+///
+/// 古琴上「来不来得及换把」几乎完全由**前一个音**的时值决定：八分连八分时，
+/// 手没有时间去挪，只能就近落指；一个二分音符按住两拍，整只手足够从三徽走到十徽。
+///
+/// 原来的代价表对所有相邻音一视同仁，等于假设每个音都一样赶。后果是系统性的：
+/// DP 会为了避开一次「其实来得及」的换把，让前后好几个音都待在别扭的位置上——
+/// 谱面看着连贯，弹起来却处处别扭。反过来，快句里的换把只被记了轻描淡写的分，
+/// 排出来的指法在手上根本来不及。
+///
+/// 返回值是**位移代价的倍率**：>1 表示时间紧（同样的动作更贵），<1 表示有气口。
+/// 没给时值（`None`）按四分音符处理，倍率 1.0，与加这个维度之前完全一致。
+fn time_pressure(units: Option<u32>) -> f64 {
+    match units {
+        Some(units) if units <= FAST_NOTE_UNITS => RUSHED_FACTOR,
+        Some(units) if units >= SLOW_NOTE_UNITS => RELAXED_FACTOR,
+        _ => 1.0,
+    }
+}
+
 /// 从一个落点走到另一个落点的手部开销。
 ///
 /// 这里刻意不复用 `context_bonus`：那是贪心用的「加分」，只能看一步；
 /// 编排需要的是一个可加的**代价**，才能保证 DP 的最优性成立。
-fn transition_cost(prev: &GuqinNote, curr: &GuqinNote) -> i64 {
+fn transition_cost(prev: &GuqinNote, prev_units: Option<u32>, curr: &GuqinNote) -> i64 {
     let prev_pos = position_from_note(prev);
     let curr_pos = position_from_note(curr);
 
@@ -607,12 +655,17 @@ fn transition_cost(prev: &GuqinNote, curr: &GuqinNote) -> i64 {
         cost += REPEAT_SAME_SPOT_COST;
     }
 
-    cost
+    // 最后再按「前一个音留了多少时间」缩放整体开销。
+    //
+    // 放在最后乘、而不是给每一项单独乘：这个倍率描述的是「手有没有时间做这一整套动作」，
+    // 换弦、挪徽、抬手落指都在这段时间里完成，没有哪一项能免票。
+    (cost as f64 * time_pressure(prev_units)).round() as i64
 }
 
 /// 一条指法路径的「活动量」——用来把编排的效果说成人话。
 ///
-/// 只统计**琴人能直接感觉到**的三件事：换弦、同指挪位（整只手要动）、技法切换。
+/// 只统计**琴人能直接感觉到**的四件事：换弦、同指挪位（整只手要动）、技法切换、
+/// 以及「快句里还硬要换手」这种听着就手忙脚乱的地方。
 /// 刻意不报总代价：那是个抽象分数，涨了跌了对弹琴的人没有意义。
 /// 用户要的是「这一版手少跑几趟」，不是「代价从 1234 降到 1102」。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
@@ -623,16 +676,38 @@ pub struct PathStats {
     pub finger_shifts: u32,
     /// 技法切换次数（散 / 泛 / 按 之间切换）。
     pub technique_switches: u32,
+    /// 赶不上的换手：前一个音是八分或更短，手却要换弦或挪位。
+    ///
+    /// 这个数比「换弦次数」更贴近琴人的抱怨。同一段谱里换三次弦，
+    /// 落在二分音符之间叫从容，落在十六分连奏里叫弹不出来。
+    pub rushed_moves: u32,
+}
+
+/// 这两个落点之间，手是不是真的要移动。
+///
+/// 换弦当然算；同一根弦上的横向移动要超过 [`SAME_FINGER_SHIFT_RATIO`] 才算——
+/// 一两分的徽位微调是「走手」，手指自己就够，谈不上整只手要跑。
+fn position_moved(prev: &GuqinNote, curr: &GuqinNote) -> bool {
+    let prev_pos = position_from_note(prev);
+    let curr_pos = position_from_note(curr);
+    if prev_pos.string != curr_pos.string {
+        return true;
+    }
+    let both_stopped = prev.note_type != NoteType::SanYin && curr.note_type != NoteType::SanYin;
+    both_stopped && (prev_pos.ratio - curr_pos.ratio).abs() > SAME_FINGER_SHIFT_RATIO
 }
 
 /// 统计一条已定的音序的活动量。
 ///
+/// 每项都带上对应简谱音的时值，`rushed_moves` 才知道「当时手上有多少时间」。
+///
 /// 判定条件必须与 [`transition_cost`] 里的完全一致，否则「省了几次换弦」
 /// 会跟算法实际优化的目标对不上——界面说省了三次，实际是另一件事。
-fn path_stats(notes: &[GuqinNote]) -> PathStats {
+fn path_stats(notes: &[(Option<u32>, GuqinNote)]) -> PathStats {
     let mut stats = PathStats::default();
     for pair in notes.windows(2) {
-        let (prev, curr) = (&pair[0], &pair[1]);
+        let (prev_units, prev) = (&pair[0].0, &pair[0].1);
+        let curr = &pair[1].1;
         let prev_pos = position_from_note(prev);
         let curr_pos = position_from_note(curr);
 
@@ -650,6 +725,11 @@ fn path_stats(notes: &[GuqinNote]) -> PathStats {
             && (prev_pos.ratio - curr_pos.ratio).abs() > SAME_FINGER_SHIFT_RATIO
         {
             stats.finger_shifts += 1;
+        }
+
+        // 「急处换手」的判定：与代价表同一个倍率来源，否则统计和优化各说各话。
+        if time_pressure(*prev_units) > 1.0 && position_moved(prev, curr) {
+            stats.rushed_moves += 1;
         }
     }
     stats
@@ -702,13 +782,17 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
     // 而应被跳过——后面那个音仍然要跟「最近一个真的弹得出来的音」比较手位。
     let mut last_row: Option<Vec<i64>> = None;
     let mut last_notes: Option<Vec<GuqinNote>> = None;
+    // 上一个非空行的时值。同一个音的每个候选时值相同，所以只存一份，
+    // 不必跟 `last_notes` 一一配对。
+    let mut last_units: Option<u32> = None;
 
-    for candidates in &candidates_per_note {
+    for (note_idx, candidates) in candidates_per_note.iter().enumerate() {
         if candidates.is_empty() {
             dp.push(Vec::new());
             prev_choice.push(Vec::new());
             continue;
         }
+        let units = notes[note_idx].duration_units;
 
         let mut row: Vec<i64> = Vec::with_capacity(candidates.len());
         let mut back: Vec<Option<usize>> = Vec::with_capacity(candidates.len());
@@ -721,7 +805,8 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
                 (Some(row_prev), Some(notes_prev)) => {
                     let mut best: Option<(i64, usize)> = None;
                     for (k, prev_note) in notes_prev.iter().enumerate() {
-                        let total = row_prev[k] + transition_cost(prev_note, &candidate.note);
+                        let total =
+                            row_prev[k] + transition_cost(prev_note, last_units, &candidate.note);
                         if best.is_none_or(|(b, _)| total < b) {
                             best = Some((total, k));
                         }
@@ -739,6 +824,7 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
 
         last_row = Some(row.clone());
         last_notes = Some(candidates.iter().map(|c| c.note.clone()).collect());
+        last_units = units;
         dp.push(row);
         prev_choice.push(back);
     }
@@ -784,17 +870,31 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
     //
     // 必须在重排之前取——重排会把 DP 选中的候选挪到首位，之后再取就成了
     // 「拿编排结果当自己的对照组」，差值永远为零。
-    let greedy_notes: Vec<GuqinNote> = candidates_per_note
+    // 必须带上每个音的时值才算得出「急处换手」，所以这里是 (时值, 落点) 配对，
+    // 而不是光秃秃的 GuqinNote。
+    let greedy_notes: Vec<(Option<u32>, GuqinNote)> = candidates_per_note
         .iter()
-        .filter_map(|cands| cands.first().map(|c| c.note.clone()))
+        .enumerate()
+        .filter_map(|(i, cands)| {
+            cands
+                .first()
+                .map(|c| (notes[i].duration_units, c.note.clone()))
+        })
         .collect();
 
     // 编排路径本身（顺序与 greedy_notes 相同：都跳过没落点的音）。
     // 同样在重排前取，此时 selections 还是原始候选下标，语义最直白。
-    let arranged_notes: Vec<GuqinNote> = selections
+    let arranged_notes: Vec<(Option<u32>, GuqinNote)> = selections
         .iter()
         .enumerate()
-        .filter_map(|(i, sel)| sel.map(|j| candidates_per_note[i][j].note.clone()))
+        .filter_map(|(i, sel)| {
+            sel.map(|j| {
+                (
+                    notes[i].duration_units,
+                    candidates_per_note[i][j].note.clone(),
+                )
+            })
+        })
         .collect();
 
     // 把选中的候选提到首位，其余保持单音评分顺序。
@@ -1109,16 +1209,16 @@ mod tests {
     /// 所以这条断言一旦失败，说明 DP 的转移或回溯写错了——不是算法不够聪明。
     fn greedy_path_cost(notes: &[JianpuNote], tuning: Tuning) -> i64 {
         let mut total = 0i64;
-        let mut prev: Option<GuqinNote> = None;
+        let mut prev: Option<(Option<u32>, GuqinNote)> = None;
         for note in notes {
             let Some(best) = translate_jianpu(*note, tuning).into_iter().next() else {
                 continue;
             };
             total += i64::from((COST_BASE - best.score).max(0));
-            if let Some(ref p) = prev {
-                total += transition_cost(p, &best.note);
+            if let Some((units, ref p)) = prev {
+                total += transition_cost(p, units, &best.note);
             }
-            prev = Some(best.note);
+            prev = Some((note.duration_units, best.note));
         }
         total
     }
@@ -1317,14 +1417,121 @@ mod tests {
             )
         };
         // 一弦 → 三弦：换一次弦，都是散音，没有按点
-        let stats = path_stats(&[note(1), note(3)]);
+        let stats = path_stats(&[(None, note(1)), (None, note(3))]);
         assert_eq!(stats.string_changes, 1);
         assert_eq!(stats.technique_switches, 0);
         assert_eq!(stats.finger_shifts, 0);
+        // 没给时值时按四分音符算，不算「急处换手」
+        assert_eq!(stats.rushed_moves, 0);
 
         // 同一根弦连弹：什么都不算
-        let same = path_stats(&[note(2), note(2)]);
+        let same = path_stats(&[(None, note(2)), (None, note(2))]);
         assert_eq!(same, PathStats::default());
+    }
+
+    /// 八分连八分里换弦 = 急处换手；同样的两个音挪到二分音符之间就不算。
+    ///
+    /// 这条是「时间维度」的最小可验证断言：同样一次换弦，时值不同，
+    /// 在统计里必须是两种事实。
+    #[test]
+    fn test_path_stats_flags_rushed_moves_by_duration() {
+        let note = |string: u8| {
+            GuqinNote::open_string(
+                RightAction::Tiao,
+                StringNumber::new(string).expect("弦序 1..=7"),
+            )
+        };
+        // 八分 = 4 单位（半拍）
+        let rushed = path_stats(&[(Some(4), note(1)), (Some(4), note(3))]);
+        assert_eq!(rushed.string_changes, 1);
+        assert_eq!(rushed.rushed_moves, 1, "半拍之内换弦，手来不及");
+
+        // 二分 = 16 单位（两拍），同样的换弦从容得很
+        let relaxed = path_stats(&[(Some(16), note(1)), (Some(16), note(3))]);
+        assert_eq!(relaxed.string_changes, 1);
+        assert_eq!(relaxed.rushed_moves, 0);
+
+        // 同一根弦上原地重弹，不算「换手」
+        let still = path_stats(&[(Some(4), note(2)), (Some(4), note(2))]);
+        assert_eq!(still.rushed_moves, 0);
+
+        // 不换弦但整只手要挪（七徽 → 九徽，同一根手指），同样算急处换手
+        let pressed = |hui: u8| {
+            GuqinNote::pressed(
+                LeftFinger::Da,
+                HuiPosition {
+                    hui: Hui::new(hui).expect("徽位 1..=13"),
+                    fen: None,
+                },
+                RightAction::Gou,
+                StringNumber::new(1).expect("弦序 1..=7"),
+            )
+        };
+        let slide = path_stats(&[(Some(2), pressed(7)), (Some(2), pressed(9))]);
+        assert_eq!(slide.string_changes, 0, "没换弦");
+        assert_eq!(slide.rushed_moves, 1, "十六分里整手从七徽挪到九徽，来不及");
+    }
+
+    /// 时值确实参与代价：同一个转移，前一个音越短，代价越高。
+    ///
+    /// 不验证具体倍数（那是调参），只验证**方向**与单调性——
+    /// 这条一旦反了，整个「快句不换把」的假设就是假的。
+    #[test]
+    fn test_transition_cost_scales_with_previous_duration() {
+        let from =
+            GuqinNote::open_string(RightAction::Tiao, StringNumber::new(1).expect("弦序 1..=7"));
+        let to =
+            GuqinNote::open_string(RightAction::Tiao, StringNumber::new(4).expect("弦序 1..=7"));
+
+        let fast = transition_cost(&from, Some(2), &to);
+        let normal = transition_cost(&from, Some(8), &to);
+        let slow = transition_cost(&from, Some(32), &to);
+        let unspecified = transition_cost(&from, None, &to);
+
+        assert!(fast > normal, "十六分里跨三根弦该更贵：{fast} vs {normal}");
+        assert!(
+            slow < normal,
+            "全音符后跨三根弦该更便宜：{slow} vs {normal}"
+        );
+        assert_eq!(
+            unspecified, normal,
+            "没给时值必须与四分音符完全等价，否则老调用方的结果会悄悄变"
+        );
+    }
+
+    /// 时值真的走到了 DP 里，没有在 JSON 边界上被静默丢掉。
+    ///
+    /// 只断言「两次结果不同」和「不给时值等价于四分音符」：
+    /// 具体差多少是调参，写死数字会让每次调阈值都红一遍，反而没人敢改。
+    #[test]
+    fn test_arrange_consumes_durations() {
+        let pitches = [
+            JianpuNote::new(5, 0),
+            JianpuNote::new(6, 0),
+            JianpuNote::new(1, 1),
+            JianpuNote::new(3, 1),
+            JianpuNote::new(5, 1),
+            JianpuNote::new(2, 1),
+            JianpuNote::new(6, 0),
+            JianpuNote::new(5, 0),
+        ];
+        let with = |units: u32| -> Vec<JianpuNote> {
+            pitches.iter().map(|n| n.with_duration(units)).collect()
+        };
+
+        let fast = arrange_sequence(&with(2), Tuning::ZhengDiao);
+        let slow = arrange_sequence(&with(32), Tuning::ZhengDiao);
+        assert_ne!(
+            fast.total_cost, slow.total_cost,
+            "时值没进代价表：八分连奏与全音符算出了一模一样的代价"
+        );
+
+        // 向后兼容：不给时值必须与「全四分」完全等价，
+        // 否则每个老调用方的结果都会在不知不觉中变掉。
+        let unspecified = arrange_sequence(&pitches, Tuning::ZhengDiao);
+        let quarters = arrange_sequence(&with(8), Tuning::ZhengDiao);
+        assert_eq!(unspecified.total_cost, quarters.total_cost);
+        assert_eq!(unspecified.stats, quarters.stats);
     }
 
     /// 单音序列必然「与逐音挑选一致」——没有第二个音，就没有可优化的移动。

@@ -142,7 +142,12 @@ describe("taiyin-wasm · 翻译透传", () => {
 });
 
 describe("taiyin-wasm · 全局指法编排", () => {
-  const stats = { string_changes: 2, finger_shifts: 0, technique_switches: 1 };
+  const stats = {
+    string_changes: 2,
+    finger_shifts: 0,
+    technique_switches: 1,
+    rushed_moves: 1,
+  };
 
   it("arrangeJianpuSequence 透传 notes/tuning 并还原字段", async () => {
     const w = await loadWasm();
@@ -156,16 +161,24 @@ describe("taiyin-wasm · 全局指法编排", () => {
           string_changes: 5,
           finger_shifts: 2,
           technique_switches: 3,
+          rushed_moves: 4,
         },
         identical_to_greedy: false,
       }),
     );
 
-    const out = await w.arrangeJianpuSequence([{ number: 5, octave: 0 }], "zheng");
+    const out = await w.arrangeJianpuSequence(
+      [{ number: 5, octave: 0, duration_units: 4 }],
+      "zheng",
+    );
 
+    // duration_units 必须一路送到 Rust：丢了它，八分连奏里的换把会被当成来得及
     expect(
       JSON.parse(glue.arrange_jianpu_sequence_to_jianzi.mock.calls[0][0]),
-    ).toEqual({ notes: [{ number: 5, octave: 0 }], tuning: "zheng" });
+    ).toEqual({
+      notes: [{ number: 5, octave: 0, duration_units: 4 }],
+      tuning: "zheng",
+    });
     expect(out.total_cost).toBe(320);
     expect(out.selections).toEqual([0, null]);
     expect(out.stats).toEqual(stats);
@@ -194,6 +207,7 @@ describe("taiyin-wasm · 全局指法编排", () => {
       string_changes: 0,
       finger_shifts: 0,
       technique_switches: 0,
+      rushed_moves: 0,
     });
     expect(out.identical_to_greedy).toBe(false);
   });
@@ -211,8 +225,18 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
     candidates_per_note: [],
     selections: [],
     total_cost: 0,
-    stats: { string_changes: 0, finger_shifts: 0, technique_switches: 0 },
-    greedy_stats: { string_changes: 3, finger_shifts: 1, technique_switches: 2 },
+    stats: {
+      string_changes: 0,
+      finger_shifts: 0,
+      technique_switches: 0,
+      rushed_moves: 0,
+    },
+    greedy_stats: {
+      string_changes: 3,
+      finger_shifts: 1,
+      technique_switches: 2,
+      rushed_moves: 0,
+    },
     identical_to_greedy: false,
   };
 
@@ -227,7 +251,12 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
     const w = await loadWasm();
     const text = w.describeArrangement({
       ...base,
-      stats: { string_changes: 3, finger_shifts: 1, technique_switches: 0 },
+      stats: {
+        string_changes: 3,
+        finger_shifts: 1,
+        technique_switches: 0,
+        rushed_moves: 0,
+      },
     });
     expect(text).toBe("已编排：少 2 次音色切换");
     expect(text).not.toContain("换弦");
@@ -238,7 +267,12 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
     expect(
       w.describeArrangement({
         ...base,
-        stats: { string_changes: 3, finger_shifts: 1, technique_switches: 2 },
+        stats: {
+          string_changes: 3,
+          finger_shifts: 1,
+          technique_switches: 2,
+          rushed_moves: 0,
+        },
       }),
     ).toBe("已重排：落点换了，手的移动次数和逐音挑选一样");
   });
@@ -248,6 +282,60 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
     expect(
       w.describeArrangement({ ...base, identical_to_greedy: true }),
     ).toContain("已经是最顺");
+  });
+
+  /**
+   * 急处换手要排在最前面说。
+   *
+   * 换弦次数是个粗略代理：换三次弦落在二分音符之间叫从容，落在十六分连奏里叫弹不出来。
+   * 编排真正买到的是「快句里手不用跑」，文案必须先说这一句。
+   */
+  it("急处换手减少时先说它，即使换弦总数没变", async () => {
+    const w = await loadWasm();
+    const text = w.describeArrangement({
+      ...base,
+      stats: {
+        string_changes: 3,
+        finger_shifts: 1,
+        technique_switches: 2,
+        rushed_moves: 0,
+      },
+      greedy_stats: {
+        string_changes: 3,
+        finger_shifts: 1,
+        technique_switches: 2,
+        rushed_moves: 4,
+      },
+    });
+    expect(text).toBe("已编排：快句里少 4 次换手");
+  });
+
+  /**
+   * 有得有失时不许只报喜。
+   *
+   * 全局最优完全可能「总换手多一次、但都换在长音之后」——这个取舍是对的，
+   * 但用户数着列表里的换弦次数会发现对不上，不说就成了另一种撒谎。
+   */
+  it("换手总数变多时说清楚，并指出多出来的不在急处", async () => {
+    const w = await loadWasm();
+    const text = w.describeArrangement({
+      ...base,
+      stats: {
+        string_changes: 4,
+        finger_shifts: 1,
+        technique_switches: 2,
+        rushed_moves: 1,
+      },
+      greedy_stats: {
+        string_changes: 3,
+        finger_shifts: 1,
+        technique_switches: 2,
+        rushed_moves: 3,
+      },
+    });
+    expect(text).toContain("快句里少 2 次换手");
+    expect(text).toContain("换手总数多 1 次");
+    expect(text).toContain("来得及");
   });
 });
 

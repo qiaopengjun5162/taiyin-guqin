@@ -13,6 +13,7 @@ import { selectCandidates } from "@/lib/api";
 import { useNotePreview } from "@/lib/use-note-preview";
 import {
   parseJianpuString,
+  noteUnits,
   type ParsedJianpuNote,
   type ParsedJianpuItem,
 } from "@/lib/jianpu-parser";
@@ -184,8 +185,14 @@ export function SequenceMode({
     setArrangeLoading(true);
     setError(null);
     try {
+      // 带上时值：编排要知道「这个音留了多少时间给手」。
+      // 不带时值也能跑（按四分音符算），但那样八分连奏里的换把会被判成「来得及」。
       const result = await arrangeJianpuSequence(
-        playable.map((n) => ({ number: n.number, octave: n.octave })),
+        playable.map((n) => ({
+          number: n.number,
+          octave: n.octave,
+          duration_units: noteUnits(n),
+        })),
         tuning,
       );
 

@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from "vitest";
-import { parseJianpuString } from "../jianpu-parser";
+import { parseJianpuString, noteUnits } from "../jianpu-parser";
 
 describe("parseJianpuString", () => {
   it("parses plain numbers as quarter notes", () => {
@@ -132,5 +132,32 @@ describe("parseJianpuString", () => {
     const result = parseJianpuString("5. -");
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({ kind: "note", number: 5, octave: 0, duration: "四分", dotted: true, raw: "5." });
+  });
+});
+
+describe("noteUnits（给指法编排用的时值）", () => {
+  /** 取第一个音的时值。不是音符（比如解析器把整段丢掉了）就直接失败。 */
+  function unitsOf(input: string): number {
+    const [item] = parseJianpuString(input);
+    if (!item || item.kind !== "note") throw new Error(`不是一个音：${input}`);
+    return noteUnits(item);
+  }
+
+  // 单位是 1/8 拍：四分 = 8。Rust 端用它判断「手有没有时间换把」，
+  // 换算错一个音，编排就会在快句里排出根本来不及的落点。
+  it("按八度音符换算成 1/8 拍", () => {
+    expect(unitsOf("5 - - -")).toBe(32);
+    expect(unitsOf("5 -")).toBe(16);
+    expect(unitsOf("5")).toBe(8);
+  });
+
+  it("减时线与附点各按一半 / 1.5 倍计", () => {
+    expect(unitsOf("5_")).toBe(4);
+    expect(unitsOf("5__")).toBe(2);
+    expect(unitsOf("5.")).toBe(12);
+  });
+
+  it("延音线把时值真的拉长（- 不是装饰，它决定手有没有时间）", () => {
+    expect(unitsOf("5 -")).toBeGreaterThan(unitsOf("5"));
   });
 });

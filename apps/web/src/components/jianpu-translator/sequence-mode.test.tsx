@@ -24,6 +24,7 @@ import {
   translateJianpuSequenceToJianzi,
   arrangeJianpuSequence,
   type JianpuArrangement,
+  type PathStats,
 } from "@/lib/taiyin-wasm";
 
 /**
@@ -65,8 +66,8 @@ function makeArrangement(
   selections: (number | null)[],
   options: {
     identical?: boolean;
-    stats?: { string_changes: number; finger_shifts: number; technique_switches: number };
-    greedyStats?: { string_changes: number; finger_shifts: number; technique_switches: number };
+    stats?: PathStats;
+    greedyStats?: PathStats;
   } = {},
 ): JianpuArrangement {
   return {
@@ -77,11 +78,13 @@ function makeArrangement(
       string_changes: 0,
       finger_shifts: 0,
       technique_switches: 0,
+      rushed_moves: 0,
     },
     greedy_stats: options.greedyStats ?? {
       string_changes: 2,
       finger_shifts: 0,
       technique_switches: 0,
+      rushed_moves: 0,
     },
     identical_to_greedy: options.identical ?? false,
   };

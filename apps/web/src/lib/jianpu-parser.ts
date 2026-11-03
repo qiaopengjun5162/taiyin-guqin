@@ -67,6 +67,18 @@ const UNITS_OF: Record<string, number> = Object.fromEntries(
 const QUARTER_UNITS = 8;
 
 /**
+ * 一个音占多少「1/8 拍」：四分 = 8、八分 = 4、二分 = 16、全音符 = 32。
+ *
+ * 这个数要送给 Rust 的指法编排：它决定「手有没有时间换把」。
+ * 八分连八分时手来不及挪，二分音符按住两拍则足够整只手走半个琴面。
+ * 解析器算时值的时候已经算过一遍，这里只做导出，避免前端再抄一份时值表
+ * （抄了就会有两份不一致的时值定义，而且没人会发现）。
+ */
+export function noteUnits(note: ParsedJianpuNote): number {
+  return UNITS_OF[`${note.duration}|${note.dotted}`] ?? QUARTER_UNITS;
+}
+
+/**
  * 解析简谱字符串为音符/休止符序列。
  *
  * 返回数组中每个元素对应一个「位置」：
