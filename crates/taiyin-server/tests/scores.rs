@@ -575,3 +575,115 @@ async fn test_owner_token_guards_update_and_delete() {
         .unwrap();
     assert_eq!(resp.status(), 403, "无主谱不能被任何凭证认领删除");
 }
+
+/// 列表分页：默认页大小、上限与下限夹紧、越界页仍给总数。
+///
+/// 这些断言刻意写成「无论库里已有多少条都成立」，因为它们验证的是**分页参数的处理**，
+/// 而不是数据本身——把断言绑在绝对条数上，任何一个并发跑的清表用例都会让它假红。
+#[tokio::test]
+async fn list_scores_is_paginated() {
+    let pool = common::test_pool().await;
+    let state = AppState {
+        pool: pool.clone(),
+        llm: Default::default(),
+    };
+
+    // 造三条，用于验证翻页确实能翻到、且不同页不重复
+    for title in ["分页测试甲", "分页测试乙", "分页测试丙"] {
+        let resp = app(state.clone(), &ServerConfig::default())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/scores")
+                    .header("content-type", "application/json")
+                    .header("x-owner-token", OWNER)
+                    .body(Body::from(
+                        serde_json::to_string(&json!({"title": title, "notes": []})).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "造数据失败：{title}");
+    }
+
+    /// 取一页：返回 (该页 id 列表, 总数头)
+    async fn page(state: AppState, query: &str) -> (Vec<String>, Option<u64>) {
+        let resp = app(state, &ServerConfig::default())
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/scores{query}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "分页参数 `{query}` 不该报错");
+        let total = resp
+            .headers()
+            .get("x-total-count")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let items: Value = serde_json::from_slice(&bytes).unwrap();
+        let ids = items
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["id"].as_str().unwrap_or_default().to_string())
+            .collect();
+        (ids, total)
+    }
+
+    // 默认页大小
+    let (ids, total) = page(state.clone(), "").await;
+    assert!(
+        ids.len() <= 50,
+        "默认一页不该超过 50 条，实际 {}",
+        ids.len()
+    );
+    let total = total.expect("分页响应必须带 x-total-count");
+    assert!(total >= 3, "刚发布的 3 首必须计入总数，实际 {total}");
+
+    // 上限夹紧：limit 想拉多少就拉多少的话，一条请求就能把整库拖出来
+    let (ids, _) = page(state.clone(), "?limit=100000").await;
+    assert!(ids.len() <= 200, "单页硬上限 200，实际 {}", ids.len());
+
+    // 下限夹紧：limit=0 应被当成 1，而不是回空页（那看起来像「库里没了」）
+    let (ids, _) = page(state.clone(), "?limit=0").await;
+    assert_eq!(ids.len(), 1, "limit=0 应夹到 1，实际 {} 条", ids.len());
+
+    // 负数 offset 不能让 SQL 报错
+    let (_, neg_total) = page(state.clone(), "?offset=-5").await;
+    assert!(neg_total.is_some(), "负数 offset 应被夹到 0");
+
+    // 翻页不重复：相邻两页不能出现同一条
+    let (first, _) = page(state.clone(), "?limit=1&offset=0").await;
+    let (second, _) = page(state.clone(), "?limit=1&offset=1").await;
+    if first.len() == 1 && second.len() == 1 && total >= 2 {
+        assert_ne!(
+            first[0], second[0],
+            "offset 翻页返回了同一条，说明 OFFSET 没生效"
+        );
+    }
+
+    // 越界页：空数组，但**总数仍在**。前端靠它区分「翻过头了」和「库空了」。
+    let (ids, far_total) = page(state.clone(), "?offset=999999").await;
+    assert!(
+        ids.is_empty(),
+        "越界 offset 应当返回空数组，实际 {} 条",
+        ids.len()
+    );
+    assert!(
+        far_total.is_some(),
+        "越界分页也必须带总数——否则前端会把「翻过头」当成「没有更多了」"
+    );
+
+    // 清理自己造的
+    sqlx::query("DELETE FROM scores WHERE title LIKE '分页测试%'")
+        .execute(&pool)
+        .await
+        .unwrap();
+}

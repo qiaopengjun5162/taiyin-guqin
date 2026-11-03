@@ -21,6 +21,14 @@ pub struct ServerConfig {
     pub translate_per_second: u64,
     /// 翻译端点限流：突发容量。
     pub translate_burst: u32,
+    /// 认证端点限流（注册 / 登录）：每 IP 每秒请求数。
+    ///
+    /// 比全局更严：口令散列是**故意慢**的（Argon2id 每次数百毫秒），
+    /// 不设限等于给攻击者一个「发几十个请求就把单核 CPU 打满」的开关，
+    /// 正常用户会全部超时。同时它也是撞库的唯一入口。
+    pub auth_per_second: u64,
+    /// 认证端点限流：突发容量。留出「打错再试一次」的余量。
+    pub auth_burst: u32,
 }
 
 impl ServerConfig {
@@ -39,6 +47,8 @@ impl ServerConfig {
         let global_burst = parse_u32("GLOBAL_RATE_BURST", 60);
         let translate_per_second = parse_u64("TRANSLATE_RATE_PER_SECOND", 1);
         let translate_burst = parse_u32("TRANSLATE_RATE_BURST", 5);
+        let auth_per_second = parse_u64("AUTH_RATE_PER_SECOND", 2);
+        let auth_burst = parse_u32("AUTH_RATE_BURST", 8);
 
         Self {
             database_url,
@@ -48,6 +58,8 @@ impl ServerConfig {
             global_burst,
             translate_per_second,
             translate_burst,
+            auth_per_second,
+            auth_burst,
         }
     }
 
@@ -67,6 +79,8 @@ impl Default for ServerConfig {
             global_burst: 60,
             translate_per_second: 1,
             translate_burst: 5,
+            auth_per_second: 2,
+            auth_burst: 8,
         }
     }
 }
@@ -119,6 +133,8 @@ mod tests {
                 global_burst: 60,
                 translate_per_second: 1,
                 translate_burst: 5,
+                auth_per_second: 2,
+                auth_burst: 8,
             }
             .cors_locked()
         );
@@ -131,6 +147,8 @@ mod tests {
                 global_burst: 60,
                 translate_per_second: 1,
                 translate_burst: 5,
+                auth_per_second: 2,
+                auth_burst: 8,
             }
             .cors_locked()
         );

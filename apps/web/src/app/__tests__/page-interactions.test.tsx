@@ -102,6 +102,14 @@ vi.mock("@/lib/api", () => {
   return {
     ApiError,
     listScores: h.listScores,
+    // 页面现在按页取社区列表。测试里摆数据一律用 `listScores`，
+    // 这里委托过去：否则每加一条分页用例就要在两处维护同一份假数据。
+    listScoresPage: async (options?: { limit?: number; offset?: number }) => {
+      const items = await h.listScores();
+      const offset = options?.offset ?? 0;
+      const limit = options?.limit ?? items.length;
+      return { items: items.slice(offset, offset + limit), total: items.length };
+    },
     createScore: h.createScore,
     getScore: h.getScore,
     updateScore: h.updateScore,

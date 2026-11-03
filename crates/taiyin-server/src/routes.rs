@@ -1,8 +1,9 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, Method},
     middleware::from_fn_with_state,
+    response::IntoResponse,
     routing::{get, post},
 };
 use serde_json::json;
@@ -41,14 +42,32 @@ const MAX_AUTHOR_LENGTH: usize = 40;
 const OWNER_TOKEN_HEADER: &str = "x-owner-token";
 /// 凭证长度上限：UUID 是 36，留足余量但不接受任意长串（避免把 header 当存储用）。
 const MAX_OWNER_TOKEN_LENGTH: usize = 128;
+/// 列表默认一页条数：一次能滚完、又不至于让首屏拉几百条。
+const DEFAULT_PAGE_SIZE: i64 = 50;
+/// 单页硬上限：没有它，`?limit=1000000` 就是一条把整库拖出来的捷径。
+const MAX_PAGE_SIZE: i64 = 200;
+/// 列表总条数的响应头。分页必须同时给出总数，否则「还有几首没显示」无从判断。
+const TOTAL_COUNT_HEADER: &str = "x-total-count";
 
 /// 构造 CORS 层。
 ///
 /// - `allowed` 为空：开发态放开（`permissive`），并在 `main` 中记录 warning。
 /// - `allowed` 非空：仅允许列出的来源（生产应配置 `ALLOWED_ORIGINS`）。
 fn build_cors(allowed: &[String]) -> CorsLayer {
+    // 限流响应头必须显式暴露，否则跨域下浏览器会把它们藏起来：
+    // 前端只能看到一句英文 "Too Many Requests"，说不出「还要等几秒」，
+    // 用户只能盲目重试、越试等得越久。
+    let expose = [
+        axum::http::HeaderName::from_static("retry-after"),
+        axum::http::HeaderName::from_static("x-ratelimit-after"),
+        axum::http::HeaderName::from_static("x-ratelimit-limit"),
+        axum::http::HeaderName::from_static("x-ratelimit-remaining"),
+        // 分页总数：不暴露的话前端读不到，只能「翻到空页才知道到底了」
+        axum::http::HeaderName::from_static(TOTAL_COUNT_HEADER),
+    ];
+
     if allowed.is_empty() {
-        return CorsLayer::permissive();
+        return CorsLayer::permissive().expose_headers(expose);
     }
     let origins: Vec<HeaderValue> = allowed
         .iter()
@@ -70,6 +89,7 @@ fn build_cors(allowed: &[String]) -> CorsLayer {
             // 表现是「发布能成、改删必失败」，且只报 CORS 错误、看不出真正原因。
             axum::http::HeaderName::from_static(OWNER_TOKEN_HEADER),
         ]))
+        .expose_headers(expose)
 }
 
 pub fn app(state: AppState, config: &ServerConfig) -> Router {
@@ -88,6 +108,37 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
     );
     let translate_key: Option<Arc<str>> = config.translate_api_key.as_deref().map(Arc::from);
 
+    // 认证端点：独立严格限流，与全局限流**叠加**（两者都要过）。
+    //
+    // 全局限流管的是「整体别把服务刷垮」，管不住这一条：口令散列是**故意慢**的
+    // （Argon2id 每次数百毫秒），攻击者只要在全局 burst 窗口里连发几十个注册请求，
+    // 就能让单核 VPS 的 CPU 满载、正常用户全部超时。这是「用正常功能当放大器」，
+    // 开销比普通请求高三个数量级，必须单独设卡。
+    //
+    // 同时它也是撞库的唯一入口：per-IP 严格限流让在线爆破变得不划算。
+    let auth_limiter = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
+            .per_second(config.auth_per_second)
+            .burst_size(config.auth_burst)
+            // 刻意不开 `use_headers()`：两层限流同时写 `x-ratelimit-limit` 会互相覆盖，
+            // 表现是正常响应里写着「上限 200」（全局的），可实际第 9 次登录就被挡了——
+            // 数字自相矛盾比没有数字更让人困惑。`retry-after` 默认就会带，够前端用了。
+            .finish()
+            .expect("auth rate config must be valid"),
+    );
+
+    let auth_routes = Router::new()
+        .route("/api/v1/auth/register", post(register))
+        .route("/api/v1/auth/login", post(login))
+        .route("/api/v1/auth/logout", post(logout))
+        .route_layer(GovernorLayer::new(auth_limiter));
+
+    // `/auth/me` 刻意**不进**认证限流组：它是只读的，没有口令散列开销，
+    // 却是前端每次打开页面校验登录态要走的接口。一旦它被限流，前端会把它
+    // 当成「会话失效」而清掉登录态——用户会莫名其妙被登出，这比被刷几次糟得多。
+    let me_route = Router::new().route("/api/v1/auth/me", get(me));
+
     let translate_routes = Router::new()
         .route("/api/v1/translate/select", post(select_candidates))
         .route("/api/v1/jianzi/recognize", post(recognize_jianzi))
@@ -104,10 +155,9 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         )
         // 认领：把「本机凭证」发布的旧谱挂到账号下（必须出示原凭证）
         .route("/api/v1/scores/{id}/claim", post(claim_score))
-        .route("/api/v1/auth/register", post(register))
-        .route("/api/v1/auth/login", post(login))
-        .route("/api/v1/auth/logout", post(logout))
-        .route("/api/v1/auth/me", get(me))
+        // 认证端点带自己的限流层；路径与其它组不重叠，merge 不会冲突。
+        .merge(auth_routes)
+        .merge(me_route)
         .merge(translate_routes)
         .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024)) // 5 MB
         .layer(cors)
@@ -466,15 +516,49 @@ async fn create_score(
     Ok(Json(score))
 }
 
-async fn list_scores(State(state): State<AppState>) -> AppResult<Json<Vec<ScoreListItem>>> {
+/// 列表查询参数。都省略时按 `DEFAULT_PAGE_SIZE` 返回第一页。
+#[derive(Debug, serde::Deserialize)]
+struct ListScoresQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// 社区曲谱列表（分页）。
+///
+/// 以前是全表返回：谱少时看不出问题，谱一多就是「打开加载框卡三秒、滚不动」，
+/// 而且每次翻页都要重传整个库。现在按页取，并在响应头里给出总条数。
+///
+/// `limit` / `offset` 都做了夹紧，不接受任意值：负数 offset 是 SQL 错误，
+/// 超大的 limit 是把库一次性拖出来的捷径。
+async fn list_scores(
+    State(state): State<AppState>,
+    Query(q): Query<ListScoresQuery>,
+) -> AppResult<impl IntoResponse> {
+    let limit = q.limit.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
+    let offset = q.offset.unwrap_or(0).max(0);
+
     let scores = sqlx::query_as::<_, ScoreListItem>(
         "SELECT id, title, tuning, author, owner_user_id, created_at, updated_at \
-         FROM scores ORDER BY updated_at DESC",
+         FROM scores ORDER BY updated_at DESC LIMIT $1 OFFSET $2",
     )
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(scores))
+    // 单独查一次总数，而不是在同一条 SQL 里用 `count(*) OVER ()`：
+    // 后者在 offset 超出总数时**一行都不返回**，总数也跟着丢了——
+    // 而「这里已经没有更多了」恰恰是前端最需要判断的事。
+    let total: i64 = sqlx::query_scalar("SELECT count(*) FROM scores")
+        .fetch_one(&state.pool)
+        .await?;
+
+    let mut headers = HeaderMap::new();
+    if let Ok(value) = HeaderValue::from_str(&total.to_string()) {
+        headers.insert(TOTAL_COUNT_HEADER, value);
+    }
+
+    Ok((headers, Json(scores)))
 }
 
 async fn get_score(State(state): State<AppState>, Path(id): Path<Uuid>) -> AppResult<Json<Score>> {

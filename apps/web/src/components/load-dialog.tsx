@@ -29,6 +29,17 @@ export interface LoadDialogTab {
    * 让老用户的本地曲谱批量进入共享池，激活空社区。
    */
   showMigrate?: boolean;
+  /**
+   * 服务端总共多少首（`x-total-count`）。
+   *
+   * 有它才能说清「列表里只是前 50 首」——否则用户翻到底以为社区只有这些，
+   * 而实际上更多谱在后面几页。
+   */
+  total?: number | null;
+  /** 取下一页。只有 `scores.length < total` 时才应该显示按钮。 */
+  onLoadMore?: () => void;
+  /** 下一页请求进行中 */
+  loadingMore?: boolean;
 }
 
 interface LoadDialogProps {
@@ -50,6 +61,45 @@ interface LoadDialogProps {
   migrating?: boolean;
   /** 迁移结果提示（成功/跳过数量等），显示在按钮下方 */
   migrateMsg?: string | null;
+}
+
+/**
+ * 列表底部的分页提示。
+ *
+ * 两件事必须说清楚，否则用户会被误导：
+ * ① 列表里只是**前 N 首**，总数还有更多；
+ * ② 搜索只在**已加载的这些**里搜——分页之后本地过滤的范围变了，
+ *    不说明的话「搜不到」会被理解成「社区没有这首」。
+ */
+function PaginationHint({ tab, query }: { tab: LoadDialogTab; query: string }) {
+  const loaded = tab.scores.length;
+  const total = tab.total;
+  const hasMore = total !== null && total !== undefined && loaded < total;
+
+  if (!hasMore) return null;
+
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[9px] tracking-wider text-stone-500 tabular-nums">
+          已显示 {loaded} / {total} 首
+        </span>
+        <button
+          type="button"
+          onClick={tab.onLoadMore}
+          disabled={tab.loadingMore || !tab.onLoadMore}
+          className="shrink-0 px-2 py-0.5 text-[9px] tracking-wider rounded border border-amber-700/30 text-stone-600 hover:text-stone-900 hover:border-amber-700/50 disabled:opacity-40 transition-all"
+        >
+          {tab.loadingMore ? "加载中…" : "加载更多"}
+        </button>
+      </div>
+      {query.trim() && (
+        <p className="text-[9px] tracking-wider text-amber-800/70">
+          搜索只在已加载的 {loaded} 首里查，更早的谱还没取下来
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function LoadDialog({
@@ -126,7 +176,10 @@ export function LoadDialog({
                   }
                 >
                   {t.label}
-                  <span className="rounded bg-black/5 px-1 text-[9px] tabular-nums">{t.scores.length}</span>
+                  {/* 显示总数而非已加载数：社区有 123 首时，徽标写 50 会让人以为就这么多 */}
+                  <span className="rounded bg-black/5 px-1 text-[9px] tabular-nums">
+                    {t.total ?? t.scores.length}
+                  </span>
                 </button>
               ))}
             </div>
@@ -240,6 +293,7 @@ export function LoadDialog({
               );
             })}
           </div>
+          <PaginationHint tab={activeTab} query={query} />
           <button
             onClick={onClose}
             className="mt-3 w-full px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-600 hover:text-stone-900 hover:border-amber-700/50 transition-all"

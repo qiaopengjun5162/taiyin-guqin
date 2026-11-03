@@ -109,7 +109,24 @@ async function fetchWithTimeout(
   }
 }
 
+/**
+ * 把后端错误响应翻成用户能照着做的一句话。
+ *
+ * 429 是唯一需要单独处理的：限流层直接返回**纯文本**（不是我们的 JSON 错误体），
+ * 原样抛给用户等于没说——"Too Many Requests" 既不说原因也不说要等多久，
+ * 用户只会立刻再点一次，然后继续失败。
+ *
+ * 服务端在 `retry-after` 里给了剩余秒数（CORS 已显式暴露该头，否则跨域读不到）。
+ * 向上取整：提示「等 0 秒」比不提示更让人困惑。
+ */
 async function parseErrorMessage(res: Response): Promise<string> {
+  if (res.status === 429) {
+    const after = Number(res.headers.get("retry-after") ?? "");
+    if (Number.isFinite(after) && after > 0) {
+      return `操作太频繁，请 ${Math.ceil(after)} 秒后再试`;
+    }
+    return "操作太频繁，请稍后再试";
+  }
   try {
     const body = await res.json();
     return (body as { error?: string }).error ?? res.statusText;
@@ -184,11 +201,68 @@ export async function createScore(
   return normalizeTuning(await handleResponse<Score>(res));
 }
 
+/** 社区列表的一页。 */
+export interface ScorePage {
+  items: ScoreListItem[];
+  /** 库里总共有多少首（服务端 `x-total-count`）。服务端没给时为 null。 */
+  total: number | null;
+}
+
+/** 服务端单页硬上限，与 `routes.rs::MAX_PAGE_SIZE` 保持一致。 */
+const MAX_PAGE_SIZE = 200;
+
+/**
+ * 取社区曲谱的一页。
+ *
+ * 纯前端模式下本地存储没有分页概念，整份返回，语义与服务器分支保持一致。
+ */
+export async function listScoresPage(
+  options: { limit?: number; offset?: number } = {},
+): Promise<ScorePage> {
+  if (isBrowserOnlyMode()) {
+    const items = await localListScores();
+    return { items: items.map(normalizeTuning), total: items.length };
+  }
+  const limit = options.limit ?? MAX_PAGE_SIZE;
+  const offset = options.offset ?? 0;
+  const res = await fetchWithTimeout(
+    `${resolveBase()}/api/v1/scores?limit=${limit}&offset=${offset}`,
+  );
+  const items = await handleResponse<ScoreListItem[]>(res);
+  // 注意先判 null 再转数字：`Number(null)` 是 0，会把「服务端没给总数」
+  // 误当成「库里有 0 首」，界面上就会出现「0 / 50」这种自相矛盾的提示。
+  const rawTotal = res.headers.get("x-total-count");
+  const parsed = rawTotal === null ? null : Number(rawTotal);
+  return {
+    items: items.map(normalizeTuning),
+    total: parsed !== null && Number.isFinite(parsed) ? parsed : null,
+  };
+}
+
+/**
+ * 取**全部**社区曲谱（按页循环取完）。
+ *
+ * 保留这个全量接口是因为有些场景不能只看第一页：
+ * 迁移本机曲谱时要用「已有曲名集合」去重，少看一条就会重复发布一首；
+ * 判断「我发过没有」同理。这类判断错一次就是脏数据，不能为了省一次请求而漏。
+ */
 export async function listScores(): Promise<ScoreListItem[]> {
-  if (isBrowserOnlyMode()) return localListScores();
-  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores`);
-  const list = await handleResponse<ScoreListItem[]>(res);
-  return list.map(normalizeTuning);
+  const all: ScoreListItem[] = [];
+  // 页数上限是死循环保险：万一服务端 total 不降（翻页参数失效），不能一直转下去
+  for (let page = 0; page < 50; page += 1) {
+    const { items, total } = await listScoresPage({
+      limit: MAX_PAGE_SIZE,
+      offset: all.length,
+    });
+    all.push(...items);
+    if (items.length === 0) break;
+    // 服务端没给总数 = 它还是分页之前的版本，一次就把全量返回了。
+    // 这时候继续翻只会拿到同一批数据（offset 被老服务端忽略），
+    // 结果是列表里每条谱重复 N 次。必须在这里停。
+    if (total === null) break;
+    if (all.length >= total) break;
+  }
+  return all;
 }
 
 export async function getScore(id: string): Promise<Score> {

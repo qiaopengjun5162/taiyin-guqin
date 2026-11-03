@@ -466,11 +466,53 @@ export default function Home() {
     }
   }
 
+  /**
+   * 社区列表再取一页，追加到当前 tab。
+   *
+   * 只取一页而不是一次拉完：社区谱会越攒越多，全量拉取会随曲谱数量线性变慢，
+   * 而用户通常只关心最近发布的那些。
+   */
+  async function handleLoadMoreCommunity() {
+    const tab = loadTabs.find((t) => t.key === "community");
+    // 加载中不重入：按钮已 disabled，但双击 / 回车仍可能连发
+    if (!tab || tab.loadingMore) return;
+
+    setLoadTabs((prev) =>
+      prev.map((t) => (t.key === "community" ? { ...t, loadingMore: true } : t)),
+    );
+    try {
+      const page = await api.listScoresPage({ limit: 50, offset: tab.scores.length });
+      setLoadTabs((prev) =>
+        prev.map((t) => {
+          if (t.key !== "community") return t;
+          return {
+            ...t,
+            scores: [...t.scores, ...page.items],
+            total: page.total ?? t.total ?? null,
+            // 「我的谱」集合必须跟着一起扩。少这一步的表现是：翻到第二页，
+            // 明明是自己发的谱却没有删除按钮——看起来像「我的谱突然删不掉了」。
+            myScoreIds: [
+              ...(t.myScoreIds ?? []),
+              ...page.items.filter((x) => isMyScore(x.id)).map((x) => x.id),
+            ],
+            loadingMore: false,
+          };
+        }),
+      );
+    } catch {
+      setLoadTabs((prev) =>
+        prev.map((t) => (t.key === "community" ? { ...t, loadingMore: false } : t)),
+      );
+      showError("加载更多失败，请稍后再试");
+    }
+  }
+
   /** 打开加载对话框：连后端时同时拉「社区共享谱」与「本机谱」两个 tab */
   async function openLoadDialog() {
     try {
       if (storageMode === "server") {
-        const serverList = await api.listScores(); // 失败走外层 catch 提示
+        const firstPage = await api.listScoresPage({ limit: 50 }); // 失败走外层 catch 提示
+        const serverList = firstPage.items;
         let localList: api.ScoreListItem[] = [];
         try {
           localList = await api.localListScores();
@@ -487,6 +529,9 @@ export default function Home() {
             myScoreIds: serverList.filter((s) => isMyScore(s.id)).map((s) => s.id),
             // 登录者的账号 id：换设备发的谱，靠它也能认出是「我的」
             myUserId: getCurrentUserId(),
+            // 总数与翻页：只有第一页时用户会以为社区就这么几首
+            total: firstPage.total,
+            onLoadMore: handleLoadMoreCommunity,
           },
         ];
         if (localList.length > 0) {

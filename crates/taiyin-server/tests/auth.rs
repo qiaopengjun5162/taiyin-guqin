@@ -27,6 +27,17 @@ fn router(pool: PgPool) -> Router {
     )
 }
 
+/// 用指定配置构建 app：测限流要能把阈值压到很小，default 的阈值会把用例拖慢。
+fn router_with(pool: PgPool, config: &ServerConfig) -> Router {
+    app(
+        AppState {
+            pool,
+            llm: Default::default(),
+        },
+        config,
+    )
+}
+
 /// 发一个请求。`bearer` 模拟登录态，`owner` 模拟本机凭证，两者都能省略。
 async fn send(
     pool: &PgPool,
@@ -36,7 +47,15 @@ async fn send(
     bearer: Option<&str>,
     owner: Option<&str>,
 ) -> (StatusCode, Value) {
-    let mut builder = Request::builder().method(method).uri(uri);
+    // 限流按客户端 IP 计数，而 `oneshot` 没有真实连接、拿不到 peer 地址，
+    // 提取失败会让限流层直接回 500（"Unable To Extract Key"）。
+    // 真实部署经反向代理时也是靠这个头识别来源，这里补上等价于「模拟反代后的请求」。
+    // 用 TEST-NET-3 段（203.0.113.0/24，专供文档示例）而不是环回地址，
+    // 避免与「本机直连」的语义混淆。
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("x-forwarded-for", "203.0.113.7");
     if body.is_some() {
         builder = builder.header("content-type", "application/json");
     }
@@ -476,4 +495,122 @@ async fn expired_session_is_treated_as_logged_out() {
         .execute(&pool)
         .await
         .unwrap();
+}
+
+/// 认证端点必须有**独立于全局**的限流。
+///
+/// 这不是「防刷」而是「防 CPU 放大器」：口令散列是故意慢的（Argon2id 每次数百毫秒），
+/// 一个不限流的注册 / 登录接口等于给攻击者一个把单核打满的开关——正常请求几十毫秒，
+/// 这个接口几百毫秒，同一份带宽能造成的伤害差三个数量级。
+///
+/// 把全局限流放到几乎不生效（1000/s），仍然能在认证端点上看到 429，
+/// 才能证明**认证自己带锁**，而不是被全局顺带挡住。
+#[tokio::test]
+async fn auth_endpoints_rate_limited_independently_of_global() {
+    let pool = common::test_pool().await;
+
+    let config = ServerConfig {
+        // 全局放到几乎不生效，才能证明「认证自己带锁」而不是被全局顺带挡住
+        global_per_second: 1000,
+        global_burst: 1000,
+        auth_per_second: 1,
+        auth_burst: 2,
+        ..Default::default()
+    };
+
+    // 关键：复用**同一个** router。每次新建 app 都会新建限流器、计数归零，
+    // 那样无论发多少次都不会 429，测试会假绿。
+    let app = router_with(pool, &config);
+    let body = json!({"email": "nobody@example.com", "password": "whatever-123"}).to_string();
+
+    let mut codes = Vec::new();
+    for _ in 0..6 {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .header("x-forwarded-for", "198.51.100.9")
+                    .body(Body::from(body.clone()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        codes.push(resp.status());
+    }
+
+    // 前半句：第一次必须真的打到了处理器。否则「被限流」可能只是路由或提取 key 出了错，
+    // 那种情况下每个请求都 500/404，断言「出现 429」则会因为别的原因失败得莫名其妙。
+    assert_ne!(
+        codes[0],
+        StatusCode::TOO_MANY_REQUESTS,
+        "第一次请求不该被限流：{codes:?}"
+    );
+    assert_eq!(
+        codes[0],
+        StatusCode::UNAUTHORIZED,
+        "第一次登录应当真的走到处理器（账号不存在 → 401）：{codes:?}"
+    );
+    // 后半句：持续请求必须被挡住。
+    assert!(
+        codes.contains(&StatusCode::TOO_MANY_REQUESTS),
+        "认证端点应当在若干次后被限流，实际：{codes:?}"
+    );
+}
+
+/// `/auth/me` 不受认证限流约束。
+///
+/// 它是前端每次打开页面校验登录态要走的接口，被限流会被误当成「会话失效」而登出用户。
+/// 只读、无散列开销，没有理由和登录共用一把锁。
+#[tokio::test]
+async fn me_endpoint_is_not_throttled_with_login() {
+    let pool = common::test_pool().await;
+
+    let config = ServerConfig {
+        global_per_second: 1000,
+        global_burst: 1000,
+        auth_per_second: 1,
+        auth_burst: 1,
+        ..Default::default()
+    };
+
+    let app = router_with(pool, &config);
+
+    // 先把登录那把锁打满
+    let body = json!({"email": "nobody@example.com", "password": "whatever-123"}).to_string();
+    for _ in 0..4 {
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .header("x-forwarded-for", "198.51.100.10")
+                    .body(Body::from(body.clone()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    // 同一来源查 /me：应当是 401（未带 token），不是 429
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/v1/auth/me")
+                .header("x-forwarded-for", "198.51.100.10")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "/auth/me 不该与登录共用限流，否则登录态会被误判为失效"
+    );
 }

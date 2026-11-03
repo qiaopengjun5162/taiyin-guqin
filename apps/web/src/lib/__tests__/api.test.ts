@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /** 构造一个 fetch 的 Response 替身（jsdom 的 Response 对 204/无体较挑剔，直接给可控对象）。 */
-function jsonResponse(body: unknown, init: { status?: number; statusText?: string } = {}) {
+function jsonResponse(
+  body: unknown,
+  init: { status?: number; statusText?: string; headers?: Record<string, string> } = {},
+) {
   const status = init.status ?? 200;
   return {
     ok: status >= 200 && status < 300,
     status,
     statusText: init.statusText ?? "",
+    // 真实 Response 一定有 headers；替身少了它，任何读响应头的代码
+    // 都会以 TypeError 崩掉，而报错位置看起来和被测逻辑毫无关系。
+    headers: new Headers(init.headers ?? {}),
     json: async () => body,
   } as unknown as Response;
 }
@@ -325,5 +331,91 @@ describe("api: 后端地址解析（运行时 > 环境变量 > 无）", () => {
     window.localStorage.setItem("taiyin.apiBaseUrl", "https://runtime.example.com");
     const { isBrowserOnlyMode } = await import("@/lib/api");
     expect(isBrowserOnlyMode()).toBe(false);
+  });
+});
+
+/**
+ * 限流（429）的提示语。
+ *
+ * 这条路径很容易被忘掉：限流层返回的是**纯文本**，不是我们的 JSON 错误体，
+ * 所以 `res.json()` 必然抛错、落到 `statusText` 兜底——用户会看到一句英文
+ * "Too Many Requests"，既不知道发生了什么，也不知道要等多久，只会立刻再点一次。
+ */
+describe("api: 429 限流提示", () => {
+  /** 限流层的真实响应形状：纯文本 + retry-after 头。 */
+  function tooManyRequests(retryAfter?: string) {
+    return {
+      ok: false,
+      status: 429,
+      statusText: "Too Many Requests",
+      headers: {
+        get: (name: string) => (name.toLowerCase() === "retry-after" ? (retryAfter ?? null) : null),
+      },
+      json: async () => {
+        throw new SyntaxError("Unexpected token T in JSON");
+      },
+    } as unknown as Response;
+  }
+
+  it("有 retry-after 时告诉用户等几秒，且向上取整", async () => {
+    fetchMock.mockResolvedValue(tooManyRequests("2"));
+    const { createScore } = await import("@/lib/api");
+    await expect(createScore("流水", [])).rejects.toThrow("操作太频繁，请 2 秒后再试");
+  });
+
+  it("retry-after 缺失时也给中文提示，不退化成英文状态文本", async () => {
+    fetchMock.mockResolvedValue(tooManyRequests());
+    const { createScore } = await import("@/lib/api");
+    await expect(createScore("流水", [])).rejects.toThrow("操作太频繁，请稍后再试");
+  });
+
+  it("retry-after 为 0 时不提示「等 0 秒」（比不提示更让人困惑）", async () => {
+    fetchMock.mockResolvedValue(tooManyRequests("0"));
+    const { createScore } = await import("@/lib/api");
+    await expect(createScore("流水", [])).rejects.toThrow("操作太频繁，请稍后再试");
+  });
+
+  it("429 的 ApiError 仍带 status，上层可据此区别于普通失败", async () => {
+    fetchMock.mockResolvedValue(tooManyRequests("5"));
+    const { createScore, ApiError } = await import("@/lib/api");
+    await expect(createScore("流水", [])).rejects.toMatchObject({
+      name: "ApiError",
+      status: 429,
+    });
+    expect(ApiError).toBeTypeOf("function");
+  });
+});
+
+/**
+ * 分页接口。
+ *
+ * 重点是 `total` 的**缺失**语义：服务端没给这个头时必须是 null，
+ * 不能变成 0——界面上会显示「已显示 50 / 0 首」，比不显示更糟。
+ */
+describe("api: 社区列表分页", () => {
+  const items = [
+    { id: "a", title: "流水", tuning: "zhengdiao", created_at: "t", updated_at: "t" },
+  ];
+
+  it("带上 limit / offset，并从响应头读总数", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(items, { headers: { "x-total-count": "123" } }));
+    const { listScoresPage } = await import("@/lib/api");
+
+    const page = await listScoresPage({ limit: 50, offset: 100 });
+
+    expect(page.total).toBe(123);
+    expect(page.items).toHaveLength(1);
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("limit=50");
+    expect(url).toContain("offset=100");
+  });
+
+  it("服务端没给总数时 total 为 null，而不是 0", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(items));
+    const { listScoresPage } = await import("@/lib/api");
+
+    const page = await listScoresPage();
+
+    expect(page.total).toBeNull();
   });
 });

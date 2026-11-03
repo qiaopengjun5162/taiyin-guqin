@@ -13,7 +13,10 @@
 #   3. 所有权链路：带钥匙发布 → 错钥匙改 403 → 对钥匙改 200 → 对钥匙删 200；
 #   4. 无钥匙发布 → 成「无主谱」 → 谁也改不了（403）；
 #   5. 账号链路：注册 → 只凭登录态发布 → 换设备凭登录态改 → 认领旧谱
-#      （认领必须出示原凭证，否则注册一下就能认领别人的谱）→ 登出即失效。
+#      （认领必须出示原凭证，否则注册一下就能认领别人的谱）→ 登出即失效；
+#   6. 列表分页：limit 夹紧、越界返回空数组、响应带总数头；
+#   7. 限流层真的挂上了（响应带 x-ratelimit-* 头）——配置项写了却没接线
+#      是这类「以为有保护、其实没有」的经典事故。
 #
 set -euo pipefail
 
@@ -94,6 +97,28 @@ ok "带钥匙发布成功 id=${ID:0:8}"
 
 curl -sS "$BASE/api/v1/scores" | grep -q "上线验收测试" || fail "列表里找不到刚发布的谱"
 ok "列表可见"
+
+echo "▶ 验列表分页（谱攒多了不能一次全拉）"
+HDRS=$(mktemp)
+ONE=$(curl -sS -D "$HDRS" "$BASE/api/v1/scores?limit=1")
+N=$(printf '%s' "$ONE" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')
+[[ "$N" == "1" ]] && ok "?limit=1 只回 1 条" || fail "?limit=1 应回 1 条，实际 $N"
+grep -qi "x-total-count:" "$HDRS" \
+  && ok "响应带 x-total-count（前端靠它判断还有没有更多）" \
+  || fail "缺 x-total-count，前端无从知道总数"
+CAP=$(curl -sS "$BASE/api/v1/scores?limit=99999" \
+  | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')
+[[ "$CAP" -le 200 ]] && ok "?limit=99999 被夹到 200（挡不住就能一条请求拖走整库）" \
+  || fail "单页上限没生效，实际返回 $CAP 条"
+FAR=$(curl -sS "$BASE/api/v1/scores?offset=999999" \
+  | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')
+[[ "$FAR" == "0" ]] && ok "越界 offset 返回空数组" || fail "越界 offset 应返回空数组，实际 $FAR"
+rm -f "$HDRS"
+
+echo "▶ 验限流层确实接上了"
+curl -sS -D - -o /dev/null "$BASE/health" | grep -qi "x-ratelimit-limit" \
+  && ok "响应带 x-ratelimit-* 头（配置项真的挂到了路由上）" \
+  || fail "没有 x-ratelimit 头：限流配置可能写了但没接线"
 
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/scores/$ID" \
   -H 'Content-Type: application/json' -H 'x-owner-token: wrong-key' -d '{"title":"改不掉"}')

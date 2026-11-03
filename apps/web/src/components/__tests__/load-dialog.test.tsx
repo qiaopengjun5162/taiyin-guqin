@@ -394,3 +394,71 @@ describe("LoadDialog · 账号归属与认领", () => {
     expect(screen.queryByText("认领")).toBeNull();
   });
 });
+
+/**
+ * 分页：列表只显示前 N 首时必须说清楚，并且能继续取。
+ *
+ * 这几条测的不是「按钮好不好看」，而是**界面有没有骗人**：
+ * 少一个「还有更多」的提示，用户翻到底就会以为社区只有这几首；
+ * 少一句「搜索范围有限」，搜不到会被理解成「社区没有这首谱」。
+ */
+describe("LoadDialog · 分页", () => {
+  it("总数多于已加载时显示「已显示 N / 总数」和加载更多", () => {
+    const onLoadMore = vi.fn();
+    renderDialog([
+      { key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true, total: 123, onLoadMore },
+    ]);
+
+    expect(screen.getByText("已显示 1 / 123 首")).toBeTruthy();
+    fireEvent.click(screen.getByText("加载更多"));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("已加载完（总数等于条数）时不显示加载更多", () => {
+    renderDialog([
+      { key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true, total: 1, onLoadMore: vi.fn() },
+    ]);
+    expect(screen.queryByText("加载更多")).toBeNull();
+    expect(screen.queryByText(/已显示/)).toBeNull();
+  });
+
+  it("加载中时按钮禁用，避免重复请求", () => {
+    renderDialog([
+      {
+        key: "community",
+        label: "社区曲谱",
+        scores: COMMUNITY,
+        readOnly: true,
+        total: 123,
+        onLoadMore: vi.fn(),
+        loadingMore: true,
+      },
+    ]);
+    const btn = screen.getByText("加载中…") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it("tab 徽标显示总数而不是已加载数（写 1 会让人以为社区就一首）", () => {
+    renderDialog([
+      { key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true, total: 123 },
+      { key: "local", label: "本机", scores: LOCAL },
+    ]);
+    expect(screen.getByRole("button", { name: /社区曲谱/ }).textContent).toContain("123");
+  });
+
+  it("搜索时提示范围只覆盖已加载部分", () => {
+    renderDialog([
+      { key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true, total: 123, onLoadMore: vi.fn() },
+    ]);
+    fireEvent.change(screen.getByLabelText("按曲名搜索"), { target: { value: "广陵" } });
+    expect(screen.getByText(/搜索只在已加载的 1 首里查/)).toBeTruthy();
+  });
+
+  it("没有总数（老服务端）时不显示分页条，也不假装知道还有多少", () => {
+    renderDialog([
+      { key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true, onLoadMore: vi.fn() },
+    ]);
+    expect(screen.queryByText(/已显示/)).toBeNull();
+    expect(screen.queryByText("加载更多")).toBeNull();
+  });
+});

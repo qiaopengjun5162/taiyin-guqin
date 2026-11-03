@@ -154,7 +154,9 @@ curl -i http://127.0.0.1:3001/health
 | `ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` | 可选 | 默认官方 Claude 接口 |
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | 可选 | AI 减字图识别用（默认 DeepSeek 视觉）；不配则识别功能不可用 |
 | `TRANSLATE_API_KEY` | 可选 | 给 `/translate/select` 加一道口令闸门（纵深防护） |
-| `GLOBAL_RATE_PER_SECOND` 等 | 可选 | 限流参数，默认每 IP 每秒 2 次、突发 60，一般不用改 |
+| `GLOBAL_RATE_PER_SECOND` / `GLOBAL_RATE_BURST` | 可选 | 全局限流：默认每 IP 每秒 2 次、突发 60。**这两个是真在跑的**，所有请求都过这道闸 |
+| `AUTH_RATE_PER_SECOND` / `AUTH_RATE_BURST` | 可选 | 注册 / 登录的**独立**限流：默认每秒 2 次、突发 8。比全局严，因为口令散列故意慢（Argon2id 每次数百毫秒），不限流等于给攻击者一个把单核 CPU 打满的开关。1 核小机器别调大 |
+| `TRANSLATE_RATE_PER_SECOND` / `TRANSLATE_RATE_BURST` | 可选 | AI 翻译端点限流：默认每秒 1 次、突发 5，因为每次调用都在烧额度 |
 
 ---
 
@@ -197,7 +199,12 @@ curl -i https://api.你的域名/health
 
 > **用 Nginx 的话**等价要点：`proxy_pass http://127.0.0.1:3001;` 之外，
 > 必须加 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`，
-> 并用 certbot 签证书。少了 `X-Forwarded-For` 时，所有用户会被限流算成同一个人。
+> 并用 certbot 签证书。
+>
+> **少了这个头，后果比想象严重**：后端拿不到真实来源，所有用户会被算成同一个人——
+> 别人正常用就把你挡在门外（429）；注册 / 登录还有单独的更严格的限流，会被更快打满。
+> 极端情况下完全拿不到任何地址时，限流层会直接回 500，整个服务不可用。
+> 上线后第一件事就是按第 6 节验收里的「限流头」那一条确认它在工作。
 
 ---
 
@@ -307,6 +314,9 @@ docker rm -f taiyin-server          # 删掉旧容器（数据库容器不动，
 | 浏览器控制台报 CORS 错误 | `ALLOWED_ORIGINS` 里没有网页的域名 | 改 `ALLOWED_ORIGINS` 后重启容器（域名要一字不差，含 `https://`） |
 | 能发布，改 / 删总是 403 | 不是故障：没带钥匙，或这不是你这台浏览器发的 | 见第 0 节「安全边界」；想验证用第 6 步 ④⑤ 的 curl |
 | 一会儿就 429（限流） | 反向代理没传 `X-Forwarded-For`，所有人被算成一个 IP | 按第 4 节把转发头补上 |
+| 登录 / 注册频繁 429，浏览谱却正常 | 认证端点有独立且更严的限流（防口令散列的 CPU 放大攻击） | 确认转发头正确；确认是本人操作而非共享出口 IP；必要时调大 `AUTH_RATE_BURST` |
+| 所有请求都 500，日志没有业务错误 | 限流层「提取不到客户端 IP」——既没有转发头也没有连接信息 | 前面必须挂反向代理并按第 4 节透传 `X-Forwarded-For`；不要用奇怪的方式直接转发到应用 |
+| 列表只显示 50 首，以为数据丢了 | 列表默认分页 50 条（单页最多 200），总数在响应头 `x-total-count` | 不是 bug。界面底部有「已显示 N / 总数」与「加载更多」；接口调用方用 `?limit=&offset=` 翻页 |
 | 容器启动几秒就退出 | `DATABASE_URL` 写错 / 数据库没起来 | `docker logs taiyin-server` 看最后一行；`docker logs taiyin-pg` 看数据库 |
 | 启动报 `Address already in use` | 上一个实例没退干净，还占着 3001 | `lsof -nP -iTCP:3001 -sTCP:LISTEN` 找到旧 PID，`kill` 掉再启 |
 | `docker build` 拉不到 rust 镜像 / 报编译器版本不够 | 部分镜像源没有 `rust:1.85` 这个旧标签（本机实测 403），且 edition 2024 的 workspace 本身就要更新编译器 | Dockerfile 已固定 `rust:1.98-slim-bookworm`；仍失败就检查本机的 Docker 镜像源配置 |
