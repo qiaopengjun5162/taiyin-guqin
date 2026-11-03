@@ -8,14 +8,22 @@ import { SequenceMode } from "./sequence-mode";
 // 翻译器只依赖 wasm 这一条外部调用；其余逻辑（候选对齐、确认成谱）在组件内。
 // 这里让翻译「漏回一组候选」，复现后端候选数少于音数的罕见情况，
 // 验证「确认全部」不会静默丢掉没候选的音。
-vi.mock("@/lib/taiyin-wasm", () => ({
-  translateJianpuSequenceToJianzi: vi.fn(),
-  arrangeJianpuSequence: vi.fn(),
-}));
+//
+// 只替换两条异步调用，其余（尤其是 describeArrangement 这段纯文案逻辑）用真实现——
+// 把它也 mock 掉等于把「界面说的话对不对」这件事一起测没了。
+vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
+  return {
+    ...actual,
+    translateJianpuSequenceToJianzi: vi.fn(),
+    arrangeJianpuSequence: vi.fn(),
+  };
+});
 
 import {
   translateJianpuSequenceToJianzi,
   arrangeJianpuSequence,
+  type JianpuArrangement,
 } from "@/lib/taiyin-wasm";
 
 /**
@@ -45,6 +53,37 @@ function makeCandidate(
       rhythm_mode: "板",
       duration: 1,
     },
+  };
+}
+
+/**
+ * 造一份编排结果。默认「有改善」——界面文案才有东西可说。
+ * 想测「本来就最顺」的分支，传 `identical: true`。
+ */
+function makeArrangement(
+  candidates_per_note: JianziCandidate[][],
+  selections: (number | null)[],
+  options: {
+    identical?: boolean;
+    stats?: { string_changes: number; finger_shifts: number; technique_switches: number };
+    greedyStats?: { string_changes: number; finger_shifts: number; technique_switches: number };
+  } = {},
+): JianpuArrangement {
+  return {
+    candidates_per_note,
+    selections,
+    total_cost: 120,
+    stats: options.stats ?? {
+      string_changes: 0,
+      finger_shifts: 0,
+      technique_switches: 0,
+    },
+    greedy_stats: options.greedyStats ?? {
+      string_changes: 2,
+      finger_shifts: 0,
+      technique_switches: 0,
+    },
+    identical_to_greedy: options.identical ?? false,
   };
 }
 
@@ -136,14 +175,15 @@ describe("SequenceMode · 智能编排", () => {
     );
     // 全局编排把第一音换成了按音（弦三），并把它提到候选首位——这是 Rust 端的契约：
     // 返回的候选已经被按路径整理过，selections 恒指向首位。
-    vi.mocked(arrangeJianpuSequence).mockResolvedValue({
-      candidates_per_note: [
-        [makeCandidate("按", 9, 6, "Gou", 3), makeCandidate("散", 0, 0, "Tiao", 1)],
-        [makeCandidate("散", 0, 0, "Tiao", 2)],
-      ],
-      selections: [0, 0],
-      total_cost: 120,
-    });
+    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+      makeArrangement(
+        [
+          [makeCandidate("按", 9, 6, "Gou", 3), makeCandidate("散", 0, 0, "Tiao", 1)],
+          [makeCandidate("散", 0, 0, "Tiao", 2)],
+        ],
+        [0, 0],
+      ),
+    );
 
     render(<SequenceMode tuning="zheng" onSelect={onSelect} />);
 
@@ -155,7 +195,7 @@ describe("SequenceMode · 智能编排", () => {
 
     fireEvent.click(screen.getByText("智能编排"));
     await waitFor(() =>
-      expect(screen.getByText("已按整句连贯重排")).toBeTruthy(),
+      expect(screen.getByText("已编排：少 2 次换弦")).toBeTruthy(),
     );
 
     fireEvent.click(screen.getByText("确认全部"));
@@ -178,14 +218,16 @@ describe("SequenceMode · 智能编排", () => {
         ],
       }),
     );
-    vi.mocked(arrangeJianpuSequence).mockResolvedValue({
-      candidates_per_note: [
-        [makeCandidate("散", 0, 0, "Tiao", 1)],
-        [makeCandidate("散", 0, 0, "Tiao", 2)],
-      ],
-      selections: [0, 0],
-      total_cost: 80,
-    });
+    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+      makeArrangement(
+        [
+          [makeCandidate("散", 0, 0, "Tiao", 1)],
+          [makeCandidate("散", 0, 0, "Tiao", 2)],
+        ],
+        [0, 0],
+        { identical: true },
+      ),
+    );
 
     render(<SequenceMode tuning="zheng" onSelect={onSelect} />);
 
@@ -196,7 +238,7 @@ describe("SequenceMode · 智能编排", () => {
     await waitFor(() => expect(screen.getByText("智能编排")).toBeTruthy());
     fireEvent.click(screen.getByText("智能编排"));
     await waitFor(() =>
-      expect(screen.getByText("已按整句连贯重排")).toBeTruthy(),
+      expect(screen.getByText(/这条已经是最顺的走法/)).toBeTruthy(),
     );
 
     fireEvent.click(screen.getByText("确认全部"));
@@ -220,16 +262,17 @@ describe("SequenceMode · 智能编排", () => {
         ],
       }),
     );
-    vi.mocked(arrangeJianpuSequence).mockResolvedValue({
-      candidates_per_note: [
+    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+      makeArrangement(
         [
-          makeCandidate("散", 0, 0, "Tiao", 1),
-          makeCandidate("按", 9, 6, "Gou", 3),
+          [
+            makeCandidate("散", 0, 0, "Tiao", 1),
+            makeCandidate("按", 9, 6, "Gou", 3),
+          ],
         ],
-      ],
-      selections: [0],
-      total_cost: 40,
-    });
+        [0],
+      ),
+    );
 
     render(<SequenceMode tuning="zheng" onSelect={onSelect} />);
 
@@ -240,7 +283,7 @@ describe("SequenceMode · 智能编排", () => {
     await waitFor(() => expect(screen.getByText("智能编排")).toBeTruthy());
     fireEvent.click(screen.getByText("智能编排"));
     await waitFor(() =>
-      expect(screen.getByText("已按整句连贯重排")).toBeTruthy(),
+      expect(screen.getByText("已编排：少 2 次换弦")).toBeTruthy(),
     );
 
     // 点第二个候选卡片（候选卡的按钮统一以「录入此音位」结尾）
@@ -249,7 +292,7 @@ describe("SequenceMode · 智能编排", () => {
     fireEvent.click(chips[1]);
 
     await waitFor(() =>
-      expect(screen.queryByText("已按整句连贯重排")).toBeNull(),
+      expect(screen.queryByText("已编排：少 2 次换弦")).toBeNull(),
     );
   });
 });

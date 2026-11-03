@@ -15,6 +15,7 @@ const glue = vi.hoisted(() => ({
   init: vi.fn(),
   translate_jianpu_to_jianzi: vi.fn(),
   translate_jianpu_sequence_to_jianzi: vi.fn(),
+  arrange_jianpu_sequence_to_jianzi: vi.fn(),
   get_jianzi_dictionary: vi.fn(),
   encode_jianzi_batch: vi.fn(),
   decode_jianzi_batch: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("@/wasm/taiyin_core", () => ({
   default: glue.init,
   translate_jianpu_to_jianzi: glue.translate_jianpu_to_jianzi,
   translate_jianpu_sequence_to_jianzi: glue.translate_jianpu_sequence_to_jianzi,
+  arrange_jianpu_sequence_to_jianzi: glue.arrange_jianpu_sequence_to_jianzi,
   get_jianzi_dictionary: glue.get_jianzi_dictionary,
   encode_jianzi_batch: glue.encode_jianzi_batch,
   decode_jianzi_batch: glue.decode_jianzi_batch,
@@ -45,6 +47,7 @@ beforeEach(() => {
   glue.init.mockReset();
   glue.translate_jianpu_to_jianzi.mockReset();
   glue.translate_jianpu_sequence_to_jianzi.mockReset();
+  glue.arrange_jianpu_sequence_to_jianzi.mockReset();
   glue.get_jianzi_dictionary.mockReset();
   glue.encode_jianzi_batch.mockReset();
   glue.decode_jianzi_batch.mockReset();
@@ -135,6 +138,116 @@ describe("taiyin-wasm · 翻译透传", () => {
 
     await expect(w.translateJianpuToJianzi("{}")).rejects.toThrow("wasm 缺失");
     expect(glue.translate_jianpu_to_jianzi).not.toHaveBeenCalled();
+  });
+});
+
+describe("taiyin-wasm · 全局指法编排", () => {
+  const stats = { string_changes: 2, finger_shifts: 0, technique_switches: 1 };
+
+  it("arrangeJianpuSequence 透传 notes/tuning 并还原字段", async () => {
+    const w = await loadWasm();
+    glue.arrange_jianpu_sequence_to_jianzi.mockReturnValue(
+      JSON.stringify({
+        candidates_per_note: [[], []],
+        selections: [0, null],
+        total_cost: 320,
+        stats,
+        greedy_stats: {
+          string_changes: 5,
+          finger_shifts: 2,
+          technique_switches: 3,
+        },
+        identical_to_greedy: false,
+      }),
+    );
+
+    const out = await w.arrangeJianpuSequence([{ number: 5, octave: 0 }], "zheng");
+
+    expect(
+      JSON.parse(glue.arrange_jianpu_sequence_to_jianzi.mock.calls[0][0]),
+    ).toEqual({ notes: [{ number: 5, octave: 0 }], tuning: "zheng" });
+    expect(out.total_cost).toBe(320);
+    expect(out.selections).toEqual([0, null]);
+    expect(out.stats).toEqual(stats);
+    expect(out.identical_to_greedy).toBe(false);
+  });
+
+  it("WASM 返回 error 时抛出，不把半截数据当结果", async () => {
+    const w = await loadWasm();
+    glue.arrange_jianpu_sequence_to_jianzi.mockReturnValue(
+      '{"error":"bad tuning"}',
+    );
+
+    await expect(w.arrangeJianpuSequence([], "nope")).rejects.toThrow(
+      "bad tuning",
+    );
+  });
+
+  it("字段缺失时退回安全默认值（旧产物不会把界面搞崩）", async () => {
+    const w = await loadWasm();
+    glue.arrange_jianpu_sequence_to_jianzi.mockReturnValue("{}");
+
+    const out = await w.arrangeJianpuSequence([], "zheng");
+    expect(out.candidates_per_note).toEqual([]);
+    expect(out.selections).toEqual([]);
+    expect(out.stats).toEqual({
+      string_changes: 0,
+      finger_shifts: 0,
+      technique_switches: 0,
+    });
+    expect(out.identical_to_greedy).toBe(false);
+  });
+});
+
+/**
+ * 编排效果的文案。
+ *
+ * 这里钉的不是措辞好不好听，而是**不许撒谎**：没减少的项不能提，
+ * 换了落点但移动次数没变时不能说「已优化」，本来就最顺时要直说。
+ * 一旦这层开始邀功，用户下次就不信这个按钮了。
+ */
+describe("taiyin-wasm · describeArrangement 说人话", () => {
+  const base = {
+    candidates_per_note: [],
+    selections: [],
+    total_cost: 0,
+    stats: { string_changes: 0, finger_shifts: 0, technique_switches: 0 },
+    greedy_stats: { string_changes: 3, finger_shifts: 1, technique_switches: 2 },
+    identical_to_greedy: false,
+  };
+
+  it("只说真的减少了的项", async () => {
+    const w = await loadWasm();
+    expect(w.describeArrangement(base)).toBe(
+      "已编排：少 3 次换弦、少 2 次音色切换、少 1 次挪手",
+    );
+  });
+
+  it("只改善音色切换时不提换弦", async () => {
+    const w = await loadWasm();
+    const text = w.describeArrangement({
+      ...base,
+      stats: { string_changes: 3, finger_shifts: 1, technique_switches: 0 },
+    });
+    expect(text).toBe("已编排：少 2 次音色切换");
+    expect(text).not.toContain("换弦");
+  });
+
+  it("换了落点但移动次数不变，不吹「已优化」", async () => {
+    const w = await loadWasm();
+    expect(
+      w.describeArrangement({
+        ...base,
+        stats: { string_changes: 3, finger_shifts: 1, technique_switches: 2 },
+      }),
+    ).toBe("已重排：落点换了，手的移动次数和逐音挑选一样");
+  });
+
+  it("本来就最顺时直说，不邀功", async () => {
+    const w = await loadWasm();
+    expect(
+      w.describeArrangement({ ...base, identical_to_greedy: true }),
+    ).toContain("已经是最顺");
   });
 });
 

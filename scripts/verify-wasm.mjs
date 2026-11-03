@@ -91,6 +91,36 @@ check(
 );
 check("arrange: total cost present", typeof arranged.total_cost === "number");
 
+// 活动量：界面要靠它把「省了几次换弦」说成琴人能懂的话
+check(
+  "arrange: stats present",
+  typeof arranged.stats?.string_changes === "number" &&
+    typeof arranged.stats?.finger_shifts === "number" &&
+    typeof arranged.stats?.technique_switches === "number",
+  JSON.stringify(arranged.stats),
+);
+check(
+  "arrange: greedy_stats present",
+  typeof arranged.greedy_stats?.string_changes === "number" &&
+    typeof arranged.greedy_stats?.finger_shifts === "number",
+  JSON.stringify(arranged.greedy_stats),
+);
+check(
+  "arrange: identical flag is boolean",
+  typeof arranged.identical_to_greedy === "boolean",
+);
+// 换弦次数不可能超过相邻音对数（5 个音最多 4 次）
+check(
+  "arrange: string_changes within bounds",
+  arranged.stats.string_changes <= 4 && arranged.greedy_stats.string_changes <= 4,
+  `${arranged.stats.string_changes}/${arranged.greedy_stats.string_changes}`,
+);
+console.log(
+  `info arrange stats=${JSON.stringify(arranged.stats)} greedy=${JSON.stringify(
+    arranged.greedy_stats,
+  )} identical=${arranged.identical_to_greedy}`,
+);
+
 // 同音反复不该换弦横跳——这条能挡住「wasm 没重编、还在跑旧产物」
 const repeated = JSON.parse(
   mod.arrange_jianpu_sequence_to_jianzi(
@@ -106,6 +136,12 @@ check(
   "arrange: repeated note stays on one string",
   repeatedStrings.every((s) => s === repeatedStrings[0]),
   repeatedStrings.join(","),
+);
+// 同音反复时逐音挑选本来就选对了，界面不该硬夸「已优化」
+check(
+  "arrange: repeated note reports identical to greedy",
+  repeated.identical_to_greedy === true,
+  `identical=${repeated.identical_to_greedy}`,
 );
 
 // 3. 蕤宾调：4 应出现五弦散音候选；正调则没有

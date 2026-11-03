@@ -134,6 +134,16 @@ export async function translateJianpuSequenceToJianzi(
   return wasm.translate_jianpu_sequence_to_jianzi(input);
 }
 
+/** 一条指法路径的活动量——界面用它把「编排省了什么」说成人话。 */
+export interface PathStats {
+  /** 换弦次数。 */
+  string_changes: number;
+  /** 同指挪位次数（同一根手指跨徽，整只手要动）。 */
+  finger_shifts: number;
+  /** 散 / 泛 / 按 之间的切换次数。 */
+  technique_switches: number;
+}
+
 /** 全局指法编排结果。候选与选中项出自同一次计算，索引天然对齐。 */
 export interface JianpuArrangement {
   /** 每个音的候选减字（被选中的那一个恒排首位）。 */
@@ -142,7 +152,19 @@ export interface JianpuArrangement {
   selections: (number | null)[];
   /** 整句总代价，越小越顺。 */
   total_cost: number;
+  /** 编排结果的活动量。 */
+  stats: PathStats;
+  /** 同一段简谱逐音取第一名时的活动量，作为对照。 */
+  greedy_stats: PathStats;
+  /** 编排结果与逐音挑选是否完全一样（此时不该夸「已优化」）。 */
+  identical_to_greedy: boolean;
 }
+
+const EMPTY_STATS: PathStats = {
+  string_changes: 0,
+  finger_shifts: 0,
+  technique_switches: 0,
+};
 
 /**
  * 整段简谱的全局指法编排（Rust 端 Viterbi 动态规划）。
@@ -164,7 +186,40 @@ export async function arrangeJianpuSequence(
     candidates_per_note: raw.candidates_per_note ?? [],
     selections: raw.selections ?? [],
     total_cost: raw.total_cost ?? 0,
+    stats: raw.stats ?? EMPTY_STATS,
+    greedy_stats: raw.greedy_stats ?? EMPTY_STATS,
+    identical_to_greedy: Boolean(raw.identical_to_greedy),
   };
+}
+
+/**
+ * 把编排结果说成一句人话。
+ *
+ * 只说琴人能直接感觉到的三件事（换弦 / 音色切换 / 挪手），并且**只说真的减少了的**：
+ * 编排换了落点但移动次数没变时，不该编一句「已优化」来邀功；本来就最顺的时候，
+ * 更应该直说「这条已经是最顺的」——否则用户下次不信这个按钮。
+ */
+export function describeArrangement(result: JianpuArrangement): string {
+  if (result.identical_to_greedy) {
+    return "这条已经是最顺的走法，逐音挑选和整句编排选的是同一个";
+  }
+
+  const parts: string[] = [];
+  const stringSaved =
+    result.greedy_stats.string_changes - result.stats.string_changes;
+  const toneSaved =
+    result.greedy_stats.technique_switches - result.stats.technique_switches;
+  const shiftSaved =
+    result.greedy_stats.finger_shifts - result.stats.finger_shifts;
+
+  if (stringSaved > 0) parts.push(`少 ${stringSaved} 次换弦`);
+  if (toneSaved > 0) parts.push(`少 ${toneSaved} 次音色切换`);
+  if (shiftSaved > 0) parts.push(`少 ${shiftSaved} 次挪手`);
+
+  if (parts.length === 0) {
+    return "已重排：落点换了，手的移动次数和逐音挑选一样";
+  }
+  return `已编排：${parts.join("、")}`;
 }
 
 /**

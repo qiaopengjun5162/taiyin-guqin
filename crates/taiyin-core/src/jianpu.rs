@@ -610,6 +610,51 @@ fn transition_cost(prev: &GuqinNote, curr: &GuqinNote) -> i64 {
     cost
 }
 
+/// 一条指法路径的「活动量」——用来把编排的效果说成人话。
+///
+/// 只统计**琴人能直接感觉到**的三件事：换弦、同指挪位（整只手要动）、技法切换。
+/// 刻意不报总代价：那是个抽象分数，涨了跌了对弹琴的人没有意义。
+/// 用户要的是「这一版手少跑几趟」，不是「代价从 1234 降到 1102」。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct PathStats {
+    /// 换弦次数（相邻两音弦序不同）。
+    pub string_changes: u32,
+    /// 同指挪位：同一根手指跨过阈值，手必须整只移动。
+    pub finger_shifts: u32,
+    /// 技法切换次数（散 / 泛 / 按 之间切换）。
+    pub technique_switches: u32,
+}
+
+/// 统计一条已定的音序的活动量。
+///
+/// 判定条件必须与 [`transition_cost`] 里的完全一致，否则「省了几次换弦」
+/// 会跟算法实际优化的目标对不上——界面说省了三次，实际是另一件事。
+fn path_stats(notes: &[GuqinNote]) -> PathStats {
+    let mut stats = PathStats::default();
+    for pair in notes.windows(2) {
+        let (prev, curr) = (&pair[0], &pair[1]);
+        let prev_pos = position_from_note(prev);
+        let curr_pos = position_from_note(curr);
+
+        if prev_pos.string != curr_pos.string {
+            stats.string_changes += 1;
+        }
+        if prev.note_type != curr.note_type {
+            stats.technique_switches += 1;
+        }
+
+        let both_stopped = prev.note_type != NoteType::SanYin && curr.note_type != NoteType::SanYin;
+        if both_stopped
+            && let (Some(a), Some(b)) = (prev.left_finger, curr.left_finger)
+            && a == b
+            && (prev_pos.ratio - curr_pos.ratio).abs() > SAME_FINGER_SHIFT_RATIO
+        {
+            stats.finger_shifts += 1;
+        }
+    }
+    stats
+}
+
 /// 全局编排结果。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Arrangement {
@@ -623,6 +668,15 @@ pub struct Arrangement {
     pub selections: Vec<Option<usize>>,
     /// 整条路径的总代价，越小越顺。没有可编排的音时为 0。
     pub total_cost: i64,
+    /// 编排结果的活动量。
+    pub stats: PathStats,
+    /// 同一段简谱改用「逐音取第一名」时的活动量，作为对照。
+    pub greedy_stats: PathStats,
+    /// 编排结果与逐音挑选是否**完全一样**（每个音的落点都相同）。
+    ///
+    /// 这个字段是给界面说真话用的：短句或本来就很顺的旋律，全局最优可能就是
+    /// 逐音最优，这时候不该编一句「已优化」来邀功。
+    pub identical_to_greedy: bool,
 }
 
 /// 为整段简谱求出全局最连贯的一套指法。
@@ -726,6 +780,23 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
         }
     }
 
+    // 贪心基线：每个音都取自己单音评分第一名的那个落点。
+    //
+    // 必须在重排之前取——重排会把 DP 选中的候选挪到首位，之后再取就成了
+    // 「拿编排结果当自己的对照组」，差值永远为零。
+    let greedy_notes: Vec<GuqinNote> = candidates_per_note
+        .iter()
+        .filter_map(|cands| cands.first().map(|c| c.note.clone()))
+        .collect();
+
+    // 编排路径本身（顺序与 greedy_notes 相同：都跳过没落点的音）。
+    // 同样在重排前取，此时 selections 还是原始候选下标，语义最直白。
+    let arranged_notes: Vec<GuqinNote> = selections
+        .iter()
+        .enumerate()
+        .filter_map(|(i, sel)| sel.map(|j| candidates_per_note[i][j].note.clone()))
+        .collect();
+
     // 把选中的候选提到首位，其余保持单音评分顺序。
     //
     // 不整体按 dp 值重排：那样「150 分」会排在「90 分」后面，
@@ -744,6 +815,9 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
     }
 
     Arrangement {
+        stats: path_stats(&arranged_notes),
+        greedy_stats: path_stats(&greedy_notes),
+        identical_to_greedy: arranged_notes == greedy_notes,
         candidates_per_note,
         selections,
         total_cost,
@@ -1100,6 +1174,13 @@ mod tests {
                 );
                 if arranged.total_cost < greedy {
                     strictly_better += 1;
+                    // 代价严格更小必然意味着换了落点；若这里报 false，
+                    // 说明 identical 判定取错了路径（比如拿重排后的候选去比）。
+                    assert!(
+                        !arranged.identical_to_greedy,
+                        "代价更小却报告「与逐音挑选一致」：{:?} / {:?}",
+                        melody, tuning
+                    );
                 }
             }
         }
@@ -1223,5 +1304,58 @@ mod tests {
             "同音反复不该换弦横跳：{:?}",
             strings
         );
+    }
+
+    // ── 活动量统计（界面上的「省了几次换弦」） ──────────
+
+    #[test]
+    fn test_path_stats_counts_what_it_says() {
+        let note = |string: u8| {
+            GuqinNote::open_string(
+                RightAction::Tiao,
+                StringNumber::new(string).expect("弦序 1..=7"),
+            )
+        };
+        // 一弦 → 三弦：换一次弦，都是散音，没有按点
+        let stats = path_stats(&[note(1), note(3)]);
+        assert_eq!(stats.string_changes, 1);
+        assert_eq!(stats.technique_switches, 0);
+        assert_eq!(stats.finger_shifts, 0);
+
+        // 同一根弦连弹：什么都不算
+        let same = path_stats(&[note(2), note(2)]);
+        assert_eq!(same, PathStats::default());
+    }
+
+    /// 单音序列必然「与逐音挑选一致」——没有第二个音，就没有可优化的移动。
+    ///
+    /// 这也是界面文案的分水岭：这种情况不该说「已优化」。
+    #[test]
+    fn test_arrange_single_note_is_identical_to_greedy() {
+        let arranged = arrange_sequence(&[JianpuNote::new(1, 1)], Tuning::ZhengDiao);
+        assert!(arranged.identical_to_greedy);
+        assert_eq!(arranged.stats, arranged.greedy_stats);
+        assert_eq!(arranged.stats.string_changes, 0);
+    }
+
+    /// 两个统计字段必须自洽：报告「一致」时，活动量也一定相同。
+    #[test]
+    fn test_arrange_stats_consistent_with_identical_flag() {
+        for melody in sample_melodies() {
+            for tuning in [Tuning::ZhengDiao, Tuning::RuiBin, Tuning::ManJiao] {
+                let arranged = arrange_sequence(&melody, tuning);
+                if arranged.identical_to_greedy {
+                    assert_eq!(
+                        arranged.stats, arranged.greedy_stats,
+                        "{:?} 报告与逐音挑选一致，活动量却不同",
+                        melody
+                    );
+                }
+                // 换弦次数不可能超过相邻音对数
+                let pairs = melody.len().saturating_sub(1) as u32;
+                assert!(arranged.stats.string_changes <= pairs);
+                assert!(arranged.greedy_stats.string_changes <= pairs);
+            }
+        }
     }
 }

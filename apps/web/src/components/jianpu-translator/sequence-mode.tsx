@@ -3,7 +3,12 @@
 import { useState } from "react";
 import type { NoteColumn, JianpuNumber } from "@/lib/types";
 import { createEmptyState } from "@/lib/jianzi";
-import { translateJianpuSequenceToJianzi, arrangeJianpuSequence } from "@/lib/taiyin-wasm";
+import {
+  translateJianpuSequenceToJianzi,
+  arrangeJianpuSequence,
+  describeArrangement,
+  type JianpuArrangement,
+} from "@/lib/taiyin-wasm";
 import { selectCandidates } from "@/lib/api";
 import { useNotePreview } from "@/lib/use-note-preview";
 import {
@@ -38,8 +43,11 @@ export function SequenceMode({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiHint, setAiHint] = useState<string | null>(null);
   const [arrangeLoading, setArrangeLoading] = useState(false);
-  // 全局编排后的整句代价；用户手动改选后就不再代表当前路径，所以改动即清空。
-  const [arrangedCost, setArrangedCost] = useState<number | null>(null);
+  // 上一次编排的完整结果（含两条路径的活动量）。用户手动改选后就不再代表
+  // 当前这组选择，所以改动即清空——留着一个对不上的数字比不显示更糟。
+  const [arrangeResult, setArrangeResult] = useState<JianpuArrangement | null>(
+    null,
+  );
 
   const preview = useNotePreview(TUNING_TO_ID[tuning]);
 
@@ -89,7 +97,7 @@ export function SequenceMode({
       setCandidatesPerNote(aligned);
       setSelectedIndex(parsed.map(() => 0));
       setNotesTuning(tuning);
-      setArrangedCost(null);
+      setArrangeResult(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "翻译失败");
     } finally {
@@ -145,7 +153,7 @@ export function SequenceMode({
     setNotes([]);
     setCandidatesPerNote([]);
     setSelectedIndex([]);
-    setArrangedCost(null);
+    setArrangeResult(null);
   }
 
   function handleClear() {
@@ -154,7 +162,7 @@ export function SequenceMode({
     setCandidatesPerNote([]);
     setSelectedIndex([]);
     setAiHint(null);
-    setArrangedCost(null);
+    setArrangeResult(null);
   }
 
   /**
@@ -199,7 +207,7 @@ export function SequenceMode({
 
       setCandidatesPerNote(alignedCands);
       setSelectedIndex(alignedSel);
-      setArrangedCost(result.total_cost);
+      setArrangeResult(result);
       setAiHint(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "编排失败");
@@ -233,7 +241,7 @@ export function SequenceMode({
       });
       setAiHint(method === "llm" ? "AI 已优选" : "未配置 LLM，按启发式选择");
       // AI 优选换了路径，之前的编排代价不再对应现在这组选择
-      setArrangedCost(null);
+      setArrangeResult(null);
     } catch {
       setAiHint("AI 优选失败");
     } finally {
@@ -248,7 +256,7 @@ export function SequenceMode({
       return next;
     });
     // 手动改选后整句代价已经不对应了，别把旧数字继续挂在界面上
-    setArrangedCost(null);
+    setArrangeResult(null);
   }
 
   return (
@@ -308,9 +316,9 @@ export function SequenceMode({
             >
               清空
             </button>
-            {arrangedCost !== null && (
+            {arrangeResult && (
               <span className="text-[10px] tracking-wider text-amber-800/70">
-                已按整句连贯重排
+                已编排
               </span>
             )}
             {aiHint && (
@@ -321,6 +329,12 @@ export function SequenceMode({
           </>
         )}
       </div>
+      {/* 编排到底省了什么，单独一行说清楚：塞在按钮行里会被挤成省略号 */}
+      {arrangeResult && notesTuning === tuning && (
+        <p className="text-[10px] leading-relaxed tracking-wider text-amber-800/70">
+          {describeArrangement(arrangeResult)}
+        </p>
+      )}
       {error && (
         <p className="text-[10px] tracking-wider text-red-400/80">{error}</p>
       )}

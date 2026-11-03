@@ -59,12 +59,17 @@ pub fn translate_jianpu_sequence_to_jianzi(input_json: &str) -> String {
 ///
 /// 输入 JSON: `{"notes": [{"number": 5, "octave": 0}], "tuning": "ruibin"?}`
 /// 输出 JSON:
-/// `{"candidates_per_note": [[...]], "selections": [0, 0, null], "total_cost": 1234}`
+/// `{"candidates_per_note": [[...]], "selections": [0, 0, null], "total_cost": 1234,
+///   "stats": {...}, "greedy_stats": {...}, "identical_to_greedy": false}`
 ///
 /// 与 `translate_jianpu_sequence_to_jianzi` 的区别：那一版逐音贪心，只跟前一个音
 /// 比远近；这一版把整句当一条路径求全局最优，牺牲个别音的单音舒适度，
 /// 换取整句少换把、少跨弦。两个字段（候选 / 选中）出自同一次计算，
 /// 前端照单全收，不需要按索引去猜另一份数据。
+///
+/// `stats` / `greedy_stats` 是同一段简谱两条路径的活动量（换弦、同指挪位、
+/// 技法切换），界面据此把「编排到底省了什么」说成琴人能懂的话；
+/// `identical_to_greedy` 让界面在没有改善时不必硬夸。
 #[wasm_bindgen]
 pub fn arrange_jianpu_sequence_to_jianzi(input_json: &str) -> String {
     let req: SequenceRequest = match serde_json::from_str(input_json) {
@@ -77,6 +82,9 @@ pub fn arrange_jianpu_sequence_to_jianzi(input_json: &str) -> String {
         "candidates_per_note": arrangement.candidates_per_note,
         "selections": arrangement.selections,
         "total_cost": arrangement.total_cost,
+        "stats": arrangement.stats,
+        "greedy_stats": arrangement.greedy_stats,
+        "identical_to_greedy": arrangement.identical_to_greedy,
     })
     .to_string()
 }
