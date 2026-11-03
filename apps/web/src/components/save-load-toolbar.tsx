@@ -86,12 +86,27 @@ export function SaveLoadToolbar({
       <button
         onClick={onSave}
         disabled={!hasNotes || saveStatus === "saving"}
-        aria-label="保存"
+        aria-label={storageMode === "server" ? "发布到社区" : "保存"}
         className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
       >
-        {saveStatus === "saving" ? "保存中…" : saveStatus === "saved" ? "已保存" : saveStatus === "error" ? "保存失败" : "保存"}
+        {saveStatus === "saving"
+          ? "保存中…"
+          : saveStatus === "saved"
+            ? "已保存"
+            : saveStatus === "error"
+              ? "保存失败"
+              : storageMode === "server"
+                ? "发布到社区"
+                : "保存"}
       </button>
-      {storageMode === "browser" && (
+      {storageMode === "server" ? (
+        <span
+          title="已保存即公开发布到社区共享池，任何人都看得到、也都能打开。后端是无鉴权共享，先确认这首谱可以公开再发布。"
+          className="px-1.5 py-1 rounded text-[9px] tracking-wider text-vermillion border border-vermillion/30 whitespace-nowrap"
+        >
+          已发布（公开）
+        </span>
+      ) : (
         <span
           title="当前是纯前端版本（未连接后端），曲谱保存在本机浏览器，换设备或清缓存会丢失；可用「导出文本」备份。"
           className="px-1.5 py-1 rounded text-[9px] tracking-wider text-amber-700/50 border border-amber-700/20 whitespace-nowrap"

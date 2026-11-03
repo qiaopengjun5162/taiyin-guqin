@@ -52,6 +52,7 @@ describe("SaveLoadToolbar", () => {
         onLoad={vi.fn()}
         hasNotes
         saveStatus="idle"
+        storageMode="browser"
       />,
     );
     const input = container.querySelector("input[type='text']") as HTMLInputElement;
@@ -60,6 +61,7 @@ describe("SaveLoadToolbar", () => {
     expect(container.textContent).toContain("重做");
     expect(container.textContent).toContain("保存");
     expect(container.textContent).toContain("加载");
+    expect(container.textContent).toContain("存本机");
   });
 
   it("calls onUndo and onRedo when clicked", () => {
@@ -139,7 +141,7 @@ describe("SaveLoadToolbar", () => {
     expect(onTitleBlur).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onSave and onLoad when clicked", () => {
+  it("server 模式下点击「发布到社区」触发 onSave", () => {
     const onSave = vi.fn();
     const onLoad = vi.fn();
     const { getByText } = render(
@@ -150,12 +152,49 @@ describe("SaveLoadToolbar", () => {
         onLoad={onLoad}
         hasNotes
         saveStatus="idle"
+        storageMode="server"
+      />,
+    );
+    // server 模式保存即公开发布，按钮文字变「发布到社区」
+    fireEvent.click(getByText("发布到社区"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    fireEvent.click(getByText("加载"));
+    expect(onLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it("browser 模式下点击「保存」触发 onSave，显示「存本机」", () => {
+    const onSave = vi.fn();
+    const { getByText, queryByText } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={onSave}
+        onLoad={vi.fn()}
+        hasNotes
+        saveStatus="idle"
+        storageMode="browser"
       />,
     );
     fireEvent.click(getByText("保存"));
     expect(onSave).toHaveBeenCalledTimes(1);
-    fireEvent.click(getByText("加载"));
-    expect(onLoad).toHaveBeenCalledTimes(1);
+    expect(getByText("存本机")).toBeTruthy();
+    expect(queryByText(/已发布/)).toBeNull();
+  });
+
+  it("server 模式显示「已发布（公开）」标签而非「存本机」", () => {
+    const { getByText, queryByText } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        hasNotes
+        saveStatus="idle"
+        storageMode="server"
+      />,
+    );
+    expect(getByText("已发布（公开）")).toBeTruthy();
+    expect(queryByText("存本机")).toBeNull();
   });
 
   it("shows PNG export button when hasNotes and onExportPng provided", () => {

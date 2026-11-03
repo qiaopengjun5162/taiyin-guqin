@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   createScore: vi.fn(),
   updateScore: vi.fn(),
   listScores: vi.fn(),
+  localListScores: vi.fn(),
   getScore: vi.fn(),
   deleteScore: vi.fn(),
   exportPng: vi.fn(),
@@ -100,10 +101,11 @@ vi.mock("@/lib/api", () => {
     getScore: h.getScore,
     updateScore: h.updateScore,
     deleteScore: h.deleteScore,
+    localListScores: h.localListScores,
     selectCandidates: vi.fn(),
     recognizeJianzi: vi.fn(),
     recognizeJianziSheet: vi.fn(),
-    scoreStorageMode: () => "server",
+    scoreStorageMode: () => "browser",
     // jsdom 跑在 localhost，与真实判定一致：有后端模式
     isBrowserOnlyMode: () => false,
   };
@@ -156,6 +158,7 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   h.renderScoreToBuffer.mockResolvedValue({ length: 1024 } as unknown as AudioBuffer);
   h.listScores.mockResolvedValue([]);
+  h.localListScores.mockResolvedValue([]);
   h.createScore.mockResolvedValue({ id: "new-id", title: "", notes: [] });
   h.updateScore.mockResolvedValue(undefined);
   h.getScore.mockResolvedValue({ notes: [] });

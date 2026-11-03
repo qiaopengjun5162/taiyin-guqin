@@ -9,6 +9,10 @@ import {
 } from "./local-score-store";
 import { getStoredApiBase } from "./settings";
 
+/** 本地曲谱读写：连后端时，首页「本机」tab 用它们直接操作浏览器存储，
+ *  不走 api 的 server/browser 分支判断（否则本地 id 会被误发到服务器）。 */
+export { localListScores, localGetScore, localDeleteScore };
+
 /**
  * 解析后端地址：运行时设置（设置面板）> 构建期环境变量 > 无。
  * 做成函数而非模块级常量，因为运行时设置可能随时变（用户在设置里改了后端地址）。

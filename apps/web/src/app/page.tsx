@@ -12,7 +12,7 @@ import { PracticeLogPanel } from "@/components/practice-log-panel";
 import { TunerPanel } from "@/components/tuner-panel";
 import { QinBoard } from "@/components/qin-board";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
-import { LoadDialog } from "@/components/load-dialog";
+import { LoadDialog, type LoadDialogTab } from "@/components/load-dialog";
 import { BackendSettings } from "@/components/backend-settings";
 import { ExportFooter } from "@/components/export-footer";
 import { JianpuTranslator } from "@/components/jianpu-translator";
@@ -86,7 +86,7 @@ export default function Home() {
 
   // 持久化状态
   const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
-  const [savedScores, setSavedScores] = useState<api.ScoreListItem[]>([]);
+  const [loadTabs, setLoadTabs] = useState<LoadDialogTab[]>([]);
   // 纯前端模式（静态托管无后端）时，曲谱改存浏览器本地，需在 UI 上说明。
   // 用 useSyncExternalStore 读取「仅浏览器可得」的值：服务端快照固定为 server，
   // 挂载后取真实值，既不触发水合不一致，也避免在 effect 里同步 setState。
@@ -281,23 +281,53 @@ export default function Home() {
     }
   }
 
-  /** 打开加载对话框（拉取后端列表） */
+  /** 打开加载对话框：连后端时同时拉「社区共享谱」与「本机谱」两个 tab */
   async function openLoadDialog() {
     try {
-      const list = await api.listScores();
-      setSavedScores(list);
+      if (storageMode === "server") {
+        const serverList = await api.listScores(); // 失败走外层 catch 提示
+        let localList: api.ScoreListItem[] = [];
+        try {
+          localList = await api.localListScores();
+        } catch {
+          // 隐私模式 / IndexedDB 不可用：本机 tab 直接为空即可，不影响社区浏览
+        }
+        const tabs: LoadDialogTab[] = [
+          { key: "community", label: "社区曲谱", scores: serverList, readOnly: true },
+        ];
+        if (localList.length > 0) {
+          tabs.push({ key: "local", label: "本机", scores: localList });
+        }
+        setLoadTabs(tabs);
+      } else {
+        const localList = await api.listScores();
+        setLoadTabs([{ key: "local", label: "已保存的曲谱", scores: localList }]);
+      }
       setShowLoadDialog(true);
     } catch {
       showError("无法连接到服务器，请确认后端已启动");
     }
   }
 
-  /** 删除选中的曲谱 */
+  /**
+   * 删除选中的本机曲谱。社区 tab 是只读（readOnly），不提供删除按钮，
+   * 所以 onDelete 只可能来自本机 tab——直接走本地存储，不走 api 的 server 分支。
+   */
   async function handleDeleteScore(id: string, title: string) {
     if (!confirm(`确认删除「${title}」？`)) return;
     try {
-      await api.deleteScore(id);
-      setSavedScores((prev) => prev.filter((s) => s.id !== id));
+      // 本机 tab 的谱存在浏览器本地：仅 server 模式走本地删除；
+      // browser 模式（纯前端）统一走 api.deleteScore（其内部已落本地存储，mock 也覆盖到了）。
+      if (storageMode === "server") {
+        await api.localDeleteScore(id);
+      } else {
+        await api.deleteScore(id);
+      }
+      setLoadTabs((prev) =>
+        prev.map((t) =>
+          t.key === "local" ? { ...t, scores: t.scores.filter((s) => s.id !== id) } : t,
+        ),
+      );
       if (currentScoreId === id) {
         setScore([]);
         setScoreTitle("未命名曲谱");
@@ -306,20 +336,27 @@ export default function Home() {
     } catch {
       showError("删除失败");
     }
-    // 刷新列表
-    try { setSavedScores(await api.listScores()); } catch {}
   }
 
-  /** 加载选中的曲谱 */
-  async function handleLoadScore(id: string) {
+  /**
+   * 加载选中的曲谱。
+   * browser 模式下 api.getScore 内部已走本地存储，无需分流；
+   * 仅 server 模式下的「本机」tab 才强制走本地——否则 api.getScore 会把本地 id 发到服务器而 404。
+   */
+  async function handleLoadScore(id: string, tabKey: string) {
     try {
-      const scoreData = await api.getScore(id);
+      const scoreData =
+        storageMode === "server" && tabKey === "local"
+          ? await api.localGetScore(id)
+          : await api.getScore(id);
       commitScore(() => scoreData.notes);
       commitScoreTitle(scoreData.title);
       // 回到这首谱自己的定弦：换定弦后再加载，若沿用当前设置，
       // 接着往里加的音就会按错定弦反推（差半音且不易察觉）。
       setTuning(scoreData.tuning);
-      setCurrentScoreId(scoreData.id);
+      // 本机谱的 id（local-xxx）与服务器 id 体系不互通：若保留，下次
+      // 「发布到社区」会走 updateScore(本地id) 命中服务器 404。置 null 让发布即新建。
+      setCurrentScoreId(storageMode === "server" && tabKey === "local" ? null : scoreData.id);
       setShowLoadDialog(false);
       setEditingIndex(null);
     } catch {
@@ -635,7 +672,7 @@ export default function Home() {
         key={showLoadDialog ? "load-open" : "load-closed"}
         open={showLoadDialog}
         onClose={() => setShowLoadDialog(false)}
-        scores={savedScores}
+        tabs={loadTabs}
         onLoad={handleLoadScore}
         onDelete={handleDeleteScore}
       />

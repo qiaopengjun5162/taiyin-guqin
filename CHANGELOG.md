@@ -1,5 +1,34 @@
 # 更新日志
 
+## [0.14.0] - 2026-11-03
+
+### 新增（接通琴友社区 · Step 2+3）
+
+- **加载对话框支持「社区 / 本机」双 tab**（接通社区/分享 系列）。连后端时 `LoadDialog`
+  同时列出「社区曲谱」（服务器无鉴权共享池、只读、不提供删除）与「本机」（浏览器本地谱）；
+  单 tab 时退化为原有「已保存的曲谱」列表。切换 tab 会清空搜索词，避免旧关键词跨分类串味。
+- **保存按钮明示「发布到社区」语义**。`SaveLoadToolbar` 在 server 模式下按钮文案变
+  「发布到社区」、并标注「已发布（公开）」朱砂标签（提示：保存即公开进共享池、任何人可看）；
+  browser 模式维持「保存 / 存本机」。保存成功/失败两态保持中性的「已保存 / 保存失败」，
+  只有 idle 态才随模式切换措辞，避免状态文案随环境漂移。
+- `api.ts` 额外导出 `localListScores / localGetScore / localDeleteScore`：本机 tab 的
+  读写直接落浏览器存储，不走「server/browser 分支判断」，否则本地 id 会被误发到服务器 404。
+  连后端时若本地存储不可用（隐私模式 / IndexedDB 异常），本机 tab 静默降级为空，不影响社区浏览。
+
+### 修复
+
+- `page.tsx` 加载/删除/打开逻辑按 tab 分流：community tab 走服务器、local tab 强制走本机；
+  本机谱 id（local-xxx）与服务器 id 体系不互通，从其加载后 `currentScoreId` 置空，
+  使后续「发布到社区」走新建而非 `updateScore(本地id)` 命中 404。
+
+### 测试
+
+- `load-dialog.test.tsx` 重写：覆盖双 tab、社区只读（无删除按钮）、加载回传 tabKey、
+  切 tab 清搜索；`save-load-toolbar.test.tsx` 增补 server 模式「发布到社区 / 已发布（公开）」
+  与 browser 模式「保存 / 存本机」断言；`page-interactions.test.tsx` 补齐 api mock
+  （`localListScores` 等）并固定 `scoreStorageMode: "browser"`，使加载/删除状态机在
+  纯前端模式下验证（server 双 tab 行为由 `load-dialog` 单测专守）。
+
 ## [0.13.0] - 2026-11-02
 
 ### 修复
