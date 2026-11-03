@@ -52,6 +52,62 @@ const seq = JSON.parse(
 );
 check("sequence: two candidate lists", seq.candidates_per_note?.length === 2);
 
+// 2b. 全局指法编排：候选与选中项出自同一次计算，选中的恒排首位
+const arranged = JSON.parse(
+  mod.arrange_jianpu_sequence_to_jianzi(
+    JSON.stringify({
+      notes: [
+        { number: 5, octave: 0 },
+        { number: 6, octave: 0 },
+        { number: 1, octave: 1 },
+        { number: 2, octave: 1 },
+        { number: 3, octave: 1 },
+      ],
+      tuning: "zheng",
+    }),
+  ),
+);
+check(
+  "arrange: one candidate list per note",
+  arranged.candidates_per_note?.length === 5,
+  `len=${arranged.candidates_per_note?.length}`,
+);
+check(
+  "arrange: one selection per note",
+  arranged.selections?.length === 5,
+  `len=${arranged.selections?.length}`,
+);
+check(
+  "arrange: every note has a pick",
+  arranged.selections?.every((s) => typeof s === "number"),
+  JSON.stringify(arranged.selections),
+);
+check(
+  "arrange: selection points at the head of its list",
+  arranged.candidates_per_note?.every((cands, i) => {
+    const sel = arranged.selections[i];
+    return cands.length > 0 && (sel === 0 || sel === null);
+  }),
+);
+check("arrange: total cost present", typeof arranged.total_cost === "number");
+
+// 同音反复不该换弦横跳——这条能挡住「wasm 没重编、还在跑旧产物」
+const repeated = JSON.parse(
+  mod.arrange_jianpu_sequence_to_jianzi(
+    JSON.stringify({
+      notes: Array.from({ length: 4 }, () => ({ number: 5, octave: 0 })),
+    }),
+  ),
+);
+const repeatedStrings = repeated.candidates_per_note.map(
+  (c) => c[0].note.string_number,
+);
+check(
+  "arrange: repeated note stays on one string",
+  repeatedStrings.every((s) => s === repeatedStrings[0]),
+  repeatedStrings.join(","),
+);
+
 // 3. 蕤宾调：4 应出现五弦散音候选；正调则没有
 const ruibin = JSON.parse(
   mod.translate_jianpu_to_jianzi(JSON.stringify({ number: 4, octave: 1, tuning: "ruibin" })),

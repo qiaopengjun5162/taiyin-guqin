@@ -55,6 +55,32 @@ pub fn translate_jianpu_sequence_to_jianzi(input_json: &str) -> String {
     serde_json::json!({ "candidates_per_note": result }).to_string()
 }
 
+/// 整段简谱的**全局指法编排**（Viterbi 动态规划）。
+///
+/// 输入 JSON: `{"notes": [{"number": 5, "octave": 0}], "tuning": "ruibin"?}`
+/// 输出 JSON:
+/// `{"candidates_per_note": [[...]], "selections": [0, 0, null], "total_cost": 1234}`
+///
+/// 与 `translate_jianpu_sequence_to_jianzi` 的区别：那一版逐音贪心，只跟前一个音
+/// 比远近；这一版把整句当一条路径求全局最优，牺牲个别音的单音舒适度，
+/// 换取整句少换把、少跨弦。两个字段（候选 / 选中）出自同一次计算，
+/// 前端照单全收，不需要按索引去猜另一份数据。
+#[wasm_bindgen]
+pub fn arrange_jianpu_sequence_to_jianzi(input_json: &str) -> String {
+    let req: SequenceRequest = match serde_json::from_str(input_json) {
+        Ok(r) => r,
+        Err(e) => return json_error(&e),
+    };
+    let tuning = req.tuning.unwrap_or(crate::jianpu::Tuning::ZhengDiao);
+    let arrangement = crate::jianpu::arrange_sequence(&req.notes, tuning);
+    serde_json::json!({
+        "candidates_per_note": arrangement.candidates_per_note,
+        "selections": arrangement.selections,
+        "total_cost": arrangement.total_cost,
+    })
+    .to_string()
+}
+
 /// 减字字典（字全表）—— 返回经筛选 / 搜索后的减字目录。
 ///
 /// 输入 JSON: `{"tone":"","left":"","action":"","string":"","query":""}`（各字段均可省略）。

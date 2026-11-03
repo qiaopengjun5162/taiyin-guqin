@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 interface WasmModule {
   translate_jianpu_to_jianzi(input_json: string): string;
   translate_jianpu_sequence_to_jianzi(input_json: string): string;
+  arrange_jianpu_sequence_to_jianzi(input_json: string): string;
   get_jianzi_dictionary(input_json: string): string;
   analyze_jianzi_frequency(input_json: string): string;
   get_jianzi_variant_groups(): string;
@@ -131,6 +132,39 @@ export async function translateJianpuSequenceToJianzi(
 ): Promise<string> {
   const wasm = await getWasm();
   return wasm.translate_jianpu_sequence_to_jianzi(input);
+}
+
+/** 全局指法编排结果。候选与选中项出自同一次计算，索引天然对齐。 */
+export interface JianpuArrangement {
+  /** 每个音的候选减字（被选中的那一个恒排首位）。 */
+  candidates_per_note: import("./generated/taiyin").JianziCandidate[][];
+  /** 每个音选中的候选下标；该音无合法落点时为 null。 */
+  selections: (number | null)[];
+  /** 整句总代价，越小越顺。 */
+  total_cost: number;
+}
+
+/**
+ * 整段简谱的全局指法编排（Rust 端 Viterbi 动态规划）。
+ *
+ * 逐音贪心只看前一个音，容易在第一音就锁死一个孤立但舒服的落点，
+ * 后面每个音都在补偿；编排把整句当路径求全局最优，整句更少换把、更少跨弦。
+ * 算法在 Rust（`jianpu::arrange_sequence`），这里只做 JSON 桥接。
+ */
+export async function arrangeJianpuSequence(
+  notes: { number: number; octave: number }[],
+  tuning: string,
+): Promise<JianpuArrangement> {
+  const wasm = await getWasm();
+  const raw = JSON.parse(
+    wasm.arrange_jianpu_sequence_to_jianzi(JSON.stringify({ notes, tuning })),
+  ) as Partial<JianpuArrangement> & { error?: string };
+  if (raw.error) throw new Error(raw.error);
+  return {
+    candidates_per_note: raw.candidates_per_note ?? [],
+    selections: raw.selections ?? [],
+    total_cost: raw.total_cost ?? 0,
+  };
 }
 
 /**

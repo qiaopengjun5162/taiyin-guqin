@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { NoteColumn, JianpuNumber } from "@/lib/types";
 import { createEmptyState } from "@/lib/jianzi";
-import { translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
+import { translateJianpuSequenceToJianzi, arrangeJianpuSequence } from "@/lib/taiyin-wasm";
 import { selectCandidates } from "@/lib/api";
 import { useNotePreview } from "@/lib/use-note-preview";
 import {
@@ -37,6 +37,9 @@ export function SequenceMode({
   const [error, setError] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiHint, setAiHint] = useState<string | null>(null);
+  const [arrangeLoading, setArrangeLoading] = useState(false);
+  // 全局编排后的整句代价；用户手动改选后就不再代表当前路径，所以改动即清空。
+  const [arrangedCost, setArrangedCost] = useState<number | null>(null);
 
   const preview = useNotePreview(TUNING_TO_ID[tuning]);
 
@@ -86,6 +89,7 @@ export function SequenceMode({
       setCandidatesPerNote(aligned);
       setSelectedIndex(parsed.map(() => 0));
       setNotesTuning(tuning);
+      setArrangedCost(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "翻译失败");
     } finally {
@@ -141,6 +145,7 @@ export function SequenceMode({
     setNotes([]);
     setCandidatesPerNote([]);
     setSelectedIndex([]);
+    setArrangedCost(null);
   }
 
   function handleClear() {
@@ -149,6 +154,58 @@ export function SequenceMode({
     setCandidatesPerNote([]);
     setSelectedIndex([]);
     setAiHint(null);
+    setArrangedCost(null);
+  }
+
+  /**
+   * 全局指法编排：把整句当一条路径求最优，而不是逐音各自最舒服。
+   *
+   * 逐音贪心（也就是「翻译」拿到的默认选择）常在第一音就锁死一个孤立落点，
+   * 后面每个音都在补偿——单看每个字都有分，连起来手在琴上东奔西跑。
+   * 这里用 Rust 端的 Viterbi 求整句最小代价路径，会牺牲个别音的单音舒适度，
+   * 换来整句少换把、少跨弦。
+   *
+   * 返回的候选与选中项出自同一次计算，一起替换：候选顺序也跟着变成
+   * 「本条路径选中的排首位」，所以不能只更新选中下标。
+   */
+  async function handleArrange() {
+    const playable = notes.filter(
+      (n): n is ParsedJianpuNote => n.kind === "note",
+    );
+    if (playable.length === 0) return;
+    setArrangeLoading(true);
+    setError(null);
+    try {
+      const result = await arrangeJianpuSequence(
+        playable.map((n) => ({ number: n.number, octave: n.octave })),
+        tuning,
+      );
+
+      // 与「翻译」同样的对齐方式：休止符位置留空数组，
+      // 否则后面每个音都会左移一位、小节线全错。
+      const alignedCands: JianziCandidate[][] = [];
+      const alignedSel: number[] = [];
+      let k = 0;
+      for (const item of notes) {
+        if (item.kind === "rest") {
+          alignedCands.push([]);
+          alignedSel.push(0);
+        } else {
+          alignedCands.push(result.candidates_per_note[k] ?? []);
+          alignedSel.push(result.selections[k] ?? 0);
+          k++;
+        }
+      }
+
+      setCandidatesPerNote(alignedCands);
+      setSelectedIndex(alignedSel);
+      setArrangedCost(result.total_cost);
+      setAiHint(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "编排失败");
+    } finally {
+      setArrangeLoading(false);
+    }
   }
 
   /** 调用后端 LLM 为每音优选候选；note_index 需映射回含休止符的 parsed 位置 */
@@ -175,6 +232,8 @@ export function SequenceMode({
         return next;
       });
       setAiHint(method === "llm" ? "AI 已优选" : "未配置 LLM，按启发式选择");
+      // AI 优选换了路径，之前的编排代价不再对应现在这组选择
+      setArrangedCost(null);
     } catch {
       setAiHint("AI 优选失败");
     } finally {
@@ -188,6 +247,8 @@ export function SequenceMode({
       next[noteIndex] = candidateIndex;
       return next;
     });
+    // 手动改选后整句代价已经不对应了，别把旧数字继续挂在界面上
+    setArrangedCost(null);
   }
 
   return (
@@ -221,6 +282,14 @@ export function SequenceMode({
                   确认全部
                 </button>
                 <button
+                  onClick={handleArrange}
+                  disabled={arrangeLoading}
+                  title="把整句当一个整体排指法：少换把、少跨弦，而不是每个音各自最舒服"
+                  className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 disabled:opacity-30"
+                >
+                  {arrangeLoading ? "编排中…" : "智能编排"}
+                </button>
+                <button
                   onClick={handleAiSelect}
                   disabled={aiLoading}
                   className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 disabled:opacity-30"
@@ -239,6 +308,11 @@ export function SequenceMode({
             >
               清空
             </button>
+            {arrangedCost !== null && (
+              <span className="text-[10px] tracking-wider text-amber-800/70">
+                已按整句连贯重排
+              </span>
+            )}
             {aiHint && (
               <span className="text-[10px] tracking-wider text-stone-500">
                 {aiHint}

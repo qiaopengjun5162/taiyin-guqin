@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{GuqinNote, Hui, HuiPosition, LeftFinger, RightAction, StringNumber};
+use crate::{GuqinNote, Hui, HuiPosition, LeftFinger, NoteType, RightAction, StringNumber};
 // ts-rs：从 Rust wire 类型生成前端 TS 类型（见 src/bin/gen_types.rs）。
 use ts_rs::TS;
 
@@ -492,6 +492,264 @@ pub fn translate_jianpu_sequence(
     result
 }
 
+// ──────────────────────────────────────────────
+// 全局指法编排（Viterbi 动态规划）
+// ──────────────────────────────────────────────
+//
+// 上面那版 `translate_jianpu_sequence` 是**贪心**的：每个音单独评分，
+// 只拿「上一个音选中的那一个候选」做上下文加分。它有两个治不好的毛病：
+//
+// 1. **没有前瞻**。第一音为了自己舒服选了散一弦，后面整句都得跟着跑；
+//    换一个只低 2 分的落点，后十个音可能全都顺。
+// 2. **局部最优会累积**。贪心一旦在某处拐错，后面每个音都在为这个错误买单，
+//    而谱面单看每个字都「有分」，问题要到弹的时候才暴露——手在琴上东奔西跑。
+//
+// 打谱最难的就是这件事：古琴一个音常有二三十个落点，选哪一处不是看这个音本身，
+// 而是看**整句怎么走最顺**。这是一个标准的最短路径问题，用 Viterbi 求全局最优：
+// 状态 = 某个音的某个候选，转移代价 = 从上一个落点走到这个落点的手部开销。
+
+/// 单音代价值：把「舒适性评分」翻成「代价」。
+///
+/// 评分越高越舒服，代价反过来。基准取 160——散音满分 150、泛音 130、按音 105，
+/// 留一点余量保证任何候选的代价都不为负：负代价等于给 DP 发钱，
+/// 它会主动去找最差的落点，只为了把这笔钱赚回来。
+const COST_BASE: i32 = 160;
+
+/// 每跨一弦的代价。
+///
+/// 七根弦张在约 18cm 的琴面上，换弦要抬腕挪臂，比同弦内挪指贵得多。
+/// 取 14：比「散 → 按」的技法切换（18）略低，比八度偏差（8）高。
+/// 这个比例决定了 DP 在「同弦挪远徽」与「跨两弦找近徽」之间怎么选——
+/// 前者累计到 60 分以上时，跨弦反而更便宜，也确实是琴人的实际选择。
+const STRING_STEP_COST: i64 = 14;
+
+/// 弦上横向挪动「一个整弦长」的代价（ratio 从 0 到 1）。
+///
+/// 实际按点范围约 0~0.875（十三徽），所以真实跨度最多约 105 分，
+/// 与横跨七弦（98 分）同量级——这正是古琴的实情：从一徽滑到十三徽，
+/// 手要走的距离不亚于扫过整个琴面。
+const RATIO_STEP_COST: f64 = 120.0;
+
+/// 同一根手指换把的代价。
+///
+/// 一根手指能无痛覆盖的徽位跨度很小（大指跨两三徽已经勉强），
+/// 超出阈值就必然整手挪位。换一根手指只是重新落指，换把却是整只手重来，
+/// 所以这一项必须显著高于普通位移，否则 DP 会排出「大指在三四徽之间反复横跳」
+/// 这种谱面看着连贯、实际弹不动的指法。
+const SAME_FINGER_SHIFT_COST: i64 = 45;
+/// 同指无痛覆盖的徽位跨度（ratio）。约合一个徽位。
+const SAME_FINGER_SHIFT_RATIO: f64 = 0.12;
+
+/// 技法切换代价：散音要落指（左手从空中下来），按音结束要抬手。
+const TECH_SWITCH_COST: i64 = 18;
+
+/// 泛音 ↔ 按音的切换更贵：轻触与按实是两套完全不同的手型，
+/// 而且换过来时左手高度、力度、触弦点全要重来。
+const HARMONIC_PRESSED_SWITCH_COST: i64 = 36;
+
+/// 同一位置原样重弹的轻微惩罚。
+///
+/// 不禁止——重弹同一个音（如一弦散音连弹）在琴上完全合法，
+/// 但连续两个音落在同一弦同一徽，多数情况说明该用「上/下/进复」走手，
+/// 或者该换一处落点。轻轻罚一点，让 DP 在「有更顺的替代」时才挪。
+const REPEAT_SAME_SPOT_COST: i64 = 6;
+
+/// 从一个落点走到另一个落点的手部开销。
+///
+/// 这里刻意不复用 `context_bonus`：那是贪心用的「加分」，只能看一步；
+/// 编排需要的是一个可加的**代价**，才能保证 DP 的最优性成立。
+fn transition_cost(prev: &GuqinNote, curr: &GuqinNote) -> i64 {
+    let prev_pos = position_from_note(prev);
+    let curr_pos = position_from_note(curr);
+
+    let string_gap = i64::from(prev_pos.string.abs_diff(curr_pos.string));
+    let mut cost = string_gap * STRING_STEP_COST;
+
+    // 横向位移只在「两边都按在弦上」时成立。
+    //
+    // 散音的 ratio 记 0（岳山端），若照字面算，「散一弦 → 按七徽」会被记成
+    // 挪了半个琴身（60 分），可实际动作只是抬手落指。这一项算错，
+    // DP 会系统性地避开所有散音起头的乐句——而散音恰恰是古琴最常用的音。
+    let both_stopped = prev.note_type != NoteType::SanYin && curr.note_type != NoteType::SanYin;
+
+    if both_stopped {
+        let ratio_gap = (prev_pos.ratio - curr_pos.ratio).abs();
+        cost += (ratio_gap * RATIO_STEP_COST).round() as i64;
+
+        if let (Some(a), Some(b)) = (prev.left_finger, curr.left_finger)
+            && a == b
+            && ratio_gap > SAME_FINGER_SHIFT_RATIO
+        {
+            cost += SAME_FINGER_SHIFT_COST;
+        }
+    } else if prev.note_type == NoteType::SanYin
+        && curr.note_type == NoteType::SanYin
+        && string_gap == 0
+    {
+        // 同一根空弦连弹：位置没动，记一笔轻罚（见 REPEAT_SAME_SPOT_COST）
+        cost += REPEAT_SAME_SPOT_COST;
+    }
+
+    cost += match (prev.note_type, curr.note_type) {
+        (a, b) if a == b => 0,
+        (NoteType::FanYin, NoteType::AnYin) | (NoteType::AnYin, NoteType::FanYin) => {
+            HARMONIC_PRESSED_SWITCH_COST
+        }
+        _ => TECH_SWITCH_COST,
+    };
+
+    // 同弦同徽同技法：原样重弹
+    if both_stopped
+        && prev.note_type == curr.note_type
+        && string_gap == 0
+        && (prev_pos.ratio - curr_pos.ratio).abs() < 0.01
+    {
+        cost += REPEAT_SAME_SPOT_COST;
+    }
+
+    cost
+}
+
+/// 全局编排结果。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Arrangement {
+    /// 每个音按「整句代价」整理过的候选（被选中的那一个恒排首位）。
+    ///
+    /// 与 [`Arrangement::selections`]**同源**：两个字段来自同一次计算，
+    /// 前端照单全收即可，不需要按索引去猜另一份数据。
+    pub candidates_per_note: Vec<Vec<JianziCandidate>>,
+    /// 每个音选中的候选下标（指向 `candidates_per_note` 的同一位置）。
+    /// 该音在琴上找不到合法落点时为空（`None`），前端据此保留简谱、减字留空。
+    pub selections: Vec<Option<usize>>,
+    /// 整条路径的总代价，越小越顺。没有可编排的音时为 0。
+    pub total_cost: i64,
+}
+
+/// 为整段简谱求出全局最连贯的一套指法。
+///
+/// 与 [`translate_jianpu_sequence`] 的区别：那一版逐音贪心，这一版把整句当成
+/// 一条路径求全局最优。差别在长句上非常明显——贪心常在第一音就锁死了一个
+/// 舒服但孤立的位置，后面每个音都在补偿；全局编排会牺牲一点单音舒适度，
+/// 换来整句少换把、少跨弦。
+///
+/// 复杂度 O(n·k²)：n 是音数，k 是单音候选数（通常 10~40）。
+/// 一首三百音的曲子约几十万次比较，毫秒级，可以在按键时同步跑。
+pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
+    // 候选只按单音评分生成一次，**不**走 `translate_jianpu_sequence`：
+    // 那一版会把「上一个音的贪心选择」折进每个候选的分里，再拿它当 DP 的基代价，
+    // 等于把局部偏见烧进全局最优——同一个音被前后夹击算两遍，结果既不是贪心也不是最优。
+    let mut candidates_per_note: Vec<Vec<JianziCandidate>> =
+        notes.iter().map(|n| translate_jianpu(*n, tuning)).collect();
+
+    let mut dp: Vec<Vec<i64>> = Vec::with_capacity(notes.len());
+    let mut prev_choice: Vec<Vec<Option<usize>>> = Vec::with_capacity(notes.len());
+
+    // 上一个**非空**候选行。某个音在琴上无合法落点时，这个音不该切断整句的连贯性，
+    // 而应被跳过——后面那个音仍然要跟「最近一个真的弹得出来的音」比较手位。
+    let mut last_row: Option<Vec<i64>> = None;
+    let mut last_notes: Option<Vec<GuqinNote>> = None;
+
+    for candidates in &candidates_per_note {
+        if candidates.is_empty() {
+            dp.push(Vec::new());
+            prev_choice.push(Vec::new());
+            continue;
+        }
+
+        let mut row: Vec<i64> = Vec::with_capacity(candidates.len());
+        let mut back: Vec<Option<usize>> = Vec::with_capacity(candidates.len());
+
+        for candidate in candidates {
+            // 分数高于基准时（理论上不该发生）夹到 0，避免负代价
+            let base = i64::from((COST_BASE - candidate.score).max(0));
+
+            match (&last_row, &last_notes) {
+                (Some(row_prev), Some(notes_prev)) => {
+                    let mut best: Option<(i64, usize)> = None;
+                    for (k, prev_note) in notes_prev.iter().enumerate() {
+                        let total = row_prev[k] + transition_cost(prev_note, &candidate.note);
+                        if best.is_none_or(|(b, _)| total < b) {
+                            best = Some((total, k));
+                        }
+                    }
+                    let (cost, k) = best.expect("非空行必然至少有一个候选");
+                    row.push(cost + base);
+                    back.push(Some(k));
+                }
+                _ => {
+                    row.push(base);
+                    back.push(None);
+                }
+            }
+        }
+
+        last_row = Some(row.clone());
+        last_notes = Some(candidates.iter().map(|c| c.note.clone()).collect());
+        dp.push(row);
+        prev_choice.push(back);
+    }
+
+    let mut selections: Vec<Option<usize>> = vec![None; notes.len()];
+    let mut total_cost: i64 = 0;
+
+    // 从最后一行为起点回溯：末音代价最小的那条，就是整句最优路径的终点。
+    if let Some(last_i) = dp.iter().rposition(|row| !row.is_empty()) {
+        let row = &dp[last_i];
+        let mut best_j = 0usize;
+        for (j, &cost) in row.iter().enumerate() {
+            if cost < row[best_j] {
+                best_j = j;
+            }
+        }
+        total_cost = row[best_j];
+
+        let mut cursor_row = last_i;
+        let mut cursor_j = best_j;
+        loop {
+            selections[cursor_row] = Some(cursor_j);
+            let Some(prev_j) = prev_choice[cursor_row][cursor_j] else {
+                break;
+            };
+            // 跳过中间的空候选行，落到最近一个真的非空的行
+            let mut p = cursor_row;
+            while p > 0 {
+                p -= 1;
+                if !dp[p].is_empty() {
+                    break;
+                }
+            }
+            if p == cursor_row || dp[p].is_empty() {
+                break;
+            }
+            cursor_row = p;
+            cursor_j = prev_j;
+        }
+    }
+
+    // 把选中的候选提到首位，其余保持单音评分顺序。
+    //
+    // 不整体按 dp 值重排：那样「150 分」会排在「90 分」后面，
+    // 用户盯着卡片上的分数会觉得排序坏了——位置应该说明「这条路径选了它」，
+    // 分数说明「单看这个音它多舒服」，两件事不能混在一个序号里。
+    for (i, row) in dp.iter().enumerate() {
+        let Some(chosen) = selections[i] else {
+            continue;
+        };
+        if row.is_empty() || chosen == 0 || chosen >= candidates_per_note[i].len() {
+            continue;
+        }
+        let picked = candidates_per_note[i].remove(chosen);
+        candidates_per_note[i].insert(0, picked);
+        selections[i] = Some(0);
+    }
+
+    Arrangement {
+        candidates_per_note,
+        selections,
+        total_cost,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -766,6 +1024,204 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&Tuning::ManJiao).unwrap(),
             r#""manjiao""#
+        );
+    }
+
+    // ── 全局编排 ──────────────────────────────
+
+    /// 贪心路径（每个音都取自己单音评分第一名的那个落点）的总代价。
+    ///
+    /// 这是 DP 的对照组：全局最优的定义就是「不可能比任何一条合法路径更差」，
+    /// 所以这条断言一旦失败，说明 DP 的转移或回溯写错了——不是算法不够聪明。
+    fn greedy_path_cost(notes: &[JianpuNote], tuning: Tuning) -> i64 {
+        let mut total = 0i64;
+        let mut prev: Option<GuqinNote> = None;
+        for note in notes {
+            let Some(best) = translate_jianpu(*note, tuning).into_iter().next() else {
+                continue;
+            };
+            total += i64::from((COST_BASE - best.score).max(0));
+            if let Some(ref p) = prev {
+                total += transition_cost(p, &best.note);
+            }
+            prev = Some(best.note);
+        }
+        total
+    }
+
+    /// 供编排测试复用的几段代表性乐句。
+    fn sample_melodies() -> Vec<Vec<JianpuNote>> {
+        vec![
+            // 五声音阶上下行（最典型的练习曲）
+            vec![
+                JianpuNote::new(5, 0),
+                JianpuNote::new(6, 0),
+                JianpuNote::new(1, 1),
+                JianpuNote::new(2, 1),
+                JianpuNote::new(3, 1),
+                JianpuNote::new(5, 1),
+                JianpuNote::new(6, 1),
+                JianpuNote::new(5, 1),
+                JianpuNote::new(3, 1),
+                JianpuNote::new(2, 1),
+                JianpuNote::new(1, 1),
+                JianpuNote::new(6, 0),
+            ],
+            // 同音反复（考验「重弹还是走手」的判断）
+            vec![JianpuNote::new(5, 0); 6],
+            // 大幅跳进（考验跨弦与换把的取舍）
+            vec![
+                JianpuNote::new(5, -1),
+                JianpuNote::new(5, 2),
+                JianpuNote::new(6, -1),
+                JianpuNote::new(1, 1),
+                JianpuNote::new(3, 2),
+                JianpuNote::new(2, 0),
+            ],
+            // 单音
+            vec![JianpuNote::new(1, 1)],
+        ]
+    }
+
+    #[test]
+    fn test_arrange_never_worse_than_greedy() {
+        let mut strictly_better = 0;
+        for melody in sample_melodies() {
+            for tuning in [Tuning::ZhengDiao, Tuning::RuiBin, Tuning::ManJiao] {
+                let arranged = arrange_sequence(&melody, tuning);
+                let greedy = greedy_path_cost(&melody, tuning);
+                assert!(
+                    arranged.total_cost <= greedy,
+                    "全局编排（{}）不该比贪心（{}）更差：{:?} / {:?}",
+                    arranged.total_cost,
+                    greedy,
+                    melody,
+                    tuning
+                );
+                if arranged.total_cost < greedy {
+                    strictly_better += 1;
+                }
+            }
+        }
+        // 只会「≤」还不够：如果转移代价没真正参与打分（比如恒为 0、或 DP 退化成
+        // 逐音取第一名），这条断言就能把「看起来接上了、其实没生效」的实现挡下来。
+        assert!(
+            strictly_better > 0,
+            "DP 在所有用例上都没优于贪心，说明转移代价没生效"
+        );
+    }
+
+    #[test]
+    fn test_arrange_returns_one_selection_per_note() {
+        for melody in sample_melodies() {
+            let arranged = arrange_sequence(&melody, Tuning::ZhengDiao);
+            assert_eq!(arranged.selections.len(), melody.len());
+            assert_eq!(arranged.candidates_per_note.len(), melody.len());
+        }
+    }
+
+    /// `selections` 必须与 `candidates_per_note` 同源：选中的那个恒排在首位。
+    ///
+    /// 前端拿到这份数据就直接 setState，不会再按索引二次查找。
+    /// 一旦「选中的在首位」这个不变量破了，谱面上会静默换成另一个落点——
+    /// 字看着正常，弹出来是别的音。
+    #[test]
+    fn test_arrange_promotes_selected_to_front() {
+        for melody in sample_melodies() {
+            for tuning in [Tuning::ZhengDiao, Tuning::RuiBin, Tuning::ManJiao] {
+                let arranged = arrange_sequence(&melody, tuning);
+                for (i, selection) in arranged.selections.iter().enumerate() {
+                    match selection {
+                        Some(idx) => assert_eq!(*idx, 0, "第 {} 音被选中的候选应排首位", i),
+                        None => assert!(
+                            arranged.candidates_per_note[i].is_empty(),
+                            "第 {} 音没有选中项，候选列表却非空",
+                            i
+                        ),
+                    }
+                }
+            }
+        }
+    }
+
+    /// 编排选出的每个落点，实际音级都必须等于该音的目标音级。
+    ///
+    /// 这条防的是「DP 只优化代价、不校验音高」——那样排出来的谱会很顺，
+    /// 但音全错了。所有候选都来自 `translate_jianpu`，理论上天然成立，
+    /// 但重排（把选中项提首位）时一旦下标错位，就会出现这种灾难性错误。
+    #[test]
+    fn test_arrange_selected_notes_match_target_pitch() {
+        fn note_pitch(note: &GuqinNote, tuning: Tuning) -> Option<Pitch> {
+            let open = tuning.open_strings()[(note.string_number.get() - 1) as usize];
+            match note.note_type {
+                crate::NoteType::SanYin => Some(open),
+                crate::NoteType::FanYin => {
+                    let hui = note.hui?.hui.get();
+                    let harmonic = f64::from(HUI_HARMONIC[(hui - 1) as usize]);
+                    nearest_pitch(midi_note(open) + 12.0 * harmonic.log2())
+                }
+                crate::NoteType::AnYin => pressed_pitch(open, hui_to_ratio(note.hui?)),
+            }
+        }
+
+        for melody in sample_melodies() {
+            for tuning in [Tuning::ZhengDiao, Tuning::RuiBin, Tuning::ManJiao] {
+                let arranged = arrange_sequence(&melody, tuning);
+                for (i, selection) in arranged.selections.iter().enumerate() {
+                    let Some(idx) = selection else { continue };
+                    let note = &arranged.candidates_per_note[i][*idx].note;
+                    let actual = note_pitch(note, tuning).expect("候选应算得出音高");
+                    assert_eq!(
+                        actual.number, melody[i].number,
+                        "第 {} 音的落点音级不对：{:?}",
+                        i, note
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_arrange_empty_input() {
+        let arranged = arrange_sequence(&[], Tuning::ZhengDiao);
+        assert!(arranged.selections.is_empty());
+        assert!(arranged.candidates_per_note.is_empty());
+        assert_eq!(arranged.total_cost, 0);
+    }
+
+    /// 长乐句不该被拆断：每个音都要给出选中项。
+    #[test]
+    fn test_arrange_covers_every_note_in_a_phrase() {
+        let melody: Vec<JianpuNote> = [5u8, 6, 1, 2, 3, 5, 6]
+            .iter()
+            .map(|&n| JianpuNote::new(n, 1))
+            .collect();
+        let arranged = arrange_sequence(&melody, Tuning::ZhengDiao);
+        assert!(
+            arranged.selections.iter().all(Option::is_some),
+            "五声音阶七个音都该有落点：{:?}",
+            arranged.selections
+        );
+    }
+
+    /// 连续相同的音，编排不该让手在两处落点之间来回横跳。
+    ///
+    /// 允许「同位置重弹」（这是合法的），但不接受「A → B → A → B」——
+    /// 那说明 DP 只算了单音代价，没把回到原位的开销算进去。
+    #[test]
+    fn test_arrange_avoids_ping_pong_on_repeated_note() {
+        let melody = [JianpuNote::new(5, 0); 4];
+        let arranged = arrange_sequence(&melody, Tuning::ZhengDiao);
+        // 选中项恒在首位（见 test_arrange_promotes_selected_to_front）
+        let strings: Vec<u8> = arranged
+            .candidates_per_note
+            .iter()
+            .map(|cands| cands[0].note.string_number.get())
+            .collect();
+        assert!(
+            strings.windows(2).all(|w| w[0] == w[1]),
+            "同音反复不该换弦横跳：{:?}",
+            strings
         );
     }
 }
