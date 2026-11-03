@@ -148,3 +148,46 @@ describe("LoadDialog · 搜索", () => {
     expect(screen.queryByText("广陵散")).toBeNull();
   });
 });
+
+describe("LoadDialog · 本机→社区迁移入口", () => {
+  const tabsWithMigrate: LoadDialogTab[] = [
+    { key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true },
+    { key: "local", label: "本机", scores: LOCAL, showMigrate: true },
+  ];
+
+  it("迁移按钮只属于本机 tab，社区 tab 不显示", () => {
+    renderDialog(tabsWithMigrate);
+    // 默认激活社区 tab：没有迁移入口
+    expect(screen.queryByLabelText("一键发布本机谱到社区")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /本机/ }));
+    expect(screen.getByLabelText("一键发布本机谱到社区")).toBeTruthy();
+  });
+
+  it("点击迁移按钮触发 onMigrate", () => {
+    const onMigrate = vi.fn();
+    renderDialog(tabsWithMigrate, { onMigrate });
+    fireEvent.click(screen.getByRole("button", { name: /本机/ }));
+    fireEvent.click(screen.getByLabelText("一键发布本机谱到社区"));
+    expect(onMigrate).toHaveBeenCalledTimes(1);
+  });
+
+  it("迁移中按钮禁用并显示「发布中…」", () => {
+    renderDialog(tabsWithMigrate, { migrating: true });
+    fireEvent.click(screen.getByRole("button", { name: /本机/ }));
+    const btn = screen.getByLabelText("一键发布本机谱到社区") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toContain("发布中");
+  });
+
+  it("显示迁移结果提示", () => {
+    renderDialog(tabsWithMigrate, { migrateMsg: "已发布 2 首到社区" });
+    fireEvent.click(screen.getByRole("button", { name: /本机/ }));
+    expect(screen.getByText("已发布 2 首到社区")).toBeTruthy();
+  });
+
+  it("未开启 showMigrate 的本机 tab 不显示迁移按钮", () => {
+    renderDialog(tabs);
+    fireEvent.click(screen.getByRole("button", { name: /本机/ }));
+    expect(screen.queryByLabelText("一键发布本机谱到社区")).toBeNull();
+  });
+});

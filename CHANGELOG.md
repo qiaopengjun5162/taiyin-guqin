@@ -1,5 +1,27 @@
 # 更新日志
 
+## [0.16.0] - 2026-11-03
+
+### 新增（本机 → 社区一键迁移）
+
+- **「一键发布本机谱到社区」入口**：连上后端时，`LoadDialog` 的「本机」tab 顶部出现迁移按钮，
+  把浏览器里保存的全部曲谱批量发布到社区共享池（公开），让老用户的本地谱进入社区、
+  激活此前空空如也的共享池。
+- 迁移逻辑落在 `page.tsx` 的 `handleMigrateLocalToCommunity`：先 `localListScores()` 列本机谱，
+  再逐个 `localGetScore(id)` 取完整音符、`createScore(title, notes, tuning)` 发布到服务器。
+- **按曲名去重**：发布前拉一次社区列表，同名谱跳过（计入「跳过 N 首」提示），
+  使重复点击幂等、不会在共享池堆出同名副本。
+- 迁移前 `confirm` 二次确认（公开发布不可逆）；browser 模式（未配置后端）点击时提示
+  先到「社区后端」设置填地址。迁移中按钮禁用并显示「发布中…」，完成后刷新社区 tab
+  并在按钮下方给出「已发布 N 首到社区（，跳过 M 首已存在的同名谱）」结果。
+
+### 测试
+
+- `load-dialog.test.tsx` +5：迁移按钮只属于本机 tab、点击回调 `onMigrate`、`migrating` 时禁用
+  并显示「发布中…」、显示 `migrateMsg`、未开启 `showMigrate` 的本机 tab 不显示按钮。
+- `page-interactions.test.tsx` +3：server 模式逐个发布本机谱、社区同名谱跳过、取消确认不发布。
+  （测试里用 `vi.hoisted` 的可变 `storageMode` 切换 server/browser，不干扰既有 32 例。）
+
 ## [0.15.0] - 2026-11-03
 
 ### 新增（出版级 PDF 导出 · 对标 JPW 简谱软件）

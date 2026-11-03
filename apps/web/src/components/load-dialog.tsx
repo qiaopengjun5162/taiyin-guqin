@@ -13,6 +13,11 @@ export interface LoadDialogTab {
    * 所以社区 tab 干脆不提供删除。
    */
   readOnly?: boolean;
+  /**
+   * 本机 tab 专属：连上社区后端时显示「一键发布本机谱到社区」入口，
+   * 让老用户的本地曲谱批量进入共享池，激活空社区。
+   */
+  showMigrate?: boolean;
 }
 
 interface LoadDialogProps {
@@ -23,9 +28,15 @@ interface LoadDialogProps {
   defaultTabKey?: string;
   onLoad: (id: string, tabKey: string) => void;
   onDelete?: (id: string, title: string) => void;
+  /** 一键把本机谱批量发布到社区共享池（仅本机 tab 显示） */
+  onMigrate?: () => void;
+  /** 迁移进行中，禁用按钮并显示「发布中…」 */
+  migrating?: boolean;
+  /** 迁移结果提示（成功/跳过数量等），显示在按钮下方 */
+  migrateMsg?: string | null;
 }
 
-export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelete }: LoadDialogProps) {
+export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelete, onMigrate, migrating, migrateMsg }: LoadDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [activeKey, setActiveKey] = useState(defaultTabKey ?? tabs[0]?.key);
   const [query, setQuery] = useState("");
@@ -99,6 +110,25 @@ export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelet
               placeholder="按曲名搜索…"
               className="mb-2 w-full px-2 py-1.5 min-h-[36px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-stone-800 placeholder-stone-400 outline-none focus:border-amber-600/50 transition-colors"
             />
+          )}
+          {activeTab.showMigrate && (
+            <div className="mb-2 p-2 rounded border border-amber-700/20 bg-amber-900/10">
+              <button
+                type="button"
+                onClick={onMigrate}
+                disabled={migrating}
+                aria-label="一键发布本机谱到社区"
+                className="w-full px-2 py-1.5 min-h-[36px] text-[10px] tracking-wider rounded border border-vermillion/40 text-[var(--vermillion)] hover:bg-vermillion/10 disabled:opacity-40 transition-all"
+              >
+                {migrating ? "发布中…" : "⇪ 一键发布本机谱到社区"}
+              </button>
+              <p className="mt-1 text-[9px] leading-relaxed text-stone-500">
+                把浏览器里保存的曲谱批量发布到社区共享池（公开），首次发布后可在「社区曲谱」tab 找到。
+              </p>
+              {migrateMsg && (
+                <p className="mt-1 text-[10px] tracking-wider text-emerald-700/90 font-medium">{migrateMsg}</p>
+              )}
+            </div>
           )}
           {activeTab.scores.length === 0 && (
             <p className="text-[10px] tracking-wider text-stone-500">

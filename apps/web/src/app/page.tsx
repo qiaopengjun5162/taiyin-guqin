@@ -96,6 +96,9 @@ export default function Home() {
     () => "server",
   );
   const [showLoadDialog, setShowLoadDialog] = useState(false);
+  // 本机→社区一键迁移的进度与结果提示
+  const [migrating, setMigrating] = useState(false);
+  const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isExportingAudio, setIsExportingAudio] = useState(false);
@@ -296,7 +299,7 @@ export default function Home() {
           { key: "community", label: "社区曲谱", scores: serverList, readOnly: true },
         ];
         if (localList.length > 0) {
-          tabs.push({ key: "local", label: "本机", scores: localList });
+          tabs.push({ key: "local", label: "本机", scores: localList, showMigrate: true });
         }
         setLoadTabs(tabs);
       } else {
@@ -361,6 +364,49 @@ export default function Home() {
       setEditingIndex(null);
     } catch {
       showError("加载失败");
+    }
+  }
+
+  /**
+   * 一键把本机谱批量发布到社区共享池。
+   * 仅 server 模式（已连后端）有意义；browser 模式提示先配置后端。
+   * 按曲名去重，已存在同名谱则跳过，使重复点击幂等。
+   */
+  async function handleMigrateLocalToCommunity() {
+    if (api.isBrowserOnlyMode()) {
+      showError("请先在「社区后端」设置里填写后端地址，再发布到社区");
+      return;
+    }
+    if (!confirm("将把本机保存的曲谱公开发布到社区，确定继续？")) return;
+    setMigrating(true);
+    setMigrateMsg(null);
+    try {
+      const localList = await api.localListScores();
+      if (localList.length === 0) {
+        setMigrateMsg("本机暂无曲谱可发布");
+        return;
+      }
+      const community = await api.listScores();
+      const existing = new Set(community.map((c) => c.title));
+      let migrated = 0;
+      let skipped = 0;
+      for (const item of localList) {
+        if (existing.has(item.title)) {
+          skipped++;
+          continue;
+        }
+        const full = await api.localGetScore(item.id);
+        await api.createScore(item.title, full.notes, item.tuning);
+        migrated++;
+      }
+      await openLoadDialog(); // 刷新社区 tab，刚发布的谱立即可见
+      setMigrateMsg(
+        `已发布 ${migrated} 首到社区` + (skipped ? `，跳过 ${skipped} 首已存在的同名谱` : ""),
+      );
+    } catch {
+      showError("发布到社区失败，请稍后重试");
+    } finally {
+      setMigrating(false);
     }
   }
 
@@ -689,6 +735,9 @@ export default function Home() {
         tabs={loadTabs}
         onLoad={handleLoadScore}
         onDelete={handleDeleteScore}
+        onMigrate={handleMigrateLocalToCommunity}
+        migrating={migrating}
+        migrateMsg={migrateMsg}
       />
 
       {/* ── 主卡片 —— 宣纸质感 ── */}

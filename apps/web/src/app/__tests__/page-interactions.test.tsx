@@ -24,11 +24,15 @@ const h = vi.hoisted(() => ({
   listScores: vi.fn(),
   localListScores: vi.fn(),
   getScore: vi.fn(),
+  localGetScore: vi.fn(),
   deleteScore: vi.fn(),
   exportPng: vi.fn(),
   exportSvg: vi.fn(),
   translateJianpuToJianzi: vi.fn(),
 }));
+
+/** 可切换的存储模式：默认 browser（与既有用例一致），迁移用例里临时切 server。 */
+const storeState = vi.hoisted(() => ({ storageMode: "browser" as "server" | "browser" }));
 
 /** 播放 hook：用真实 useState 撑起 isPlaying，让按钮文案能跟着变。 */
 vi.mock("@/lib/use-score-player", async () => {
@@ -102,10 +106,11 @@ vi.mock("@/lib/api", () => {
     updateScore: h.updateScore,
     deleteScore: h.deleteScore,
     localListScores: h.localListScores,
+    localGetScore: h.localGetScore,
     selectCandidates: vi.fn(),
     recognizeJianzi: vi.fn(),
     recognizeJianziSheet: vi.fn(),
-    scoreStorageMode: () => "browser",
+    scoreStorageMode: () => storeState.storageMode,
     // jsdom 跑在 localhost，与真实判定一致：有后端模式
     isBrowserOnlyMode: () => false,
   };
@@ -162,6 +167,7 @@ beforeEach(() => {
   h.createScore.mockResolvedValue({ id: "new-id", title: "", notes: [] });
   h.updateScore.mockResolvedValue(undefined);
   h.getScore.mockResolvedValue({ notes: [] });
+  storeState.storageMode = "browser";
 });
 
 afterEach(() => {
@@ -717,5 +723,70 @@ describe("Home · 加载失败", () => {
 
     await waitFor(() => expect(screen.getByText("加载失败")).toBeTruthy());
     expect(noteColumns(container).length).toBe(0);
+  });
+});
+
+describe("Home · 本机→社区一键迁移", () => {
+  const LOCAL_TWO = [
+    { id: "l1", title: "平沙落雁", tuning: "zhengdiao" as const, created_at: "", updated_at: "" },
+    { id: "l2", title: "潇湘水云", tuning: "ruibin" as const, created_at: "", updated_at: "" },
+  ];
+
+  it("server 模式下把本机谱逐个发布到社区", async () => {
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([]);
+    h.localListScores.mockResolvedValue(LOCAL_TWO);
+    h.localGetScore.mockImplementation(async (id: string) => {
+      const item = LOCAL_TWO.find((s) => s.id === id) ?? LOCAL_TWO[0];
+      return { ...item, notes: [] };
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    fireEvent.click(await screen.findByRole("button", { name: /本机/ }));
+    fireEvent.click(screen.getByLabelText("一键发布本机谱到社区"));
+
+    await waitFor(() => expect(h.createScore).toHaveBeenCalledTimes(2));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(h.createScore.mock.calls.map((c) => c[0])).toEqual(["平沙落雁", "潇湘水云"]);
+    confirmSpy.mockRestore();
+  });
+
+  it("社区已有同名谱时跳过，不重复发布", async () => {
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([
+      { id: "c1", title: "平沙落雁", tuning: "zhengdiao" as const, created_at: "", updated_at: "" },
+    ]);
+    h.localListScores.mockResolvedValue(LOCAL_TWO);
+    h.localGetScore.mockResolvedValue({ ...LOCAL_TWO[1], notes: [] });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    fireEvent.click(await screen.findByRole("button", { name: /本机/ }));
+    fireEvent.click(screen.getByLabelText("一键发布本机谱到社区"));
+
+    await waitFor(() => expect(h.createScore).toHaveBeenCalledTimes(1));
+    expect(h.createScore.mock.calls[0][0]).toBe("潇湘水云");
+    confirmSpy.mockRestore();
+  });
+
+  it("取消确认时不发起任何发布", async () => {
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([]);
+    h.localListScores.mockResolvedValue(LOCAL_TWO);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+    fireEvent.click(await screen.findByRole("button", { name: /本机/ }));
+    fireEvent.click(screen.getByLabelText("一键发布本机谱到社区"));
+
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
+    expect(h.createScore).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });
