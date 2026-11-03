@@ -1,5 +1,31 @@
 # 更新日志
 
+## [0.18.0] - 2026-11-03
+
+### 修复（部署硬伤：distroless 镜像启动即失败）
+
+- `db.rs` 的数据库迁移从 `Migrator::new(Path::new(env!("CARGO_MANIFEST_DIR") + "/migrations"))`
+  改为 `sqlx::migrate!("./migrations")`。
+  前者是**运行时读文件系统**，而 `CARGO_MANIFEST_DIR` 是构建机绝对路径（如 `/app/crates/taiyin-server`）；
+  运行镜像是 distroless，既没有该目录、也没有 shell 救场，容器连库成功后会在迁移这一步直接退出。
+  改用宏后 migrations 在**编译期嵌入二进制**，运行时零文件依赖，distroless 也能正常启动。
+- `Cargo.toml` 显式加 `sqlx` 的 `macros` feature（`sqlx::migrate!` 宏依赖它，
+  防止将来关闭 default features 后宏静默不可用）。
+
+### 文档（生产上线清单）
+
+- README 部署章节补齐 `ALLOWED_ORIGINS`（生产必设，否则 CORS 全放开）、限流参数与
+  `TRANSLATE_API_KEY` 等环境变量。
+- 新增「生产上线检查清单」：迁移已内置无需挂载 SQL、`/health` 可作存活探针、
+  经 Nginx/Cloudflare 需透传 `X-Forwarded-For`（否则限流按代理 IP 计）、
+  前端指后端的两种方式（构建期环境变量 / 运行时面板）、分享与社区功能依赖后端可达。
+
+### 验证
+
+- `cargo check -p taiyin-server` 通过；
+  `cargo clippy -p taiyin-server --all-targets -- -D warnings` 零告警。
+- 容器内实际启动由 CI 的 rust job（连 Postgres 跑迁移相关测试）与真机部署验证。
+
 ## [0.17.0] - 2026-11-03
 
 ### 新增（曲谱分享直达链接）

@@ -17,11 +17,13 @@ pub async fn init_pool(database_url: &str) -> anyhow::Result<PgPool> {
         .connect(database_url)
         .await?;
 
-    let migrator = sqlx::migrate::Migrator::new(std::path::Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/migrations"
-    )))
-    .await?;
+    // 用 `migrate!` 宏在**编译期**把 migrations 嵌进二进制。
+    //
+    // 不能用 `Migrator::new(Path)` 运行时读目录：镜像运行阶段是 distroless，
+    // 里面既没有 migrations 目录、也没有 shell 救场；且 `CARGO_MANIFEST_DIR`
+    // 是构建机上的绝对路径（如 /app/crates/taiyin-server），运行时必然不存在，
+    // 容器会在启动迁移这一步直接失败。
+    let migrator = sqlx::migrate!("./migrations");
     migrator.run(&pool).await?;
 
     tracing::info!("database migrated");

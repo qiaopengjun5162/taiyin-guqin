@@ -118,11 +118,18 @@ just ci            # 提交前全量检查
 DATABASE_URL=postgres://taiyin:taiyin_dev@localhost:5432/taiyin
 HOST=0.0.0.0
 PORT=3001
+ALLOWED_ORIGINS=https://qiaopengjun5162.github.io,https://paxonqiao.com  # 生产必设
 ANTHROPIC_API_KEY=sk-...        # 可选，未配置时 LLM 择优回退启发式
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+TRANSLATE_API_KEY=...           # 可选，设置后翻译端点需带 x-api-key
+GLOBAL_RATE_PER_SECOND=2        # 可选，按 IP 限流（默认 2/s）
+GLOBAL_RATE_BURST=60
+TRANSLATE_RATE_PER_SECOND=1
+TRANSLATE_RATE_BURST=5
 
 # 前端构建
 NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_TRANSLATE_API_KEY=...   # 可选，与后端 TRANSLATE_API_KEY 对应
 ```
 
 ### Docker 部署后端
@@ -134,10 +141,28 @@ docker build -t taiyin-server .
 # 运行（需 PostgreSQL 可达）
 docker run -d \
   -e DATABASE_URL=postgres://taiyin:taiyin_dev@host.docker.internal:5432/taiyin \
+  -e ALLOWED_ORIGINS=https://qiaopengjun5162.github.io,https://paxonqiao.com \
   -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   -p 3001:3001 \
   taiyin-server
 ```
+
+### 生产上线检查清单
+
+后端能起来 ≠ 社区能用。上线前逐项确认：
+
+1. **`ALLOWED_ORIGINS` 必须设**（前端域名，逗号分隔）。不设时 CORS 全放开，
+   启动日志会打 `WARN`——本地开发可以，公网不行。
+2. **数据库迁移无需挂载 SQL 文件**：`migrations/` 已由 `sqlx::migrate!` 在**编译期**嵌入二进制，
+   容器启动即自动建表/升级。运行镜像是 distroless，不含 migrations 目录也能正常工作。
+   （早期版本用 `Migrator::new(路径)` 运行时读文件，在 distroless 下会启动失败，已修正。）
+3. **健康检查**：`GET /health` 返回 200，可直接作为容器/反向代理的存活探针。
+4. **限流要看真实客户端 IP**：经 Nginx / Cloudflare 时确保透传 `X-Forwarded-For`，
+   否则所有请求会被算到代理同一个 IP 上（`SmartIpKeyExtractor` 优先读该头）。
+5. **前端指后端**：静态站点用构建期 `NEXT_PUBLIC_API_URL`，或在页面「社区后端」面板
+   填运行时地址（运行时优先级更高，改完不用重新构建）。
+6. **分享链接依赖后端**：`?score=<id>` 直达、社区 tab、本机谱迁移都要求后端可达；
+   后端没起来时页面会退回浏览器本地存储。
 
 ### 静态前端部署
 

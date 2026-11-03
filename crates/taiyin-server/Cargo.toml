@@ -21,6 +21,8 @@ sqlx = { version = "0.8", features = [
     "uuid",
     "chrono",
     "migrate",
+    # `sqlx::migrate!` 宏在编译期把 migrations 嵌入二进制（distroless 运行时无文件可读）
+    "macros",
 ] }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
