@@ -7,10 +7,14 @@ edition = "2024"
 taiyin-core = { path = "../taiyin-core" }
 
 anyhow = "1"
+# 口令散列：Argon2id（OWASP 当前推荐），盐随散列存，拖库也拿不到彩虹表
+argon2 = "0.5"
 axum = "0.8"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+# 会话 token / 盐的随机源
+rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

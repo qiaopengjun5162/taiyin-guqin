@@ -17,6 +17,7 @@ use tower_http::{
 };
 use uuid::Uuid;
 
+use crate::accounts;
 use crate::auth::require_api_key;
 use crate::config::ServerConfig;
 use crate::db::AppState;
@@ -26,7 +27,10 @@ use crate::llm::{
     SelectRequest, SelectResponse, heuristic_selections, recognize_jianzi_with_llm,
     recognize_sheet_with_llm, select_with_llm,
 };
-use crate::models::{CreateScoreRequest, Score, ScoreListItem, UpdateScoreRequest};
+use crate::models::{
+    CreateScoreRequest, LoginRequest, PublicUser, RegisterRequest, Score, ScoreListItem,
+    UpdateScoreRequest, User,
+};
 use crate::sheet_segment;
 use crate::template_match::{self, RecognizeMode};
 
@@ -98,6 +102,12 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
             "/api/v1/scores/{id}",
             get(get_score).put(update_score).delete(delete_score),
         )
+        // 认领：把「本机凭证」发布的旧谱挂到账号下（必须出示原凭证）
+        .route("/api/v1/scores/{id}/claim", post(claim_score))
+        .route("/api/v1/auth/register", post(register))
+        .route("/api/v1/auth/login", post(login))
+        .route("/api/v1/auth/logout", post(logout))
+        .route("/api/v1/auth/me", get(me))
         .merge(translate_routes)
         .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024)) // 5 MB
         .layer(cors)
@@ -106,7 +116,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
 
 async fn fetch_score(pool: &PgPool, id: Uuid) -> AppResult<Score> {
     sqlx::query_as::<_, Score>(
-        "SELECT id, title, notes, tuning, author, owner_token, created_at, updated_at \
+        "SELECT id, title, notes, tuning, author, owner_token, owner_user_id, created_at, updated_at \
          FROM scores WHERE id = $1",
     )
     .bind(id)
@@ -125,18 +135,48 @@ fn read_owner_token(headers: &HeaderMap) -> Option<String> {
         .map(str::to_string)
 }
 
-/// 校验「这份凭证能否改 / 删这首谱」。
+/// 一次请求里「我是谁」的全部凭据：登录态（可选）+ 本机凭证（可选）。
 ///
-/// 三种情况一律拒绝，不做任何宽容：
-/// 1. 库里没存凭证（迁移前的老谱）——宁可让管理员手工清理，也不留「谁都能删」的口子；
-/// 2. 请求没带凭证——匿名请求不能改任何人的谱；
-/// 3. 两边不相等——凭证就是所有权，不等即非本人。
-fn ensure_owner(stored: Option<&str>, provided: Option<&str>) -> AppResult<()> {
-    match (stored, provided) {
-        (Some(stored), Some(provided)) if stored == provided => Ok(()),
-        _ => Err(AppError::Forbidden(
+/// 两者是**并列的两条腿**，不是二选一：老用户没注册过，仍靠本机凭证改删；
+/// 注册并认领之后，换设备、清缓存都不再失去自己的谱。
+#[derive(Debug, Default)]
+struct Caller {
+    /// 当前登录账号（由 `Authorization: Bearer <session>` 解析而来）。
+    user_id: Option<Uuid>,
+    /// 本机持有的发布者凭证（`x-owner-token`）。
+    owner_token: Option<String>,
+}
+
+/// 从请求头还原调用者身份。会话查库（要能吊销），凭证只读头。
+async fn read_caller(headers: &HeaderMap, pool: &PgPool) -> AppResult<Caller> {
+    let user = accounts::current_user(headers, pool).await?;
+    Ok(Caller {
+        user_id: user.map(|u| u.id),
+        owner_token: read_owner_token(headers),
+    })
+}
+
+/// 校验「这个调用者能否改 / 删这首谱」。
+///
+/// 满足**任意一条**即可：账号匹配，或出示了匹配的本机凭证。
+/// 两条都不满足时一律拒绝——包括「无主谱」（迁移前老数据）与匿名请求，
+/// 宁可让管理员手工清理，也不留一个「谁都能删」的口子。
+fn ensure_can_edit(caller: &Caller, score: &Score) -> AppResult<()> {
+    let by_account = matches!(
+        (score.owner_user_id, caller.user_id),
+        (Some(owner), Some(me)) if owner == me
+    );
+    let by_token = matches!(
+        (score.owner_token.as_deref(), caller.owner_token.as_deref()),
+        (Some(stored), Some(provided)) if stored == provided
+    );
+
+    if by_account || by_token {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
             "这不是你发布到社区的曲谱，无法修改或删除".into(),
-        )),
+        ))
     }
 }
 
@@ -406,18 +446,20 @@ async fn create_score(
     validate_author(&author)?;
     // 没带凭证也允许发布，但这条谱从此无主（谁也改不了、删不了），
     // 由管理员直接操作数据库清理。比「随便谁都能删」安全得多。
-    let owner_token = read_owner_token(&headers);
+    let caller = read_caller(&headers, &state.pool).await?;
 
     let score = sqlx::query_as::<_, Score>(
-        "INSERT INTO scores (title, notes, tuning, author, owner_token) \
-         VALUES ($1, $2, $3, $4, $5) \
-         RETURNING id, title, notes, tuning, author, owner_token, created_at, updated_at",
+        "INSERT INTO scores (title, notes, tuning, author, owner_token, owner_user_id) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
+         RETURNING id, title, notes, tuning, author, owner_token, owner_user_id, \
+                   created_at, updated_at",
     )
     .bind(&title)
     .bind(&req.notes)
     .bind(&tuning)
     .bind(&author)
-    .bind(&owner_token)
+    .bind(&caller.owner_token)
+    .bind(caller.user_id)
     .fetch_one(&state.pool)
     .await?;
 
@@ -426,7 +468,8 @@ async fn create_score(
 
 async fn list_scores(State(state): State<AppState>) -> AppResult<Json<Vec<ScoreListItem>>> {
     let scores = sqlx::query_as::<_, ScoreListItem>(
-        "SELECT id, title, tuning, author, created_at, updated_at FROM scores ORDER BY updated_at DESC",
+        "SELECT id, title, tuning, author, owner_user_id, created_at, updated_at \
+         FROM scores ORDER BY updated_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -447,10 +490,8 @@ async fn update_score(
 ) -> AppResult<Json<Score>> {
     let existing = fetch_score(&state.pool, id).await?;
     // 先校验所有权再动任何字段：否则别人能改掉你的谱面内容（比删更隐蔽）
-    ensure_owner(
-        existing.owner_token.as_deref(),
-        read_owner_token(&headers).as_deref(),
-    )?;
+    let caller = read_caller(&headers, &state.pool).await?;
+    ensure_can_edit(&caller, &existing)?;
 
     let title = req.title.unwrap_or(existing.title);
     validate_title(&title)?;
@@ -466,7 +507,8 @@ async fn update_score(
     let score = sqlx::query_as::<_, Score>(
         "UPDATE scores SET title = $1, notes = $2, tuning = $3, author = $4, updated_at = now() \
          WHERE id = $5 \
-         RETURNING id, title, notes, tuning, author, owner_token, created_at, updated_at",
+         RETURNING id, title, notes, tuning, author, owner_token, owner_user_id, \
+                   created_at, updated_at",
     )
     .bind(&title)
     .bind(&notes)
@@ -487,10 +529,8 @@ async fn delete_score(
     // 先取一次做所有权校验：无主谱 / 凭证不符一律 403，
     // 不能让「知道 id」等价于「有权删除」——分享链接里正好带着 id。
     let existing = fetch_score(&state.pool, id).await?;
-    ensure_owner(
-        existing.owner_token.as_deref(),
-        read_owner_token(&headers).as_deref(),
-    )?;
+    let caller = read_caller(&headers, &state.pool).await?;
+    ensure_can_edit(&caller, &existing)?;
 
     let result = sqlx::query("DELETE FROM scores WHERE id = $1")
         .bind(id)
@@ -502,6 +542,137 @@ async fn delete_score(
     }
 
     Ok(Json(json!({"deleted": true})))
+}
+
+/// 注册。返回账号信息 + 会话 token（注册即登录，省一步）。
+///
+/// 邮箱只做形状校验、不验证真实性：没有邮件通道，假装验证了更糟。
+/// 这条要在界面上写清楚，别让人以为注册过就能找回口令。
+async fn register(
+    State(state): State<AppState>,
+    Json(req): Json<RegisterRequest>,
+) -> AppResult<Json<accounts::AuthResponse>> {
+    let email = accounts::normalize_email(&req.email)?;
+    accounts::validate_password(&req.password)?;
+    let display_name = accounts::normalize_display_name(req.display_name.as_deref())?;
+    let password_hash = accounts::hash_password(&req.password)?;
+
+    let inserted = sqlx::query_as::<_, User>(
+        "INSERT INTO users (email, password_hash, display_name) \
+         VALUES ($1, $2, $3) \
+         RETURNING id, email, password_hash, display_name, created_at",
+    )
+    .bind(&email)
+    .bind(&password_hash)
+    .bind(&display_name)
+    .fetch_one(&state.pool)
+    .await;
+
+    // 并发下唯一索引才是权威：先到先得，后到的收到「已注册」而不是 500。
+    let user = match inserted {
+        Ok(user) => user,
+        Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23505") => {
+            return Err(AppError::Conflict("这个邮箱已经注册过了".into()));
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    let token = accounts::create_session(&state.pool, user.id).await?;
+    Ok(Json(accounts::AuthResponse {
+        user: accounts::public_user(&user),
+        token,
+    }))
+}
+
+/// 登录。
+async fn login(
+    State(state): State<AppState>,
+    Json(req): Json<LoginRequest>,
+) -> AppResult<Json<accounts::AuthResponse>> {
+    let email = accounts::normalize_email(&req.email)?;
+
+    let user = sqlx::query_as::<_, User>(
+        "SELECT id, email, password_hash, display_name, created_at \
+         FROM users WHERE email = $1",
+    )
+    .bind(&email)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    // 「邮箱不存在」与「口令不对」返回同一句话：区分了等于帮人枚举账号。
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized("邮箱或口令不对".into()));
+    };
+    if !accounts::verify_password(&req.password, &user.password_hash) {
+        return Err(AppError::Unauthorized("邮箱或口令不对".into()));
+    }
+
+    let token = accounts::create_session(&state.pool, user.id).await?;
+    Ok(Json(accounts::AuthResponse {
+        user: accounts::public_user(&user),
+        token,
+    }))
+}
+
+/// 登出：删掉会话行。会话存库而非自证，正是为了能这样立刻吊销。
+async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Json<serde_json::Value>> {
+    if let Some(token) = accounts::bearer_token(&headers) {
+        accounts::revoke_session(&state.pool, token).await?;
+    }
+    Ok(Json(json!({"ok": true})))
+}
+
+/// 当前登录者。会话缺失 / 过期都返回 401，前端据此清掉本地登录态。
+async fn me(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Json<PublicUser>> {
+    let user = accounts::current_user(&headers, &state.pool)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("未登录或登录已过期".into()))?;
+    Ok(Json(accounts::public_user(&user)))
+}
+
+/// 认领旧谱：把「本机凭证」发布的谱挂到账号下。
+///
+/// **必须出示原凭证**，只登录不行——否则任何人注册一下就能把别人的谱认领走。
+/// 成功之后这首谱就同时拥有账号归属，换设备、清缓存都不会再失去它。
+async fn claim_score(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> AppResult<Json<Score>> {
+    let caller = read_caller(&headers, &state.pool).await?;
+    let Some(_user_id) = caller.user_id else {
+        return Err(AppError::Unauthorized("请先登录再认领曲谱".into()));
+    };
+    let score = fetch_score(&state.pool, id).await?;
+
+    // 认领走的是「原凭证」这条腿：故意不用 ensure_can_edit，
+    // 因为账号那条腿此刻必然不匹配（这首谱还没归我）。
+    let by_token = matches!(
+        (score.owner_token.as_deref(), caller.owner_token.as_deref()),
+        (Some(stored), Some(provided)) if stored == provided
+    );
+    if !by_token {
+        return Err(AppError::Forbidden(
+            "只有当初发布这首谱的那台设备能认领它".into(),
+        ));
+    }
+
+    // 不动 updated_at：认领不是内容变更，不该把旧谱顶到列表最前面。
+    let updated = sqlx::query_as::<_, Score>(
+        "UPDATE scores SET owner_user_id = $1 \
+         WHERE id = $2 \
+         RETURNING id, title, notes, tuning, author, owner_token, owner_user_id, \
+                   created_at, updated_at",
+    )
+    .bind(caller.user_id)
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(updated))
 }
 
 #[cfg(test)]
@@ -532,21 +703,83 @@ mod tests {
         assert!(matches!(err, AppError::Validation(_)), "{err:?}");
     }
 
-    #[test]
-    fn owner_token_must_match_exactly() {
-        assert!(ensure_owner(Some("t"), Some("t")).is_ok());
-        for (stored, provided) in [
-            (Some("t"), Some("x")), // 别人的凭证
-            (Some("t"), None),      // 匿名请求
-            (None, Some("t")),      // 无主谱（迁移前的老数据）
-            (None, None),
-        ] {
-            let err = ensure_owner(stored, provided).expect_err("应拒绝");
-            assert!(
-                matches!(err, AppError::Forbidden(_)),
-                "{stored:?}/{provided:?}"
-            );
+    fn score_with(owner_token: Option<&str>, owner_user_id: Option<Uuid>) -> Score {
+        Score {
+            id: Uuid::nil(),
+            title: "测试谱".into(),
+            notes: json!([]),
+            tuning: "zhengdiao".into(),
+            author: String::new(),
+            owner_token: owner_token.map(str::to_string),
+            owner_user_id,
+            created_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            updated_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
         }
+    }
+
+    #[test]
+    fn editing_needs_either_account_or_token() {
+        let me = Uuid::new_v4();
+        let other = Uuid::new_v4();
+
+        // 认领到账号的谱：本人可改，别人不行
+        let mine = score_with(None, Some(me));
+        assert!(
+            ensure_can_edit(
+                &Caller {
+                    user_id: Some(me),
+                    owner_token: None
+                },
+                &mine
+            )
+            .is_ok()
+        );
+        assert!(
+            ensure_can_edit(
+                &Caller {
+                    user_id: Some(other),
+                    owner_token: None
+                },
+                &mine
+            )
+            .is_err()
+        );
+
+        // 老路径仍然有效：没登录，出示本机凭证也能改
+        let by_token = score_with(Some("t"), None);
+        assert!(
+            ensure_can_edit(
+                &Caller {
+                    user_id: None,
+                    owner_token: Some("t".into())
+                },
+                &by_token
+            )
+            .is_ok()
+        );
+        assert!(
+            ensure_can_edit(
+                &Caller {
+                    user_id: None,
+                    owner_token: Some("x".into())
+                },
+                &by_token
+            )
+            .is_err()
+        );
+
+        // 无主谱：谁都改不了，登录了也不行
+        let orphan = score_with(None, None);
+        assert!(
+            ensure_can_edit(
+                &Caller {
+                    user_id: Some(me),
+                    owner_token: Some("t".into())
+                },
+                &orphan
+            )
+            .is_err()
+        );
     }
 
     #[test]

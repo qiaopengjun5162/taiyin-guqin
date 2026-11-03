@@ -20,6 +20,14 @@ pub enum AppError {
     #[error("{0}")]
     Forbidden(String),
 
+    /// 需要登录（会话缺失 / 已过期 / 口令不对）。
+    #[error("{0}")]
+    Unauthorized(String),
+
+    /// 资源冲突（如邮箱已被注册）。
+    #[error("{0}")]
+    Conflict(String),
+
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
 }
@@ -37,6 +45,8 @@ impl IntoResponse for AppError {
             Self::NotFound => (StatusCode::NOT_FOUND, "Not found".into()),
             Self::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
             Self::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            Self::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+            Self::Conflict(msg) => (StatusCode::CONFLICT, msg),
             Self::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
         };
 
