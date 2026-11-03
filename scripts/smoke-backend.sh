@@ -11,7 +11,7 @@
 #   1. 迁移内置：启动即自动建表，不需要手动跑 SQL；
 #   2. /health 200，且 CORS 白名单对陌生来源不回 allow-origin；
 #   3. 所有权链路：带钥匙发布 → 错钥匙改 403 → 对钥匙改 200 → 对钥匙删 200；
-#   4. 无钥匙发布 → 成「无主谱」 → 谁也改不了（403）；
+#   4. 无身份发布 → 401（不再产生谁也删不掉的无主谱）；
 #   5. 账号链路：注册 → 只凭登录态发布 → 换设备凭登录态改 → 认领旧谱
 #      （认领必须出示原凭证，否则注册一下就能认领别人的谱）→ 登出即失效；
 #   6. 列表分页：limit 夹紧、越界返回空数组、响应带总数头；
@@ -129,14 +129,10 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/scores/$ID" 
   -H 'Content-Type: application/json' -H 'x-owner-token: smoke-key-1' -d '{"title":"上线验收测试-已改"}')
 [[ "$code" == "200" ]] && ok "对钥匙改 → 200" || fail "对钥匙改应 200，实际 $code"
 
-GHOST=$(curl -sS -X POST "$BASE/api/v1/scores" -H 'Content-Type: application/json' \
-  -d '{"title":"无主谱","notes":[]}')
-GID=$(printf '%s' "$GHOST" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])' 2>/dev/null) \
-  || fail "无钥匙发布失败：$GHOST"
-code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/scores/$GID" \
-  -H 'Content-Type: application/json' -H 'x-owner-token: smoke-key-1' -d '{"title":"谁也改不了"}')
-[[ "$code" == "403" ]] && ok "无主谱谁也改不了 → 403（手册承诺一致）" \
-  || fail "无主谱应 403，实际 $code"
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/scores" \
+  -H 'Content-Type: application/json' -d '{"title":"无主谱","notes":[]}')
+[[ "$code" == "401" ]] && ok "无身份发布 → 401（不再产生谁也删不掉的无主谱）" \
+  || fail "无身份发布应 401，实际 $code"
 
 echo "▶ 验账号链路（注册 → 跨设备改 → 认领旧谱）"
 # 邮箱带时间戳：脚本可重复跑，重复注册会 409

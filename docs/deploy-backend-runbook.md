@@ -156,6 +156,7 @@ curl -i http://127.0.0.1:3001/health
 | `TRANSLATE_API_KEY` | 可选 | 给 `/translate/select` 加一道口令闸门（纵深防护） |
 | `GLOBAL_RATE_PER_SECOND` / `GLOBAL_RATE_BURST` | 可选 | 全局限流：默认每 IP 每秒 2 次、突发 60。**这两个是真在跑的**，所有请求都过这道闸 |
 | `AUTH_RATE_PER_SECOND` / `AUTH_RATE_BURST` | 可选 | 注册 / 登录的**独立**限流：默认每秒 2 次、突发 8。比全局严，因为口令散列故意慢（Argon2id 每次数百毫秒），不限流等于给攻击者一个把单核 CPU 打满的开关。1 核小机器别调大 |
+| `WRITE_RATE_PER_SECOND` / `WRITE_RATE_BURST` | 可选 | 发布曲谱的**独立**限流（只锁 `POST /api/v1/scores`）：默认每秒 1 次、突发 10。它是全站唯一「一个请求换一行数据」的口子，不限就等于让人灌库；**列表读取不在这把锁里**，别把它挂到整条 `/scores` 上 |
 | `TRANSLATE_RATE_PER_SECOND` / `TRANSLATE_RATE_BURST` | 可选 | AI 翻译端点限流：默认每秒 1 次、突发 5，因为每次调用都在烧额度 |
 
 ---
@@ -229,7 +230,7 @@ BASE=https://api.你的域名
 # ① 活着
 curl -i $BASE/health                                  # 期望 200
 
-# ② 发布一首谱（注意带上钥匙头；不带也能发，但那条谱将「无主」谁也改删不了）
+# ② 发布一首谱（必须带 x-owner-token；不带会被 401 挡下，库里不留无主数据）
 curl -s -X POST $BASE/api/v1/scores \
   -H 'Content-Type: application/json' \
   -H 'x-owner-token: test-key-123' \
@@ -265,7 +266,7 @@ curl -i -X PUT $BASE/api/v1/scores/把id贴这里 \
 
 仓库里 `scripts/smoke-backend.sh` 会照本节全链路原样跑一遍：起 Postgres → 起后端
 → 验 `/health` 与 CORS 白名单 → 验所有权链路（带钥匙发布 / 错钥匙 403 / 对钥匙
-200 / 无主谱 403 / 对钥匙删 200）→ **验账号链路**（注册 / 只凭登录态发布 / 换设备
+200 / 无身份发布 401 / 对钥匙删 200）→ **验账号链路**（注册 / 只凭登录态发布 / 换设备
 凭登录态改 / 错凭证认领 403 / 对原凭证认领 200 / 登出即失效），跑完自动清理容器。
 
 ```bash
@@ -330,7 +331,9 @@ docker rm -f taiyin-server          # 删掉旧容器（数据库容器不动，
 1. **账号很轻，找回不了**：无邮箱验证、无找回口令。用户忘口令只能由管理员
    直接改数据库（`UPDATE users SET password_hash = ...` 用 argon2 生成）。
    建议在页面上写明「请记住口令」。
-2. **「无主谱」不可改删**：发布时没带钥匙的历史数据，只能由管理员直接进数据库清理。
+2. **「无主谱」不可改删**：这是迁移前老数据的遗留问题，只能由管理员直接进数据库清理。
+   新版本已禁止无身份发布（401），所以不会再新增；库里如果还查得到 `owner_token IS NULL`
+   的历史行，那是升级前留下的。
 3. **不含支付、私信、评论**：当前社区只做「发谱、列谱、分享、改删自己的」。
 
 ---
