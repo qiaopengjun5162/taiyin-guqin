@@ -13,6 +13,7 @@ import { TunerPanel } from "@/components/tuner-panel";
 import { QinBoard } from "@/components/qin-board";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog } from "@/components/load-dialog";
+import { BackendSettings } from "@/components/backend-settings";
 import { ExportFooter } from "@/components/export-footer";
 import { JianpuTranslator } from "@/components/jianpu-translator";
 import { JianziCodeImport } from "@/components/jianzi-code-import";
@@ -625,6 +626,9 @@ export default function Home() {
           标准
         </button>
       </div>
+
+      {/* ── 社区后端设置（可选）：填了就能浏览 / 发布社区曲谱 ── */}
+      <BackendSettings />
 
       {/* ── 加载对话框 ── */}
       <LoadDialog

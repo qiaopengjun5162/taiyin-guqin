@@ -254,3 +254,36 @@ describe("api: timeout", () => {
     expect(abortSignal?.aborted).toBe(true);
   });
 });
+
+describe("api: 后端地址解析（运行时 > 环境变量 > 无）", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+    delete process.env.NEXT_PUBLIC_API_URL;
+  });
+
+  it("无配置时 getApiBase 为 null，且 localhost 下 isBrowserOnlyMode 走服务器", async () => {
+    const { getApiBase, isBrowserOnlyMode } = await import("@/lib/api");
+    expect(getApiBase()).toBeNull();
+    // jsdom hostname 默认 localhost → 视为开发环境，可走服务器路径
+    expect(isBrowserOnlyMode()).toBe(false);
+  });
+
+  it("运行时设置优先于构建期环境变量", async () => {
+    process.env.NEXT_PUBLIC_API_URL = "https://env.example.com";
+    window.localStorage.setItem("taiyin.apiBaseUrl", "https://runtime.example.com");
+    const { getApiBase } = await import("@/lib/api");
+    expect(getApiBase()).toBe("https://runtime.example.com");
+  });
+
+  it("仅环境变量时取环境变量", async () => {
+    process.env.NEXT_PUBLIC_API_URL = "https://env.example.com";
+    const { getApiBase } = await import("@/lib/api");
+    expect(getApiBase()).toBe("https://env.example.com");
+  });
+
+  it("运行时设置后 isBrowserOnlyMode 为 false（社区可达，不受部署域名影响）", async () => {
+    window.localStorage.setItem("taiyin.apiBaseUrl", "https://runtime.example.com");
+    const { isBrowserOnlyMode } = await import("@/lib/api");
+    expect(isBrowserOnlyMode()).toBe(false);
+  });
+});

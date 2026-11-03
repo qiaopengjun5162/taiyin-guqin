@@ -7,8 +7,23 @@ import {
   localListScores,
   localUpdateScore,
 } from "./local-score-store";
+import { getStoredApiBase } from "./settings";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+/**
+ * 解析后端地址：运行时设置（设置面板）> 构建期环境变量 > 无。
+ * 做成函数而非模块级常量，因为运行时设置可能随时变（用户在设置里改了后端地址）。
+ * 返回 null 表示「未配置后端」——此时退回本地存储。
+ */
+export function getApiBase(): string | null {
+  const runtime = getStoredApiBase();
+  if (runtime) return runtime;
+  return process.env.NEXT_PUBLIC_API_URL || null;
+}
+
+/** 解析实际请求基址：有配置用配置，否则退回本机 3001（dev 约定）。 */
+function resolveBase(): string {
+  return getApiBase() ?? "http://localhost:3001";
+}
 
 /**
  * 纯前端模式：没有配置后端地址，且当前不在本机开发环境。
@@ -18,7 +33,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
  * 保证「拼—听—存—取」这条最基本的链路在线上可用。
  */
 export function isBrowserOnlyMode(): boolean {
-  if (process.env.NEXT_PUBLIC_API_URL) return false;
+  // 运行时或构建期配置了后端地址 → 走服务器（社区 / 分享可达）
+  if (getApiBase() !== null) return false;
   if (typeof window === "undefined") return false;
   const host = window.location.hostname;
   return host !== "localhost" && host !== "127.0.0.1";
@@ -117,7 +133,7 @@ export async function createScore(
   tuning: TuningId = DEFAULT_TUNING,
 ): Promise<Score> {
   if (isBrowserOnlyMode()) return localCreateScore(title, notes, tuning);
-  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`, {
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title, notes, tuning }),
@@ -127,14 +143,14 @@ export async function createScore(
 
 export async function listScores(): Promise<ScoreListItem[]> {
   if (isBrowserOnlyMode()) return localListScores();
-  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores`);
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores`);
   const list = await handleResponse<ScoreListItem[]>(res);
   return list.map(normalizeTuning);
 }
 
 export async function getScore(id: string): Promise<Score> {
   if (isBrowserOnlyMode()) return localGetScore(id);
-  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`);
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}`);
   return normalizeTuning(await handleResponse<Score>(res));
 }
 
@@ -143,7 +159,7 @@ export async function updateScore(
   data: { title?: string; notes?: NoteColumn[]; tuning?: TuningId },
 ): Promise<Score> {
   if (isBrowserOnlyMode()) return localUpdateScore(id, data);
-  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -156,7 +172,7 @@ export async function deleteScore(id: string): Promise<void> {
     localDeleteScore(id);
     return;
   }
-  const res = await fetchWithTimeout(`${API_BASE}/api/v1/scores/${id}`, {
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}`, {
     method: "DELETE",
   });
   await handleResponse(res);
@@ -177,7 +193,7 @@ export async function selectCandidates(
   notes: { number: number; octave: number }[],
   tuning: string,
 ): Promise<SelectCandidatesResponse> {
-  const res = await fetchWithTimeout(`${API_BASE}/api/v1/translate/select`, {
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/translate/select`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ notes, tuning }),
@@ -204,7 +220,7 @@ export async function recognizeJianzi(
   mediaType: string,
 ): Promise<RecognizeJianziResponse> {
   if (isBrowserOnlyMode()) throw new ApiError(BROWSER_ONLY_RECOGNIZE_HINT, 503);
-  const res = await fetchWithTimeout(`${API_BASE}/api/v1/jianzi/recognize`, {
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/jianzi/recognize`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ image_base64: imageBase64, media_type: mediaType }),
@@ -243,7 +259,7 @@ export async function recognizeJianziSheet(
   mediaType: string,
 ): Promise<RecognizeSheetResponse> {
   if (isBrowserOnlyMode()) throw new ApiError(BROWSER_ONLY_RECOGNIZE_HINT, 503);
-  const res = await fetchWithTimeout(`${API_BASE}/api/v1/jianzi/recognize-sheet`, {
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/jianzi/recognize-sheet`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ image_base64: imageBase64, media_type: mediaType }),
