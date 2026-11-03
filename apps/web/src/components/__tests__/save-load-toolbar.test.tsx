@@ -364,4 +364,48 @@ describe("SaveLoadToolbar", () => {
     );
     expect(queryByLabelText("复制分享链接")).toBeNull();
   });
+
+  it("有未保存修改时在标题旁亮出「未保存」提示", () => {
+    const { getByLabelText, queryByLabelText, rerender } = render(
+      <SaveLoadToolbar
+        title="平沙落雁"
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        hasNotes
+        isDirty
+        saveStatus="idle"
+      />,
+    );
+    expect(getByLabelText("有未保存的修改")).toBeInTheDocument();
+
+    // 保存后 isDirty 归 false，提示应消失
+    rerender(
+      <SaveLoadToolbar
+        title="平沙落雁"
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        hasNotes
+        isDirty={false}
+        saveStatus="idle"
+      />,
+    );
+    expect(queryByLabelText("有未保存的修改")).toBeNull();
+  });
+
+  it("空谱不显示「未保存」提示（没什么可丢的）", () => {
+    const { queryByLabelText } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        hasNotes={false}
+        isDirty
+        saveStatus="idle"
+      />,
+    );
+    expect(queryByLabelText("有未保存的修改")).toBeNull();
+  });
 });

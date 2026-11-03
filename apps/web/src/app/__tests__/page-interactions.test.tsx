@@ -170,12 +170,16 @@ beforeEach(() => {
   h.updateScore.mockResolvedValue(undefined);
   h.getScore.mockResolvedValue({ notes: [] });
   storeState.storageMode = "browser";
+  // 未保存确认默认放行：既有用例里切换示例/载入曲谱是常规操作，
+  // 不该被新增的确认拦住。需要验证「取消」的用例自行 spyOn 覆盖成 false。
+  vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 
 afterEach(() => {
   cleanup();
   // 分享链接用例会改写 URL，复位避免 query 串到后续用例
   window.history.replaceState({}, "", "/");
+  vi.restoreAllMocks();
 });
 
 describe("Home · 空谱与示例", () => {
@@ -983,5 +987,89 @@ describe("Home · 我发布的社区谱可删", () => {
     await waitFor(() => expect(h.localDeleteScore).toHaveBeenCalledWith("local-1"));
     expect(h.deleteScore).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+});
+
+describe("Home · 未保存保护", () => {
+  /** 改标题即算「有未保存修改」——标题也是随谱保存的一部分。 */
+  function makeDirty() {
+    fireEvent.change(screen.getByLabelText("曲谱名称"), {
+      target: { value: "我正在录的谱" },
+    });
+  }
+
+  it("有未保存修改时切换示例先确认；取消则原谱不动", async () => {
+    const { container } = await loadExample();
+    const before = noteColumns(container).length;
+    makeDirty();
+    // 改动要在界面上可见，而不是只在关闭时才弹一次
+    expect(screen.getByLabelText("有未保存的修改")).toBeTruthy();
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    fireEvent.change(screen.getByLabelText("加载示例"), {
+      target: { value: "xianwencao" },
+    });
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(noteColumns(container).length).toBe(before);
+    expect((screen.getByLabelText("曲谱名称") as HTMLInputElement).value).toBe("我正在录的谱");
+  });
+
+  it("没有未保存修改时不打扰", async () => {
+    await loadExample();
+    const confirmSpy = vi.spyOn(window, "confirm");
+    fireEvent.change(screen.getByLabelText("加载示例"), {
+      target: { value: "xianwencao" },
+    });
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("确认切换后基线跟着更新，再切一次不再重复打扰", async () => {
+    await loadExample();
+    makeDirty();
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.change(screen.getByLabelText("加载示例"), {
+      target: { value: "xianwencao" },
+    });
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+
+    confirmSpy.mockClear();
+    fireEvent.change(screen.getByLabelText("加载示例"), {
+      target: { value: "huafeihua" },
+    });
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("有未保存修改时，刷新/关页会被拦下", async () => {
+    await loadExample();
+    makeDirty();
+
+    const evt = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(evt);
+    expect(evt.defaultPrevented).toBe(true);
+  });
+
+  it("没有改动时不拦刷新（否则每个访客都被弹窗骚扰）", async () => {
+    await loadExample();
+    const evt = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(evt);
+    expect(evt.defaultPrevented).toBe(false);
+  });
+
+  it("保存成功后不再拦页", async () => {
+    await loadExample();
+    makeDirty();
+
+    fireEvent.click(screen.getByLabelText("保存"));
+    await waitFor(() => expect(h.createScore).toHaveBeenCalled());
+
+    // 保存成功 → 基线随 state 提交更新、beforeunload 监听被摘掉。
+    // 这里用 waitFor 重试，避免在 React 提交前一帧就断言。
+    await waitFor(() => {
+      const evt = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(evt);
+      expect(evt.defaultPrevented).toBe(false);
+    });
   });
 });

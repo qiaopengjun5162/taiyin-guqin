@@ -20,6 +20,8 @@ interface SaveLoadToolbarProps {
   examples?: ExampleScore[];
   onLoadExample?: (id: string) => void;
   hasNotes: boolean;
+  /** 谱上有未保存的修改时，在标题旁亮一个提示（曲谱只存内存，丢了就没了） */
+  isDirty?: boolean;
   saveStatus: "idle" | "saving" | "saved" | "error";
   isExporting?: boolean;
   canUndo?: boolean;
@@ -48,6 +50,7 @@ export function SaveLoadToolbar({
   examples,
   onLoadExample,
   hasNotes,
+  isDirty,
   saveStatus,
   isExporting,
   canUndo,
@@ -91,6 +94,15 @@ export function SaveLoadToolbar({
         className="flex-1 min-w-[140px] px-2 py-1.5 min-h-[44px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 placeholder-amber-700/40 outline-none focus:border-amber-600/50 transition-colors"
         placeholder="曲谱名称"
       />
+      {isDirty && hasNotes && (
+        <span
+          aria-label="有未保存的修改"
+          title="曲谱只存在这个页面里，刷新或关闭页面会丢失"
+          className="text-[9px] tracking-wider text-vermillion/80 whitespace-nowrap"
+        >
+          ● 未保存
+        </span>
+      )}
       <button
         onClick={onSave}
         disabled={!hasNotes || saveStatus === "saving"}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
@@ -18,6 +18,7 @@ import { ExportFooter } from "@/components/export-footer";
 import { JianpuTranslator } from "@/components/jianpu-translator";
 import { JianziCodeImport } from "@/components/jianzi-code-import";
 import { useExportImage } from "@/lib/use-export-image";
+import { scoreFingerprint, confirmDiscard } from "@/lib/unsaved-guard";
 import { useScoreHistory } from "@/lib/use-score-history";
 import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
@@ -71,6 +72,9 @@ const subscribeNoop = () => () => {};
  *
  * 删除时若恰好删除编辑中的音符，即时退出编辑模式。
  */
+/** 新谱的默认标题；同时是「用户是否动过标题」的判断基准。 */
+const UNTITLED_TITLE = "未命名曲谱";
+
 export default function Home() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
@@ -85,7 +89,7 @@ export default function Home() {
     redo,
     canUndo,
     canRedo,
-  } = useScoreHistory([], "未命名曲谱");
+  } = useScoreHistory([], UNTITLED_TITLE);
 
   // 持久化状态
   const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
@@ -144,6 +148,39 @@ export default function Home() {
   const infoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 分享链接只自动加载一次（防 StrictMode 双跑 / 重渲染重复拉取） */
   const sharedLoadedRef = useRef(false);
+
+  /**
+   * 未保存保护：曲谱只活在内存里（没有自动草稿），载入别的谱会直接覆盖，
+   * 刷新页面更是全丢。`savedFingerprint` 记录「上次保存 / 载入时」的内容指纹，
+   * 与当前内容不一致即视为有未保存的修改。
+   *
+   * 初值 null = 基线尚未建立（用户还没保存 / 载入过任何谱）。这段时间改用
+   * 「谱上有没有东西」判断：空谱不打扰，一旦录了音或改了标题就算未保存。
+   * 这样不必在 effect 里补基线——既少一次渲染，也不会因为定弦从 localStorage
+   * 水合（server snapshot → 真实值）把空谱误判成「已修改」。
+   */
+  const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
+  const currentFingerprint = useMemo(
+    () => scoreFingerprint(scoreTitle, score, tuning),
+    [scoreTitle, score, tuning],
+  );
+  const isDirty =
+    savedFingerprint === null
+      ? score.length > 0 || scoreTitle !== UNTITLED_TITLE
+      : savedFingerprint !== currentFingerprint;
+
+  // 有未保存修改时，刷新 / 关标签页前拦一下（浏览器弹标准确认框）
+  useEffect(() => {
+    if (!isDirty) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      // 部分浏览器仍要求给 returnValue 赋值才会弹
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
   const { exportPng, exportSvg, isExporting } = useExportImage({
     containerRef: exportRef,
     title: scoreTitle,
@@ -181,6 +218,8 @@ export default function Home() {
         commitScoreTitle(data.title);
         setTuning(data.tuning);
         setCurrentScoreId(data.id);
+        // 打开分享链接只是「看别人发的谱」，不该立刻提示未保存
+        setSavedFingerprint(scoreFingerprint(data.title, data.notes, data.tuning));
         // 分享链接打开时把署名亮出来：让人知道这首谱是谁打的
         if (data.author) showInfo(`已载入 ${data.author} 的《${data.title}》`);
       } catch {
@@ -332,6 +371,8 @@ export default function Home() {
         // 记住「这首是我发布的」：下次保存才走更新，服务端也认得出是我的凭证
         rememberMyScore(created.id);
       }
+      // 保存成功：当前内容成为新的「干净基线」，之后再改动才算未保存
+      setSavedFingerprint(scoreFingerprint(scoreTitle, score, tuning));
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
@@ -422,8 +463,10 @@ export default function Home() {
       );
       if (currentScoreId === id) {
         setScore([]);
-        setScoreTitle("未命名曲谱");
+        setScoreTitle(UNTITLED_TITLE);
         setCurrentScoreId(null);
+        // 删掉当前谱后编辑区回到空谱，应算「干净」——否则关页会莫名拦一次
+        setSavedFingerprint(scoreFingerprint(UNTITLED_TITLE, [], tuning));
       }
     } catch (err) {
       showError(err instanceof api.ApiError ? err.message : "删除失败");
@@ -436,6 +479,8 @@ export default function Home() {
    * 仅 server 模式下的「本机」tab 才强制走本地——否则 api.getScore 会把本地 id 发到服务器而 404。
    */
   async function handleLoadScore(id: string, tabKey: string) {
+    // 载入会直接覆盖编辑区，而内存里没有自动草稿：先问一句再动手
+    if (isDirty && !confirmDiscard()) return;
     try {
       const scoreData =
         storageMode === "server" && tabKey === "local"
@@ -453,6 +498,8 @@ export default function Home() {
       setCurrentScoreId(storageMode === "server" && tabKey === "local" ? null : scoreData.id);
       setShowLoadDialog(false);
       setEditingIndex(null);
+      // 刚载入的内容就是「干净基线」，不该一进来就提示未保存
+      setSavedFingerprint(scoreFingerprint(scoreData.title, scoreData.notes, scoreData.tuning));
     } catch {
       showError("加载失败");
     }
@@ -509,10 +556,13 @@ export default function Home() {
   function handleLoadExample(id: string) {
     const example = findExampleScore(id);
     if (!example) return;
+    // 示例下拉就在工具栏上，误点一下就会把正在录的谱整首换掉
+    if (isDirty && !confirmDiscard()) return;
     commitScore(() => example.notes);
     commitScoreTitle(example.title);
     setCurrentScoreId(null);
     setEditingIndex(null);
+    setSavedFingerprint(scoreFingerprint(example.title, example.notes, tuning));
   }
 
   /**
@@ -669,6 +719,7 @@ export default function Home() {
         examples={EXAMPLE_SCORES}
         onLoadExample={handleLoadExample}
         hasNotes={score.length > 0}
+        isDirty={isDirty}
         saveStatus={saveStatus}
         isExporting={isExporting}
         canUndo={canUndo}
