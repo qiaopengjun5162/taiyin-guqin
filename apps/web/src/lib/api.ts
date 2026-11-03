@@ -297,6 +297,69 @@ export async function deleteScore(id: string): Promise<void> {
   await handleResponse(res);
 }
 
+/* ────────────────────────── 收藏夹 ────────────────────────── */
+
+/**
+ * 收藏一首谱（幂等）。
+ *
+ * 收藏跟着账号走，所以**必须登录**：本机凭证是「这台设备的钥匙」，
+ * 清个缓存收藏就全丢，那就不叫收藏了。没登录时服务端回 401，
+ * 界面应当先提示去登录，而不是静默失败。
+ */
+export async function favoriteScore(id: string): Promise<void> {
+  ensureBackend();
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}/favorite`, {
+    method: "PUT",
+    headers: ownerHeaders(),
+  });
+  await handleResponse(res);
+}
+
+/** 取消收藏（幂等：没收藏过也返回成功）。 */
+export async function unfavoriteScore(id: string): Promise<void> {
+  ensureBackend();
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}/favorite`, {
+    method: "DELETE",
+    headers: ownerHeaders(),
+  });
+  await handleResponse(res);
+}
+
+/**
+ * 当前账号收藏的全部曲谱 id。
+ *
+ * 列表每行都要画星标，逐行问会变成 N 次请求；一次取回 id 集合在本地比对即可。
+ */
+export async function listFavoriteIds(): Promise<string[]> {
+  ensureBackend();
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/favorites/ids`, {
+    headers: ownerHeaders(),
+  });
+  const data = await handleResponse<{ ids: string[] }>(res);
+  return Array.isArray(data.ids) ? data.ids : [];
+}
+
+/** 我的收藏的一页（按收藏时间倒序）。 */
+export async function listFavoritesPage(
+  options: { limit?: number; offset?: number } = {},
+): Promise<ScorePage> {
+  ensureBackend();
+  const limit = options.limit ?? MAX_PAGE_SIZE;
+  const offset = options.offset ?? 0;
+  const res = await fetchWithTimeout(
+    `${resolveBase()}/api/v1/favorites?limit=${limit}&offset=${offset}`,
+    { headers: ownerHeaders() },
+  );
+  const items = await handleResponse<ScoreListItem[]>(res);
+  // 与社区列表同样：先判 null 再转数字，`Number(null)` 是 0 会造出「0 / 50」
+  const rawTotal = res.headers.get("x-total-count");
+  const parsed = rawTotal === null ? null : Number(rawTotal);
+  return {
+    items: items.map(normalizeTuning),
+    total: parsed !== null && Number.isFinite(parsed) ? parsed : null,
+  };
+}
+
 /* ────────────────────────── 社区账号 ────────────────────────── */
 
 /** 未配置后端时账号功能的提示（纯前端模式下根本发不出去，别静默失败）。 */

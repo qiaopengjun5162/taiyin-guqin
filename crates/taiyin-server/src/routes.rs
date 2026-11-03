@@ -4,7 +4,7 @@ use axum::{
     http::{HeaderMap, HeaderValue, Method},
     middleware::from_fn_with_state,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use serde_json::json;
 use sqlx::PgPool;
@@ -23,6 +23,7 @@ use crate::auth::require_api_key;
 use crate::config::ServerConfig;
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
+use crate::favorites;
 use crate::llm::{
     LlmConfig, RecognizeRequest, RecognizeResponse, RecognizeSheetCell, RecognizeSheetResponse,
     SelectRequest, SelectResponse, heuristic_selections, recognize_jianzi_with_llm,
@@ -43,11 +44,11 @@ const OWNER_TOKEN_HEADER: &str = "x-owner-token";
 /// 凭证长度上限：UUID 是 36，留足余量但不接受任意长串（避免把 header 当存储用）。
 const MAX_OWNER_TOKEN_LENGTH: usize = 128;
 /// 列表默认一页条数：一次能滚完、又不至于让首屏拉几百条。
-const DEFAULT_PAGE_SIZE: i64 = 50;
+pub(crate) const DEFAULT_PAGE_SIZE: i64 = 50;
 /// 单页硬上限：没有它，`?limit=1000000` 就是一条把整库拖出来的捷径。
-const MAX_PAGE_SIZE: i64 = 200;
+pub(crate) const MAX_PAGE_SIZE: i64 = 200;
 /// 列表总条数的响应头。分页必须同时给出总数，否则「还有几首没显示」无从判断。
-const TOTAL_COUNT_HEADER: &str = "x-total-count";
+pub(crate) const TOTAL_COUNT_HEADER: &str = "x-total-count";
 
 /// 构造 CORS 层。
 ///
@@ -175,6 +176,13 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         )
         // 认领：把「本机凭证」发布的旧谱挂到账号下（必须出示原凭证）
         .route("/api/v1/scores/{id}/claim", post(claim_score))
+        // 收藏：跟账号走，故三条都要求登录态（见 `favorites.rs`）
+        .route(
+            "/api/v1/scores/{id}/favorite",
+            put(favorites::favorite_score).delete(favorites::unfavorite_score),
+        )
+        .route("/api/v1/favorites", get(favorites::list_favorites))
+        .route("/api/v1/favorites/ids", get(favorites::favorite_ids))
         // 认证端点带自己的限流层；路径与其它组不重叠，merge 不会冲突。
         .merge(auth_routes)
         .merge(me_route)

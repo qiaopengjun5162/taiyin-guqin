@@ -192,3 +192,75 @@ describe("api: 账号即所有权", () => {
     expect(claimed.owner_user_id).toBe("u-1");
   });
 });
+
+describe("api: 收藏跟账号走", () => {
+  /**
+   * 收藏必须是登录态下的操作：服务端没登录直接 401。
+   * 这里盯的是「请求有没有带 Bearer」——少带这条腿，界面点星星必然失败。
+   */
+  it("收藏：PUT 到该谱的 favorite 子路径，并带登录态", async () => {
+    const api = await import("@/lib/api");
+    const auth = await import("@/lib/auth");
+    auth.setStoredSession({ token: "tok-fav", user: USER });
+    fetchMock.mockResolvedValue(jsonResponse({ favorited: true }));
+
+    await api.favoriteScore("s1");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/scores/s1/favorite");
+    expect(options.method).toBe("PUT");
+    expect(options.headers.Authorization).toBe("Bearer tok-fav");
+  });
+
+  it("取消收藏：同一路径用 DELETE（服务端靠方法区分，别新开一个 /unfavorite）", async () => {
+    const api = await import("@/lib/api");
+    const auth = await import("@/lib/auth");
+    auth.setStoredSession({ token: "tok-unfav", user: USER });
+    fetchMock.mockResolvedValue(jsonResponse({ favorited: false }));
+
+    await api.unfavoriteScore("s1");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/scores/s1/favorite");
+    expect(options.method).toBe("DELETE");
+    expect(options.headers.Authorization).toBe("Bearer tok-unfav");
+  });
+
+  /** 后端少给 `ids` 字段时退化成空数组：让界面画不出星标，而不是崩在 `.map` 上。 */
+  it("收藏 id 集合：正常解析；字段缺失时退化为空数组", async () => {
+    const api = await import("@/lib/api");
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ids: ["a", "b"] }));
+    await expect(api.listFavoriteIds()).resolves.toEqual(["a", "b"]);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+    await expect(api.listFavoriteIds()).resolves.toEqual([]);
+  });
+
+  /** 收藏列表也要分页：总数在响应头里，读不到就会一直显示「加载更多」。 */
+  it("我的收藏分页：解析 x-total-count", async () => {
+    const api = await import("@/lib/api");
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "",
+      headers: new Headers({ "x-total-count": "7" }),
+      json: async () => [
+        {
+          id: "s1",
+          title: "流水",
+          tuning: "zhengdiao",
+          created_at: "2026-11-01T00:00:00Z",
+          updated_at: "2026-11-01T00:00:00Z",
+        },
+      ],
+    } as unknown as Response);
+
+    const page = await api.listFavoritesPage({ limit: 50, offset: 0 });
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/favorites?limit=50&offset=0");
+    expect(page.items).toHaveLength(1);
+    expect(page.total).toBe(7);
+  });
+});

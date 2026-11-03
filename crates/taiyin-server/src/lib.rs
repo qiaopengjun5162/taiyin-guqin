@@ -7,6 +7,7 @@ pub mod auth;
 pub mod config;
 pub mod db;
 mod error;
+pub mod favorites;
 pub mod llm;
 mod models;
 mod routes;

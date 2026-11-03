@@ -462,3 +462,42 @@ describe("LoadDialog · 分页", () => {
     expect(screen.queryByText("加载更多")).toBeNull();
   });
 });
+
+describe("LoadDialog · 收藏星标", () => {
+  /**
+   * 未登录时不画星标。
+   *
+   * 这不是洁癖：收藏接口要求登录态，未登录点星星必然 401。
+   * 画一个「点了就报错」的按钮，比不画更让人怀疑功能坏了。
+   */
+  it("没给 onToggleFavorite 时不渲染星标", () => {
+    renderDialog(tabs);
+    expect(screen.queryByRole("button", { name: /收藏「/ })).toBeNull();
+  });
+
+  it("已收藏显示实心星，点击回调收到「取消收藏」后的状态，且不触发加载", () => {
+    const onToggleFavorite = vi.fn();
+    const { onLoad } = renderDialog(tabs, { favoriteIds: ["c1"], onToggleFavorite });
+
+    const star = screen.getByRole("button", { name: "取消收藏「广陵散」" });
+    expect(star.getAttribute("aria-pressed")).toBe("true");
+    expect(star.textContent).toBe("★");
+
+    fireEvent.click(star);
+    expect(onToggleFavorite).toHaveBeenCalledWith("c1", false);
+    // 点星是「收藏这个动作」，不是「打开这首谱」——冒泡没拦住会顺带载入并覆盖编辑区
+    expect(onLoad).not.toHaveBeenCalled();
+  });
+
+  it("未收藏显示空心星，点击回调收到 true", () => {
+    const onToggleFavorite = vi.fn();
+    renderDialog(tabs, { favoriteIds: [], onToggleFavorite });
+
+    const star = screen.getByRole("button", { name: "收藏「广陵散」" });
+    expect(star.getAttribute("aria-pressed")).toBe("false");
+    expect(star.textContent).toBe("☆");
+
+    fireEvent.click(star);
+    expect(onToggleFavorite).toHaveBeenCalledWith("c1", true);
+  });
+});

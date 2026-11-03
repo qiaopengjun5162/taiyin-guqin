@@ -102,6 +102,13 @@ export default function Home() {
   // 持久化状态
   const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
   const [loadTabs, setLoadTabs] = useState<LoadDialogTab[]>([]);
+  /**
+   * 当前账号收藏的曲谱 id。
+   *
+   * 只在打开发布列表时刷新：收藏跟账号走（未登录恒为空），
+   * 与其搞一套跨组件订阅，不如在「看得见它」的那一刻取一次真值。
+   */
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   // 纯前端模式（静态托管无后端）时，曲谱改存浏览器本地，需在 UI 上说明。
   // 用 useSyncExternalStore 读取「仅浏览器可得」的值：服务端快照固定为 server，
   // 挂载后取真实值，既不触发水合不一致，也避免在 effect 里同步 setState。
@@ -507,6 +514,79 @@ export default function Home() {
     }
   }
 
+  /** 「我的收藏」翻页。与社区翻页同样的两条纪律：不可重入、失败要复位 loadingMore。 */
+  async function handleLoadMoreFavorites() {
+    const tab = loadTabs.find((t) => t.key === "favorites");
+    if (!tab || tab.loadingMore) return;
+
+    setLoadTabs((prev) =>
+      prev.map((t) => (t.key === "favorites" ? { ...t, loadingMore: true } : t)),
+    );
+    try {
+      const page = await api.listFavoritesPage({ limit: 50, offset: tab.scores.length });
+      setLoadTabs((prev) =>
+        prev.map((t) => {
+          if (t.key !== "favorites") return t;
+          return {
+            ...t,
+            scores: [...t.scores, ...page.items],
+            total: page.total ?? t.total ?? null,
+            // 「我的谱」集合要跟着扩，否则第二页里自己发的谱没有删除按钮
+            myScoreIds: [
+              ...(t.myScoreIds ?? []),
+              ...page.items.filter((x) => isMyScore(x.id)).map((x) => x.id),
+            ],
+            loadingMore: false,
+          };
+        }),
+      );
+    } catch {
+      setLoadTabs((prev) =>
+        prev.map((t) => (t.key === "favorites" ? { ...t, loadingMore: false } : t)),
+      );
+      showError("加载更多收藏失败，请稍后再试");
+    }
+  }
+
+  /**
+   * 收藏 / 取消收藏一首谱。
+   *
+   * 三点刻意为之：
+   * ① 未登录直接提示去登录——静默失败会让人以为按钮坏了；
+   * ② 取消收藏时，若正停在「我的收藏」tab，这一行要**立刻消失**，
+   *    否则用户会以为没生效、再点一次（虽然接口幂等，但体验是坏的）；
+   * ③ 失败不改本地状态：宁可显示没收藏，也不能显示「已收藏」而服务端没记上。
+   */
+  async function handleToggleFavorite(id: string, favorited: boolean) {
+    if (!getCurrentUserId()) {
+      showError("收藏需要先登录：在「社区后端」面板里注册 / 登录后，收藏会跟着账号走");
+      return;
+    }
+    try {
+      if (favorited) {
+        await api.favoriteScore(id);
+        setFavoriteIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        showInfo("已加入我的收藏");
+      } else {
+        await api.unfavoriteScore(id);
+        setFavoriteIds((prev) => prev.filter((x) => x !== id));
+        setLoadTabs((prev) =>
+          prev.map((t) =>
+            t.key === "favorites"
+              ? {
+                  ...t,
+                  scores: t.scores.filter((s) => s.id !== id),
+                  total: t.total === null || t.total === undefined ? t.total : Math.max(0, t.total - 1),
+                }
+              : t,
+          ),
+        );
+      }
+    } catch (err) {
+      showError(err instanceof api.ApiError ? err.message : "收藏失败，请检查网络或后端状态");
+    }
+  }
+
   /** 打开加载对话框：连后端时同时拉「社区共享谱」与「本机谱」两个 tab */
   async function openLoadDialog() {
     try {
@@ -519,21 +599,49 @@ export default function Home() {
         } catch {
           // 隐私模式 / IndexedDB 不可用：本机 tab 直接为空即可，不影响社区浏览
         }
-        const tabs: LoadDialogTab[] = [
-          {
-            key: "community",
-            label: "社区曲谱",
-            scores: serverList,
-            readOnly: true,
-            // 只读是「不让你删别人的谱」，自己发布的仍要能删（否则发布即不可撤回）
-            myScoreIds: serverList.filter((s) => isMyScore(s.id)).map((s) => s.id),
-            // 登录者的账号 id：换设备发的谱，靠它也能认出是「我的」
-            myUserId: getCurrentUserId(),
-            // 总数与翻页：只有第一页时用户会以为社区就这么几首
-            total: firstPage.total,
-            onLoadMore: handleLoadMoreCommunity,
-          },
-        ];
+
+        const myId = getCurrentUserId();
+        const tabs: LoadDialogTab[] = [];
+        // 收藏 tab 排在最前：它是「我还要再弹一次」的短列表，比在社区里重新找快得多。
+        // 只在**确实收过谱**时加：一打开就落在空列表上，比没有这个 tab 更让人困惑。
+        if (myId) {
+          try {
+            const favPage = await api.listFavoritesPage({ limit: 50 });
+            const favTotal = favPage.total ?? favPage.items.length;
+            if (favTotal > 0) {
+              tabs.push({
+                key: "favorites",
+                label: "我的收藏",
+                scores: favPage.items,
+                readOnly: true,
+                myScoreIds: favPage.items.filter((s) => isMyScore(s.id)).map((s) => s.id),
+                myUserId: myId,
+                total: favPage.total,
+                onLoadMore: handleLoadMoreFavorites,
+              });
+            }
+            setFavoriteIds(await api.listFavoriteIds());
+          } catch {
+            // 收藏是附加能力：接口挂了不该让「打开曲谱」整个失败
+            setFavoriteIds([]);
+          }
+        } else {
+          setFavoriteIds([]);
+        }
+
+        tabs.push({
+          key: "community",
+          label: "社区曲谱",
+          scores: serverList,
+          readOnly: true,
+          // 只读是「不让你删别人的谱」，自己发布的仍要能删（否则发布即不可撤回）
+          myScoreIds: serverList.filter((s) => isMyScore(s.id)).map((s) => s.id),
+          // 登录者的账号 id：换设备发的谱，靠它也能认出是「我的」
+          myUserId: myId,
+          // 总数与翻页：只有第一页时用户会以为社区就这么几首
+          total: firstPage.total,
+          onLoadMore: handleLoadMoreCommunity,
+        });
         if (localList.length > 0) {
           tabs.push({ key: "local", label: "本机", scores: localList, showMigrate: true });
         }
@@ -566,6 +674,9 @@ export default function Home() {
         await api.deleteScore(id);
       }
       forgetMyScore(id);
+      // 服务端的收藏行会随曲谱一起级联删除，本地这份也要跟着去掉，
+      // 否则同一次会话里再打开收藏 tab，星标还亮着却点不出内容
+      setFavoriteIds((prev) => prev.filter((x) => x !== id));
       setLoadTabs((prev) =>
         prev.map((t) => ({
           ...t,
@@ -1070,6 +1181,8 @@ export default function Home() {
         onMigrate={handleMigrateLocalToCommunity}
         migrating={migrating}
         migrateMsg={migrateMsg}
+        favoriteIds={favoriteIds}
+        onToggleFavorite={handleToggleFavorite}
       />
 
       {/* ── 主卡片 —— 宣纸质感 ── */}

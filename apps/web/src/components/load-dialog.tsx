@@ -61,6 +61,15 @@ interface LoadDialogProps {
   migrating?: boolean;
   /** 迁移结果提示（成功/跳过数量等），显示在按钮下方 */
   migrateMsg?: string | null;
+  /**
+   * 当前账号已收藏的曲谱 id。
+   *
+   * 配合 `onToggleFavorite` 一起给：只有**登录后**才显示星标——
+   * 未登录时收藏接口必然 401，画一个点了就报错的星星比不画更糟。
+   */
+  favoriteIds?: string[];
+  /** 切换收藏。`favorited` 是点击**后**期望的状态，而不是当前状态。 */
+  onToggleFavorite?: (id: string, favorited: boolean) => void;
 }
 
 /**
@@ -113,6 +122,8 @@ export function LoadDialog({
   onMigrate,
   migrating,
   migrateMsg,
+  favoriteIds,
+  onToggleFavorite,
 }: LoadDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [activeKey, setActiveKey] = useState(defaultTabKey ?? tabs[0]?.key);
@@ -234,6 +245,7 @@ export function LoadDialog({
               // 认领只对本机发的、还没有账号归属的谱开放：
               // 服务端要求出示原凭证，别人的谱点了也只会 403。
               const claimable = !!onClaim && !!activeTab.myUserId && !s.owner_user_id && mine;
+              const favorited = !!favoriteIds?.includes(s.id);
               return (
               <div
                 key={s.id}
@@ -268,6 +280,24 @@ export function LoadDialog({
                 <span className="text-[9px] text-stone-500 shrink-0">
                   {new Date(s.updated_at).toLocaleString("zh-CN")}
                 </span>
+                {onToggleFavorite && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleFavorite(s.id, !favorited);
+                    }}
+                    aria-label={favorited ? `取消收藏「${s.title}」` : `收藏「${s.title}」`}
+                    aria-pressed={favorited}
+                    title={
+                      favorited ? "已收藏，点击取消" : "加入我的收藏（跟着账号走，换设备也在）"
+                    }
+                    className={`shrink-0 px-0.5 text-[12px] leading-none transition-colors ${
+                      favorited ? "text-amber-600" : "text-stone-300 hover:text-amber-600"
+                    }`}
+                  >
+                    {favorited ? "★" : "☆"}
+                  </button>
+                )}
                 {claimable && (
                   <button
                     onClick={(e) => {
