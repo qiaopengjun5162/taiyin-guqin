@@ -3,7 +3,7 @@
 # ────────────────────────────────────────────
 
 # -- 构建阶段 --
-FROM rust:1.85-slim-bookworm AS builder
+FROM rust:1.98-slim-bookworm AS builder
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
