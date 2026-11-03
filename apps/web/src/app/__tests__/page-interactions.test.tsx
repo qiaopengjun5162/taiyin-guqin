@@ -30,6 +30,11 @@ const h = vi.hoisted(() => ({
   exportPng: vi.fn(),
   exportSvg: vi.fn(),
   translateJianpuToJianzi: vi.fn(),
+  // 收藏：登录后打开曲谱列表会拉这两个，点星会调那两个
+  listFavoritesPage: vi.fn(),
+  listFavoriteIds: vi.fn(),
+  favoriteScore: vi.fn(),
+  unfavoriteScore: vi.fn(),
 }));
 
 /** 可切换的存储模式：默认 browser（与既有用例一致），迁移用例里临时切 server。 */
@@ -117,6 +122,17 @@ vi.mock("@/lib/api", () => {
     localDeleteScore: h.localDeleteScore,
     localListScores: h.localListScores,
     localGetScore: h.localGetScore,
+    listFavoritesPage: h.listFavoritesPage,
+    listFavoriteIds: h.listFavoriteIds,
+    favoriteScore: h.favoriteScore,
+    unfavoriteScore: h.unfavoriteScore,
+    // 登录态存在时「社区后端」面板会打开即校验会话；本文件只测收藏接线，
+    // 这个校验给个恒成功的替身，别让一条无关的请求把用例带崩
+    fetchCurrentUser: async () => ({ id: "u-1", email: "qin@you.com", display_name: "我" }),
+    loginAccount: vi.fn(),
+    registerAccount: vi.fn(),
+    logoutAccount: vi.fn(),
+    claimScore: vi.fn(),
     selectCandidates: vi.fn(),
     recognizeJianzi: vi.fn(),
     recognizeJianziSheet: vi.fn(),
@@ -1188,5 +1204,153 @@ describe("Home · 自动草稿", () => {
     await waitFor(() => expect(h.createScore).toHaveBeenCalled());
 
     expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+  });
+});
+
+describe("Home · 收藏（跟账号走）", () => {
+  const SESSION = { token: "tok-fav", user: { id: "u-1", email: "qin@you.com", display_name: "我" } };
+
+  it("登录且收过谱：默认落在「我的收藏」，点星即取消并从列表消失", async () => {
+    const auth = await import("@/lib/auth");
+    auth.setStoredSession(SESSION);
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([
+      { id: "c1", title: "广陵散", tuning: "zhengdiao", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" },
+    ]);
+    h.listFavoritesPage.mockResolvedValue({
+      items: [
+        { id: "f1", title: "平沙落雁", tuning: "zhengdiao", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" },
+      ],
+      total: 1,
+    });
+    h.listFavoriteIds.mockResolvedValue(["f1"]);
+    h.unfavoriteScore.mockResolvedValue(undefined);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    // 收藏 tab 排在最前，且默认激活：收藏的用途就是「少翻两页」
+    expect(await screen.findByText("平沙落雁")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /我的收藏/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消收藏「平沙落雁」" }));
+
+    await waitFor(() => expect(h.unfavoriteScore).toHaveBeenCalledWith("f1"));
+    // 取消后这一行要立刻消失：留在原地会让人以为没生效，再点一次
+    await waitFor(() => expect(screen.queryByText("平沙落雁")).toBeNull());
+  });
+
+  it("登录但还没收过谱：不摆一个空的「我的收藏」tab", async () => {
+    const auth = await import("@/lib/auth");
+    auth.setStoredSession(SESSION);
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([
+      { id: "c1", title: "广陵散", tuning: "zhengdiao", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" },
+    ]);
+    h.listFavoritesPage.mockResolvedValue({ items: [], total: 0 });
+    h.listFavoriteIds.mockResolvedValue([]);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    await screen.findByText("广陵散");
+    // 一打开就落在空列表上，比没有这个 tab 更让人困惑
+    expect(screen.queryByRole("button", { name: /我的收藏/ })).toBeNull();
+  });
+
+  it("未登录：不请求收藏接口，也不画星标（画了点了必然 401）", async () => {
+    // 必须显式登出：auth 除了 localStorage 还有一份内存缓存，
+    // 上个用例 setStoredSession 留下的会话不会因为清 localStorage 就消失
+    const auth = await import("@/lib/auth");
+    auth.clearStoredSession();
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([
+      { id: "c1", title: "广陵散", tuning: "zhengdiao", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" },
+    ]);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    await screen.findByText("广陵散");
+    expect(h.listFavoritesPage).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /收藏「/ })).toBeNull();
+  });
+
+  it("收藏接口挂了也不影响打开曲谱列表（附加能力不能拖垮主流程）", async () => {
+    const auth = await import("@/lib/auth");
+    auth.setStoredSession(SESSION);
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([
+      { id: "c1", title: "广陵散", tuning: "zhengdiao", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" },
+    ]);
+    h.listFavoritesPage.mockRejectedValue(new Error("favorites down"));
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    expect(await screen.findByText("广陵散")).toBeTruthy();
+  });
+});
+
+describe("Home · 收藏翻页", () => {
+  it("收藏多于一页时「加载更多」按 offset 续取，且不重复渲染", async () => {
+    const auth = await import("@/lib/auth");
+    auth.setStoredSession({ token: "tok-page", user: { id: "u-1", email: "qin@you.com", display_name: "我" } });
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([]);
+    h.listFavoritesPage
+      .mockResolvedValueOnce({
+        items: [
+          { id: "f1", title: "平沙落雁", tuning: "zhengdiao", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" },
+        ],
+        total: 2,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          { id: "f2", title: "潇湘水云", tuning: "zhengdiao", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" },
+        ],
+        total: 2,
+      });
+    h.listFavoriteIds.mockResolvedValue(["f1", "f2"]);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    await screen.findByText("平沙落雁");
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+
+    await waitFor(() =>
+      expect(h.listFavoritesPage).toHaveBeenLastCalledWith({ limit: 50, offset: 1 }),
+    );
+    expect(await screen.findByText("潇湘水云")).toBeTruthy();
+    // 第一页那条还在，没被整页替换掉
+    expect(screen.getByText("平沙落雁")).toBeTruthy();
+  });
+});
+
+describe("Home · 社区翻页（回归：按钮点了没反应）", () => {
+  /**
+   * 曾经的 bug：`openLoadDialog` 把 `onLoadMore` 写进 tab 对象时，回调闭包捕获的是
+   * 那一次渲染的 `loadTabs`（还是空的），于是点「加载更多」会 `find` 不到 tab、
+   * 直接 return——表现就是按钮点了毫无反应，而且只有谱多到要翻页时才暴露。
+   */
+  it("第二页的谱能通过「加载更多」取回来", async () => {
+    storeState.storageMode = "server";
+    const all = Array.from({ length: 51 }, (_, i) => ({
+      id: `c${i}`,
+      title: `社区谱${i}`,
+      tuning: "zhengdiao",
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-01T00:00:00Z",
+    }));
+    h.listScores.mockResolvedValue(all);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+
+    await screen.findByText("社区谱0");
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+
+    expect(await screen.findByText("社区谱50")).toBeTruthy();
   });
 });

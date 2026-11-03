@@ -109,6 +109,18 @@ export default function Home() {
    * 与其搞一套跨组件订阅，不如在「看得见它」的那一刻取一次真值。
    */
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  /**
+   * `loadTabs` 的镜像。
+   *
+   * 为什么需要：`openLoadDialog` 把 `onLoadMore` 写进 tab 对象时，回调闭包捕获的是
+   * **那一次渲染**的 `loadTabs`——而此时它还是空的。于是点「加载更多」会读到空数组、
+   * 直接 return，表现是「按钮点了没反应」，而且只在分页时才暴露。
+   * 用 ref 读当前值，回调就不会被首次渲染的旧状态钉住。
+   */
+  const loadTabsRef = useRef<LoadDialogTab[]>([]);
+  useEffect(() => {
+    loadTabsRef.current = loadTabs;
+  }, [loadTabs]);
   // 纯前端模式（静态托管无后端）时，曲谱改存浏览器本地，需在 UI 上说明。
   // 用 useSyncExternalStore 读取「仅浏览器可得」的值：服务端快照固定为 server，
   // 挂载后取真实值，既不触发水合不一致，也避免在 effect 里同步 setState。
@@ -480,7 +492,8 @@ export default function Home() {
    * 而用户通常只关心最近发布的那些。
    */
   async function handleLoadMoreCommunity() {
-    const tab = loadTabs.find((t) => t.key === "community");
+    // 从 ref 读：这里的回调是首次渲染时被写进 tab 对象的，直接读 state 会读到空数组
+    const tab = loadTabsRef.current.find((t) => t.key === "community");
     // 加载中不重入：按钮已 disabled，但双击 / 回车仍可能连发
     if (!tab || tab.loadingMore) return;
 
@@ -516,7 +529,7 @@ export default function Home() {
 
   /** 「我的收藏」翻页。与社区翻页同样的两条纪律：不可重入、失败要复位 loadingMore。 */
   async function handleLoadMoreFavorites() {
-    const tab = loadTabs.find((t) => t.key === "favorites");
+    const tab = loadTabsRef.current.find((t) => t.key === "favorites");
     if (!tab || tab.loadingMore) return;
 
     setLoadTabs((prev) =>
@@ -1182,7 +1195,9 @@ export default function Home() {
         migrating={migrating}
         migrateMsg={migrateMsg}
         favoriteIds={favoriteIds}
-        onToggleFavorite={handleToggleFavorite}
+        // 未登录不传回调 = 对话框不画星标。收藏接口要求登录态，
+        // 画一个点了必然 401 的星星，比不画更让人怀疑功能坏了。
+        onToggleFavorite={getCurrentUserId() ? handleToggleFavorite : undefined}
       />
 
       {/* ── 主卡片 —— 宣纸质感 ── */}
