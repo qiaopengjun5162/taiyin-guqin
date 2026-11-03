@@ -5,6 +5,9 @@ use serde_json::{Value, json};
 use taiyin_server::{AppState, ServerConfig, app};
 use tower::util::ServiceExt;
 
+/// 测试用发布者凭证：创建时带上，之后改 / 删必须带同一个值。
+const OWNER: &str = "test-owner-token-0001";
+
 #[tokio::test]
 async fn test_create_and_list_scores() {
     let pool = common::test_pool().await;
@@ -24,6 +27,7 @@ async fn test_create_and_list_scores() {
         .oneshot(
             Request::builder()
                 .method("POST")
+                .header("x-owner-token", OWNER)
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -78,6 +82,7 @@ async fn test_create_get_update_delete() {
         .oneshot(
             Request::builder()
                 .method("POST")
+                .header("x-owner-token", OWNER)
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -114,6 +119,7 @@ async fn test_create_get_update_delete() {
         .oneshot(
             Request::builder()
                 .method("PUT")
+                .header("x-owner-token", OWNER)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -144,6 +150,7 @@ async fn test_create_get_update_delete() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
+                .header("x-owner-token", OWNER)
                 .uri(format!("/api/v1/scores/{id}"))
                 .body(Body::empty())
                 .unwrap(),
@@ -187,6 +194,7 @@ async fn test_score_tuning_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("POST")
+                .header("x-owner-token", OWNER)
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -208,6 +216,7 @@ async fn test_score_tuning_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
+                .header("x-owner-token", OWNER)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -269,6 +278,7 @@ async fn test_score_tuning_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
+                .header("x-owner-token", OWNER)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -301,6 +311,7 @@ async fn test_score_author_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("POST")
+                .header("x-owner-token", OWNER)
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -322,6 +333,7 @@ async fn test_score_author_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
+                .header("x-owner-token", OWNER)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -381,6 +393,7 @@ async fn test_score_author_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
+                .header("x-owner-token", OWNER)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -389,4 +402,176 @@ async fn test_score_author_roundtrip() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 400);
+}
+
+/// 所有权凭证：知道 id 不等于有权改删。
+///
+/// 分享链接里带着 id，若不加这道闸，任何看到链接的人都能删掉社区里的谱。
+#[tokio::test]
+async fn test_owner_token_guards_update_and_delete() {
+    let pool = common::test_pool().await;
+    sqlx::query("DELETE FROM scores")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let state = AppState {
+        pool: pool.clone(),
+        llm: Default::default(),
+    };
+
+    // 带凭证创建
+    let body_str = serde_json::to_string(&json!({"title": "有主谱", "notes": []})).unwrap();
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .header("x-owner-token", OWNER)
+                .uri("/api/v1/scores")
+                .header("content-type", "application/json")
+                .body(Body::from(body_str))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    // 凭证绝不能回传给客户端：拿到它就能改删
+    assert!(
+        created.get("owner_token").is_none(),
+        "响应不得包含 owner_token"
+    );
+
+    // 公开可读：社区谱不设访问门槛
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/scores/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // 换一个凭证改 → 403
+    let body_str = serde_json::to_string(&json!({"title": "被篡改"})).unwrap();
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .header("x-owner-token", "someone-else")
+                .uri(format!("/api/v1/scores/{id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body_str))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+
+    // 不带凭证改 → 403
+    let body_str = serde_json::to_string(&json!({"title": "匿名篡改"})).unwrap();
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/v1/scores/{id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body_str))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+
+    // 换一个凭证删 → 403，且谱还在
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .header("x-owner-token", "someone-else")
+                .uri(format!("/api/v1/scores/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/scores/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "被拒绝的删除不能真的删掉谱");
+
+    // 本人凭证：能改、能删
+    let body_str = serde_json::to_string(&json!({"title": "本人改名"})).unwrap();
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .header("x-owner-token", OWNER)
+                .uri(format!("/api/v1/scores/{id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body_str))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .header("x-owner-token", OWNER)
+                .uri(format!("/api/v1/scores/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // 未带凭证创建的谱是「无主谱」：谁也改不了，只能管理员清理
+    let body_str = serde_json::to_string(&json!({"title": "无主谱", "notes": []})).unwrap();
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/scores")
+                .header("content-type", "application/json")
+                .body(Body::from(body_str))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let orphan: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let orphan_id = orphan["id"].as_str().unwrap().to_string();
+
+    let resp = app(state, &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .header("x-owner-token", OWNER)
+                .uri(format!("/api/v1/scores/{orphan_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403, "无主谱不能被任何凭证认领删除");
 }

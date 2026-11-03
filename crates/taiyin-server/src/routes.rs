@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::{HeaderValue, Method},
+    http::{HeaderMap, HeaderValue, Method},
     middleware::from_fn_with_state,
     routing::{get, post},
 };
@@ -33,6 +33,10 @@ use crate::template_match::{self, RecognizeMode};
 const MAX_TITLE_LENGTH: usize = 200;
 /// 署名上限：留足「某某琴社·某某」这类写法，又不至于把列表撑爆。
 const MAX_AUTHOR_LENGTH: usize = 40;
+/// 发布者凭证的请求头。前端首发布时生成，之后改 / 删都要带上同一个值。
+const OWNER_TOKEN_HEADER: &str = "x-owner-token";
+/// 凭证长度上限：UUID 是 36，留足余量但不接受任意长串（避免把 header 当存储用）。
+const MAX_OWNER_TOKEN_LENGTH: usize = 128;
 
 /// 构造 CORS 层。
 ///
@@ -58,6 +62,9 @@ fn build_cors(allowed: &[String]) -> CorsLayer {
             axum::http::header::CONTENT_TYPE,
             axum::http::header::AUTHORIZATION,
             axum::http::HeaderName::from_static("x-api-key"),
+            // 所有权凭证：不加进白名单的话，浏览器跨域预检会直接拦掉，
+            // 表现是「发布能成、改删必失败」，且只报 CORS 错误、看不出真正原因。
+            axum::http::HeaderName::from_static(OWNER_TOKEN_HEADER),
         ]))
 }
 
@@ -99,12 +106,38 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
 
 async fn fetch_score(pool: &PgPool, id: Uuid) -> AppResult<Score> {
     sqlx::query_as::<_, Score>(
-        "SELECT id, title, notes, tuning, author, created_at, updated_at FROM scores WHERE id = $1",
+        "SELECT id, title, notes, tuning, author, owner_token, created_at, updated_at \
+         FROM scores WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::NotFound)
+}
+
+/// 从请求头读取发布者凭证。缺失、非法编码、空白或超长都视为「没带」。
+fn read_owner_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(OWNER_TOKEN_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && v.len() <= MAX_OWNER_TOKEN_LENGTH)
+        .map(str::to_string)
+}
+
+/// 校验「这份凭证能否改 / 删这首谱」。
+///
+/// 三种情况一律拒绝，不做任何宽容：
+/// 1. 库里没存凭证（迁移前的老谱）——宁可让管理员手工清理，也不留「谁都能删」的口子；
+/// 2. 请求没带凭证——匿名请求不能改任何人的谱；
+/// 3. 两边不相等——凭证就是所有权，不等即非本人。
+fn ensure_owner(stored: Option<&str>, provided: Option<&str>) -> AppResult<()> {
+    match (stored, provided) {
+        (Some(stored), Some(provided)) if stored == provided => Ok(()),
+        _ => Err(AppError::Forbidden(
+            "这不是你发布到社区的曲谱，无法修改或删除".into(),
+        )),
+    }
 }
 
 /// 合法定弦标识，与前端 `apps/web/src/lib/tuning.ts` 的 `TuningId` 一一对应。
@@ -361,6 +394,7 @@ async fn recognize_sheet(
 
 async fn create_score(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<CreateScoreRequest>,
 ) -> AppResult<Json<Score>> {
     let title = req.title.unwrap_or_else(|| "未命名曲谱".to_string());
@@ -370,15 +404,20 @@ async fn create_score(
     // 去空白后校验：只有一个空格的署名等于匿名，不该占满长度配额。
     let author = req.author.unwrap_or_default().trim().to_string();
     validate_author(&author)?;
+    // 没带凭证也允许发布，但这条谱从此无主（谁也改不了、删不了），
+    // 由管理员直接操作数据库清理。比「随便谁都能删」安全得多。
+    let owner_token = read_owner_token(&headers);
 
     let score = sqlx::query_as::<_, Score>(
-        "INSERT INTO scores (title, notes, tuning, author) VALUES ($1, $2, $3, $4) \
-         RETURNING id, title, notes, tuning, author, created_at, updated_at",
+        "INSERT INTO scores (title, notes, tuning, author, owner_token) \
+         VALUES ($1, $2, $3, $4, $5) \
+         RETURNING id, title, notes, tuning, author, owner_token, created_at, updated_at",
     )
     .bind(&title)
     .bind(&req.notes)
     .bind(&tuning)
     .bind(&author)
+    .bind(&owner_token)
     .fetch_one(&state.pool)
     .await?;
 
@@ -403,9 +442,15 @@ async fn get_score(State(state): State<AppState>, Path(id): Path<Uuid>) -> AppRe
 async fn update_score(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<UpdateScoreRequest>,
 ) -> AppResult<Json<Score>> {
     let existing = fetch_score(&state.pool, id).await?;
+    // 先校验所有权再动任何字段：否则别人能改掉你的谱面内容（比删更隐蔽）
+    ensure_owner(
+        existing.owner_token.as_deref(),
+        read_owner_token(&headers).as_deref(),
+    )?;
 
     let title = req.title.unwrap_or(existing.title);
     validate_title(&title)?;
@@ -421,7 +466,7 @@ async fn update_score(
     let score = sqlx::query_as::<_, Score>(
         "UPDATE scores SET title = $1, notes = $2, tuning = $3, author = $4, updated_at = now() \
          WHERE id = $5 \
-         RETURNING id, title, notes, tuning, author, created_at, updated_at",
+         RETURNING id, title, notes, tuning, author, owner_token, created_at, updated_at",
     )
     .bind(&title)
     .bind(&notes)
@@ -437,7 +482,16 @@ async fn update_score(
 async fn delete_score(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> AppResult<Json<serde_json::Value>> {
+    // 先取一次做所有权校验：无主谱 / 凭证不符一律 403，
+    // 不能让「知道 id」等价于「有权删除」——分享链接里正好带着 id。
+    let existing = fetch_score(&state.pool, id).await?;
+    ensure_owner(
+        existing.owner_token.as_deref(),
+        read_owner_token(&headers).as_deref(),
+    )?;
+
     let result = sqlx::query("DELETE FROM scores WHERE id = $1")
         .bind(id)
         .execute(&state.pool)
@@ -476,6 +530,40 @@ mod tests {
         let too_long = "琴".repeat(MAX_AUTHOR_LENGTH + 1);
         let err = validate_author(&too_long).expect_err("41 个汉字应拒绝");
         assert!(matches!(err, AppError::Validation(_)), "{err:?}");
+    }
+
+    #[test]
+    fn owner_token_must_match_exactly() {
+        assert!(ensure_owner(Some("t"), Some("t")).is_ok());
+        for (stored, provided) in [
+            (Some("t"), Some("x")), // 别人的凭证
+            (Some("t"), None),      // 匿名请求
+            (None, Some("t")),      // 无主谱（迁移前的老数据）
+            (None, None),
+        ] {
+            let err = ensure_owner(stored, provided).expect_err("应拒绝");
+            assert!(
+                matches!(err, AppError::Forbidden(_)),
+                "{stored:?}/{provided:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn owner_token_header_is_read_safely() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(read_owner_token(&headers), None, "缺失即没有");
+
+        headers.insert(OWNER_TOKEN_HEADER, HeaderValue::from_static("  abc  "));
+        assert_eq!(read_owner_token(&headers).as_deref(), Some("abc"), "去空白");
+
+        headers.insert(OWNER_TOKEN_HEADER, HeaderValue::from_static("   "));
+        assert_eq!(read_owner_token(&headers), None, "纯空白视为没带");
+
+        // 超长串不接受，避免有人把 header 当存储用
+        let long = "a".repeat(MAX_OWNER_TOKEN_LENGTH + 1);
+        headers.insert(OWNER_TOKEN_HEADER, HeaderValue::from_str(&long).unwrap());
+        assert_eq!(read_owner_token(&headers), None);
     }
 
     /// 用索引模板拼一张 2x2 合成整页（墨=0 白底），编码为 PNG base64 ——

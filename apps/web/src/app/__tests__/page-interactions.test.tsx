@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   getScore: vi.fn(),
   localGetScore: vi.fn(),
   deleteScore: vi.fn(),
+  localDeleteScore: vi.fn(),
   exportPng: vi.fn(),
   exportSvg: vi.fn(),
   translateJianpuToJianzi: vi.fn(),
@@ -105,6 +106,7 @@ vi.mock("@/lib/api", () => {
     getScore: h.getScore,
     updateScore: h.updateScore,
     deleteScore: h.deleteScore,
+    localDeleteScore: h.localDeleteScore,
     localListScores: h.localListScores,
     localGetScore: h.localGetScore,
     selectCandidates: vi.fn(),
@@ -404,6 +406,26 @@ describe("Home · 保存与加载", () => {
     fireEvent.click(saveBtn);
     await waitFor(() => expect(h.updateScore).toHaveBeenCalledTimes(1));
     expect(h.updateScore.mock.calls[0][1]).not.toHaveProperty("author");
+  });
+
+  it("改别人的社区谱遇 403 时自动另存为新谱，而不是报错", async () => {
+    await loadExample();
+    const saveBtn = screen.getByLabelText("保存");
+
+    // 第一次：正常创建，拿到 id（模拟「打开别人的谱后已有 id」）
+    fireEvent.click(saveBtn);
+    await waitFor(() => expect(saveBtn.textContent).toBe("已保存"));
+
+    // 第二次：服务端按所有权凭证拒绝
+    h.updateScore.mockRejectedValue(
+      new ApiError("这不是你发布到社区的曲谱，无法修改或删除", 403),
+    );
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => expect(h.createScore).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("这不是你发布的曲谱，已另存为新谱")).toBeTruthy();
+    // 另存后状态是成功，不是失败
+    await waitFor(() => expect(saveBtn.textContent).toBe("已保存"));
   });
 
   it("保存失败时展示后端错误消息", async () => {
@@ -890,5 +912,76 @@ describe("Home · 曲谱分享链接", () => {
     render(<Home />);
 
     await waitFor(() => expect(screen.getByText("分享的曲谱不存在或已删除")).toBeTruthy());
+  });
+});
+
+/**
+ * 所有权：发布到社区后仍要能撤回自己的谱，但不能删别人的。
+ * 这一层靠「本机记录 + 服务端凭证」双保险，本地记录被伪造也删不动别人的谱。
+ */
+describe("Home · 我发布的社区谱可删", () => {
+  const MINE = {
+    id: "mine-1",
+    title: "我的平沙",
+    tuning: "zhengdiao" as const,
+    created_at: "",
+    updated_at: "",
+  };
+  const OTHERS = {
+    id: "others-1",
+    title: "别人的流水",
+    tuning: "zhengdiao" as const,
+    created_at: "",
+    updated_at: "",
+  };
+
+  it("社区 tab 里自己的谱显示删除按钮，删除走服务器接口", async () => {
+    storeState.storageMode = "server";
+    window.localStorage.setItem("taiyin.myScoreIds", JSON.stringify([MINE.id]));
+    h.listScores.mockResolvedValue([MINE, OTHERS]);
+    h.localListScores.mockResolvedValue([]);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const { container } = render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+    await screen.findByText("我的平沙");
+
+    // 只有自己的谱有删除按钮（别人的谱只读）
+    const deleteButtons = container.querySelectorAll('[title="删除"]');
+    expect(deleteButtons).toHaveLength(1);
+
+    fireEvent.click(deleteButtons[0]);
+    await waitFor(() => expect(h.deleteScore).toHaveBeenCalledWith(MINE.id));
+    expect(h.localDeleteScore).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("本机谱走本地删除，不会把本地 id 发到服务器", async () => {
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([]);
+    h.localListScores.mockResolvedValue([
+      {
+        id: "local-1",
+        title: "本地草稿",
+        tuning: "zhengdiao" as const,
+        created_at: "",
+        updated_at: "",
+      },
+    ]);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const { container } = render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+    // 社区 tab 是默认首个 tab，本机谱要切过去才看得到
+    fireEvent.click(await screen.findByRole("button", { name: /本机/ }));
+    await screen.findByText("本地草稿");
+
+    const btn = container.querySelector('[title="删除"]');
+    expect(btn).not.toBeNull();
+    fireEvent.click(btn as Element);
+
+    await waitFor(() => expect(h.localDeleteScore).toHaveBeenCalledWith("local-1"));
+    expect(h.deleteScore).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });

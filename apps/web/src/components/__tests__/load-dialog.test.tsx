@@ -242,3 +242,50 @@ describe("LoadDialog · 打谱人署名", () => {
     expect(screen.queryByText("潇湘水云")).toBeNull();
   });
 });
+
+/**
+ * 只读 tab 的例外：自己发布的谱要能删。
+ * 否则「发布到社区」就变成不可撤回的操作。
+ */
+describe("LoadDialog · 只读 tab 里自己的谱", () => {
+  const items: ScoreListItem[] = [
+    {
+      id: "mine",
+      title: "我的平沙",
+      tuning: "zhengdiao",
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:00:00Z",
+    },
+    {
+      id: "other",
+      title: "别人的流水",
+      tuning: "zhengdiao",
+      created_at: "2026-09-02T00:00:00Z",
+      updated_at: "2026-09-02T00:00:00Z",
+    },
+  ];
+
+  it("只给自己的谱显示删除按钮，别人的谱仍然只读", () => {
+    const { container, onDelete } = renderDialog([
+      {
+        key: "community",
+        label: "社区曲谱",
+        scores: items,
+        readOnly: true,
+        myScoreIds: ["mine"],
+      },
+    ]);
+
+    const buttons = container.querySelectorAll('[title="删除"]');
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]);
+    expect(onDelete).toHaveBeenCalledWith("mine", "我的平沙");
+  });
+
+  it("没有 myScoreIds 时只读 tab 一个删除按钮都没有", () => {
+    const { container } = renderDialog([
+      { key: "community", label: "社区曲谱", scores: items, readOnly: true },
+    ]);
+    expect(container.querySelectorAll('[title="删除"]')).toHaveLength(0);
+  });
+});

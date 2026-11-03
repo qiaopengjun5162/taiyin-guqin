@@ -57,7 +57,10 @@ describe("api: scores CRUD", () => {
     const [url, options] = fetchMock.mock.calls[0];
     expect(url).toContain("/api/v1/scores");
     expect(options.method).toBe("POST");
-    expect(options.headers).toEqual({ "Content-Type": "application/json" });
+    expect(options.headers).toMatchObject({ "Content-Type": "application/json" });
+    // 创建时必须带所有权凭证：服务端据此记住「这首谱归谁」，
+    // 否则发出去的谱没人能改 / 删（变成无主谱）。
+    expect(options.headers["x-owner-token"]).toBeTruthy();
     // 定弦必须随谱一起提交：它决定这套减字弹出来是哪个音
     expect(JSON.parse(options.body)).toEqual({ title: "流水", notes, tuning: "zhengdiao" });
   });
@@ -78,6 +81,25 @@ describe("api: scores CRUD", () => {
     await createScore("平沙落雁", [], "zhengdiao", "   ");
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("author");
+  });
+
+  it("改 / 删都带同一份所有权凭证（否则服务端 403）", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "s1", tuning: "zhengdiao" }));
+    const [{ createScore, updateScore, deleteScore }, { getOwnerToken }] = await Promise.all([
+      import("@/lib/api"),
+      import("@/lib/owner-token"),
+    ]);
+
+    await createScore("平沙落雁", []);
+    await updateScore("s1", { title: "平沙落雁（改）" });
+    await deleteScore("s1");
+
+    const token = getOwnerToken();
+    expect(token).not.toBe("");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(options.headers["x-owner-token"]).toBe(token);
+    }
   });
 
   it("createScore 指定定弦时原样提交（蕤宾调）", async () => {

@@ -8,11 +8,16 @@ export interface LoadDialogTab {
   scores: ScoreListItem[];
   /**
    * 只读 tab 不显示删除按钮。社区共享谱就是这种情况——
-   * 后端是无鉴权共享池，别人的曲谱不能删，自己那份也在里面、
-   * 但删了也只删服务器副本，本机副本还在，反而造成「删了还在」的困惑，
-   * 所以社区 tab 干脆不提供删除。
+   * 别人的曲谱不能删。
    */
   readOnly?: boolean;
+  /**
+   * 只读 tab 里仍允许删除的条目（自己发布的谱）。
+   *
+   * `readOnly` 的本意是「别删别人的谱」，不是「发布后不可撤回」——
+   * 少了这一层，用户发布到社区就再也删不掉自己的谱了。
+   */
+  myScoreIds?: string[];
   /**
    * 本机 tab 专属：连上社区后端时显示「一键发布本机谱到社区」入口，
    * 让老用户的本地曲谱批量进入共享池，激活空社区。
@@ -171,7 +176,7 @@ export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelet
                 <span className="text-[9px] text-stone-500 shrink-0">
                   {new Date(s.updated_at).toLocaleString("zh-CN")}
                 </span>
-                {!activeTab.readOnly && onDelete && (
+                {onDelete && (!activeTab.readOnly || activeTab.myScoreIds?.includes(s.id)) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); onDelete(s.id, s.title); }}
                     className="ml-1 size-4 flex items-center justify-center rounded text-stone-400 hover:text-red-600 hover:bg-red-900/10 opacity-0 group-hover:opacity-100 transition-all"

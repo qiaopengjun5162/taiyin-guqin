@@ -16,6 +16,10 @@ pub enum AppError {
     #[error("{0}")]
     Validation(String),
 
+    /// 无权修改 / 删除（不属于本凭证发布的曲谱）。
+    #[error("{0}")]
+    Forbidden(String),
+
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
 }
@@ -32,6 +36,7 @@ impl IntoResponse for AppError {
             }
             Self::NotFound => (StatusCode::NOT_FOUND, "Not found".into()),
             Self::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
+            Self::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             Self::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
         };
 

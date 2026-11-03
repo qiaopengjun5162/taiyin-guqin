@@ -8,6 +8,7 @@ import {
   localUpdateScore,
 } from "./local-score-store";
 import { getStoredApiBase } from "./settings";
+import { getOwnerToken } from "./owner-token";
 
 /** 本地曲谱读写：连后端时，首页「本机」tab 用它们直接操作浏览器存储，
  *  不走 api 的 server/browser 分支判断（否则本地 id 会被误发到服务器）。 */
@@ -60,6 +61,17 @@ function authHeaders(): Record<string, string> {
     headers["x-api-key"] = TRANSLATE_API_KEY;
   }
   return headers;
+}
+
+/**
+ * 所有权凭证头：改 / 删社区曲谱时必须带上。
+ *
+ * 不带也能发布（成为「无主谱」，此后谁也改不了），但本机创建时总会带，
+ * 让「我发布的谱」在换页面、换标签后仍然改得动。
+ */
+function ownerHeaders(): Record<string, string> {
+  const token = getOwnerToken();
+  return token ? { "x-owner-token": token } : {};
 }
 
 export class ApiError extends Error {
@@ -152,7 +164,7 @@ export async function createScore(
   const name = author?.trim();
   const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...ownerHeaders() },
     // 空署名不传字段：让后端落默认匿名，而不是存一个空字符串以外的脏值
     body: JSON.stringify({ title, notes, tuning, ...(name ? { author: name } : {}) }),
   });
@@ -179,7 +191,7 @@ export async function updateScore(
   if (isBrowserOnlyMode()) return localUpdateScore(id, data);
   const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...ownerHeaders() },
     body: JSON.stringify(data),
   });
   return normalizeTuning(await handleResponse<Score>(res));
@@ -192,6 +204,7 @@ export async function deleteScore(id: string): Promise<void> {
   }
   const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}`, {
     method: "DELETE",
+    headers: ownerHeaders(),
   });
   await handleResponse(res);
 }

@@ -15,6 +15,10 @@ pub struct Score {
     pub tuning: String,
     /// 打谱人昵称；空串表示匿名（迁移前的老数据一律为空）。
     pub author: String,
+    /// 发布者凭证。**绝不序列化给客户端**：拿到它就能改 / 删这首谱，
+    /// 泄露等于把关链接的人变成管理员。只在服务端校验时使用。
+    #[serde(skip_serializing)]
+    pub owner_token: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

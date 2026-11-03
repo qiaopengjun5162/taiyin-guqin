@@ -23,6 +23,7 @@ import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
 import { buildScoreShareUrl, readSharedScoreId } from "@/lib/share-link";
 import { getStoredAuthor } from "@/lib/settings";
+import { forgetMyScore, isMyScore, rememberMyScore } from "@/lib/owner-token";
 import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
 import { useMetronome } from "@/lib/use-metronome";
@@ -311,12 +312,25 @@ export default function Home() {
     setSaveStatus("saving");
     try {
       if (currentScoreId) {
-        // 署名只在「首次发布」时写入：每次保存都带上当前昵称的话，
-        // 别人打开你的社区谱随手保存一次，作者就变成他了。
-        await api.updateScore(currentScoreId, { title: scoreTitle, notes: score, tuning });
+        try {
+          // 署名只在「首次发布」时写入：每次保存都带上当前昵称的话，
+          // 别人打开你的社区谱随手保存一次，作者就变成他了。
+          await api.updateScore(currentScoreId, { title: scoreTitle, notes: score, tuning });
+        } catch (err) {
+          // 403 = 这首谱不是本机凭证发布的（别人的谱 / 换过设备 / 无主老谱）。
+          // 直接报错会让人以为坏了，实际意图通常是「我想基于它改一版」，
+          // 所以自动另存为新谱，并说明发生了什么。
+          if (!(err instanceof api.ApiError) || err.status !== 403) throw err;
+          const created = await api.createScore(scoreTitle, score, tuning, getStoredAuthor());
+          setCurrentScoreId(created.id);
+          rememberMyScore(created.id);
+          showInfo("这不是你发布的曲谱，已另存为新谱");
+        }
       } else {
         const created = await api.createScore(scoreTitle, score, tuning, getStoredAuthor());
         setCurrentScoreId(created.id);
+        // 记住「这首是我发布的」：下次保存才走更新，服务端也认得出是我的凭证
+        rememberMyScore(created.id);
       }
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
@@ -358,7 +372,14 @@ export default function Home() {
           // 隐私模式 / IndexedDB 不可用：本机 tab 直接为空即可，不影响社区浏览
         }
         const tabs: LoadDialogTab[] = [
-          { key: "community", label: "社区曲谱", scores: serverList, readOnly: true },
+          {
+            key: "community",
+            label: "社区曲谱",
+            scores: serverList,
+            readOnly: true,
+            // 只读是「不让你删别人的谱」，自己发布的仍要能删（否则发布即不可撤回）
+            myScoreIds: serverList.filter((s) => isMyScore(s.id)).map((s) => s.id),
+          },
         ];
         if (localList.length > 0) {
           tabs.push({ key: "local", label: "本机", scores: localList, showMigrate: true });
@@ -375,31 +396,37 @@ export default function Home() {
   }
 
   /**
-   * 删除选中的本机曲谱。社区 tab 是只读（readOnly），不提供删除按钮，
-   * 所以 onDelete 只可能来自本机 tab——直接走本地存储，不走 api 的 server 分支。
+   * 删除选中的曲谱。
+   *
+   * 两条路：
+   * - **本机谱**（含 server 模式下「本机」tab 里的）：走本地存储，
+   *   绝不把本地 id 发到服务器（会 404）。
+   * - **我发布的社区谱**：走 api.deleteScore，带所有权凭证，服务端认得出是我；
+   *   别人的谱在对话框里没有删除按钮，所以不会走到这里。
    */
   async function handleDeleteScore(id: string, title: string) {
     if (!confirm(`确认删除「${title}」？`)) return;
     try {
-      // 本机 tab 的谱存在浏览器本地：仅 server 模式走本地删除；
-      // browser 模式（纯前端）统一走 api.deleteScore（其内部已落本地存储，mock 也覆盖到了）。
-      if (storageMode === "server") {
+      if (storageMode === "server" && !isMyScore(id)) {
         await api.localDeleteScore(id);
       } else {
         await api.deleteScore(id);
       }
+      forgetMyScore(id);
       setLoadTabs((prev) =>
-        prev.map((t) =>
-          t.key === "local" ? { ...t, scores: t.scores.filter((s) => s.id !== id) } : t,
-        ),
+        prev.map((t) => ({
+          ...t,
+          scores: t.scores.filter((s) => s.id !== id),
+          myScoreIds: t.myScoreIds?.filter((x) => x !== id),
+        })),
       );
       if (currentScoreId === id) {
         setScore([]);
         setScoreTitle("未命名曲谱");
         setCurrentScoreId(null);
       }
-    } catch {
-      showError("删除失败");
+    } catch (err) {
+      showError(err instanceof api.ApiError ? err.message : "删除失败");
     }
   }
 
@@ -421,6 +448,8 @@ export default function Home() {
       setTuning(scoreData.tuning);
       // 本机谱的 id（local-xxx）与服务器 id 体系不互通：若保留，下次
       // 「发布到社区」会走 updateScore(本地id) 命中服务器 404。置 null 让发布即新建。
+      // 社区 tab 的谱保留 id：它确实是服务器上那首；若不是我发布的，
+      // handleSave 会在 403 时自动另存为新谱（见下），不必在这里提前丢弃。
       setCurrentScoreId(storageMode === "server" && tabKey === "local" ? null : scoreData.id);
       setShowLoadDialog(false);
       setEditingIndex(null);
@@ -460,7 +489,9 @@ export default function Home() {
           continue;
         }
         const full = await api.localGetScore(item.id);
-        await api.createScore(item.title, full.notes, item.tuning, author);
+        const created = await api.createScore(item.title, full.notes, item.tuning, author);
+        // 迁移上来的也是「我发布的」，记下来才能在本机改 / 删
+        rememberMyScore(created.id);
         migrated++;
       }
       await openLoadDialog(); // 刷新社区 tab，刚发布的谱立即可见
