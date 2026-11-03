@@ -1,6 +1,9 @@
 mod common;
 
-use axum::{body::Body, http::Request};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use serde_json::{Value, json};
 use taiyin_server::{AppState, ServerConfig, app};
 use tower::util::ServiceExt;
@@ -28,6 +31,7 @@ async fn test_create_and_list_scores() {
             Request::builder()
                 .method("POST")
                 .header("x-owner-token", OWNER)
+                .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -83,6 +87,7 @@ async fn test_create_get_update_delete() {
             Request::builder()
                 .method("POST")
                 .header("x-owner-token", OWNER)
+                .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -195,6 +200,7 @@ async fn test_score_tuning_roundtrip() {
             Request::builder()
                 .method("POST")
                 .header("x-owner-token", OWNER)
+                .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -312,6 +318,7 @@ async fn test_score_author_roundtrip() {
             Request::builder()
                 .method("POST")
                 .header("x-owner-token", OWNER)
+                .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -426,6 +433,7 @@ async fn test_owner_token_guards_update_and_delete() {
             Request::builder()
                 .method("POST")
                 .header("x-owner-token", OWNER)
+                .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -542,7 +550,7 @@ async fn test_owner_token_guards_update_and_delete() {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    // 未带凭证创建的谱是「无主谱」：谁也改不了，只能管理员清理
+    // 不带任何身份发布：现在直接 401，不再产生「谁也删不掉」的无主谱
     let body_str = serde_json::to_string(&json!({"title": "无主谱", "notes": []})).unwrap();
     let resp = app(state.clone(), &ServerConfig::default())
         .oneshot(
@@ -550,30 +558,22 @@ async fn test_owner_token_guards_update_and_delete() {
                 .method("POST")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
+                .header("x-forwarded-for", "203.0.113.7")
                 .body(Body::from(body_str))
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 401, "无身份发布必须被拒绝");
     let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
         .await
         .unwrap();
-    let orphan: Value = serde_json::from_slice(&body_bytes).unwrap();
-    let orphan_id = orphan["id"].as_str().unwrap().to_string();
-
-    let resp = app(state, &ServerConfig::default())
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .header("x-owner-token", OWNER)
-                .uri(format!("/api/v1/scores/{orphan_id}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 403, "无主谱不能被任何凭证认领删除");
+    let err: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("x-owner-token"),
+        "错误信息要告诉调用者怎么补上身份，实际：{msg}"
+    );
 }
 
 /// 列表分页：默认页大小、上限与下限夹紧、越界页仍给总数。
@@ -597,6 +597,7 @@ async fn list_scores_is_paginated() {
                     .uri("/api/v1/scores")
                     .header("content-type", "application/json")
                     .header("x-owner-token", OWNER)
+                    .header("x-forwarded-for", "203.0.113.7")
                     .body(Body::from(
                         serde_json::to_string(&json!({"title": title, "notes": []})).unwrap(),
                     ))
@@ -686,4 +687,100 @@ async fn list_scores_is_paginated() {
         .execute(&pool)
         .await
         .unwrap();
+}
+
+/// 发布限流：**只锁写**，读列表不受牵连，且按 IP 隔离。
+///
+/// 为什么专门验这三件事：
+/// 1. 锁没挂上 = 一台机器刷爆社区列表（这测试会红）；
+/// 2. 锁挂错了位置（锁住整个 `/scores`）= 用户翻页翻到一半 429（这测试会红）；
+/// 3. 锁做成全站共享 = 一个人刷，全站不能发谱（第三条断言就是防这个）。
+#[tokio::test]
+async fn create_score_is_rate_limited_but_list_is_not() {
+    let pool = common::test_pool().await;
+    let config = ServerConfig {
+        // 全局放到几乎不生效，才能证明「发布自己带锁」而不是被全局顺带挡住
+        global_per_second: 1000,
+        global_burst: 1000,
+        write_per_second: 1,
+        write_burst: 2,
+        ..Default::default()
+    };
+
+    // 关键：复用**同一个** router。每次新建 app 都会新建限流器、计数归零，
+    // 那样这个测试永远绿——却什么都没验到。
+    let router = app(
+        AppState {
+            pool,
+            llm: Default::default(),
+        },
+        &config,
+    );
+
+    let mut codes = Vec::new();
+    for i in 0..4 {
+        let body =
+            serde_json::to_string(&json!({"title": format!("限流测试{i}"), "notes": []})).unwrap();
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/scores")
+                    .header("content-type", "application/json")
+                    .header("x-owner-token", OWNER)
+                    .header("x-forwarded-for", "198.51.100.31")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        codes.push(resp.status());
+    }
+    assert_eq!(codes[0], StatusCode::OK, "突发额度内应放行");
+    assert_eq!(codes[1], StatusCode::OK, "突发额度内应放行");
+    assert!(
+        codes[2..]
+            .iter()
+            .all(|s| *s == StatusCode::TOO_MANY_REQUESTS),
+        "突发额度用完后应 429，实际：{codes:?}"
+    );
+
+    // 换个 IP 立刻恢复：限流按 IP 记账，不是全站共享一个桶
+    let body = serde_json::to_string(&json!({"title": "限流测试-换IP", "notes": []})).unwrap();
+    let resp = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/scores")
+                .header("content-type", "application/json")
+                .header("x-owner-token", OWNER)
+                .header("x-forwarded-for", "198.51.100.77")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "限流按 IP 记账，别的 IP 不该被牵连"
+    );
+
+    // 读列表不进这把锁：真实场景里「发布失败的人」往往正在反复刷新列表
+    let resp = router
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/scores?limit=1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "发布限流不该牵连列表读取（挂错位置会让翻页 429）"
+    );
 }

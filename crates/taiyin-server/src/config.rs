@@ -29,6 +29,14 @@ pub struct ServerConfig {
     pub auth_per_second: u64,
     /// 认证端点限流：突发容量。留出「打错再试一次」的余量。
     pub auth_burst: u32,
+    /// 发布端点（`POST /api/v1/scores`）限流：每 IP 每秒请求数。
+    ///
+    /// 发布是**写库**操作，没有它，一台机器就能把社区列表灌成垃圾场
+    /// （脚本循环 POST，每条都成一行，翻页翻不完、搜索也搜不出东西）。
+    /// 真人发布一首谱要几十秒，1 次/秒已经非常宽松。
+    pub write_per_second: u64,
+    /// 发布端点限流：突发容量。留出「一次批量导入十来首」的余地。
+    pub write_burst: u32,
 }
 
 impl ServerConfig {
@@ -49,6 +57,8 @@ impl ServerConfig {
         let translate_burst = parse_u32("TRANSLATE_RATE_BURST", 5);
         let auth_per_second = parse_u64("AUTH_RATE_PER_SECOND", 2);
         let auth_burst = parse_u32("AUTH_RATE_BURST", 8);
+        let write_per_second = parse_u64("WRITE_RATE_PER_SECOND", 1);
+        let write_burst = parse_u32("WRITE_RATE_BURST", 10);
 
         Self {
             database_url,
@@ -60,6 +70,8 @@ impl ServerConfig {
             translate_burst,
             auth_per_second,
             auth_burst,
+            write_per_second,
+            write_burst,
         }
     }
 
@@ -81,6 +93,8 @@ impl Default for ServerConfig {
             translate_burst: 5,
             auth_per_second: 2,
             auth_burst: 8,
+            write_per_second: 1,
+            write_burst: 10,
         }
     }
 }
@@ -135,6 +149,8 @@ mod tests {
                 translate_burst: 5,
                 auth_per_second: 2,
                 auth_burst: 8,
+                write_per_second: 1,
+                write_burst: 10,
             }
             .cors_locked()
         );
@@ -149,6 +165,8 @@ mod tests {
                 translate_burst: 5,
                 auth_per_second: 2,
                 auth_burst: 8,
+                write_per_second: 1,
+                write_burst: 10,
             }
             .cors_locked()
         );

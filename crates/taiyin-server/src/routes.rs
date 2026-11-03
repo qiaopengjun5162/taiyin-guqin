@@ -139,6 +139,26 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
     // 当成「会话失效」而清掉登录态——用户会莫名其妙被登出，这比被刷几次糟得多。
     let me_route = Router::new().route("/api/v1/auth/me", get(me));
 
+    // 发布端点：独立限流（只挂在 POST 上，读列表不受影响）。
+    //
+    // 发布是写库操作，是全站唯一「一个请求换一行数据」的口子。没有它，
+    // 一台机器循环 `curl -d` 就能把社区列表灌满，正常人翻十页看到的都是垃圾。
+    // 挂载方式注意：`route_layer` 只覆盖**当前已注册的** method，所以必须先
+    // `post(...)` 再 `route_layer`，最后才 `.get(...)`——顺序反了，GET 列表
+    // 会一起进限流池，翻页翻到一半就 429。
+    let write_limiter = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
+            .per_second(config.write_per_second)
+            .burst_size(config.write_burst)
+            // 与认证层同理：不开 `use_headers()`，避免和全局限流互相覆盖数字。
+            .finish()
+            .expect("write rate config must be valid"),
+    );
+    let scores_collection = post(create_score)
+        .route_layer(GovernorLayer::new(write_limiter))
+        .get(list_scores);
+
     let translate_routes = Router::new()
         .route("/api/v1/translate/select", post(select_candidates))
         .route("/api/v1/jianzi/recognize", post(recognize_jianzi))
@@ -148,7 +168,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
 
     Router::new()
         .route("/health", get(health_check))
-        .route("/api/v1/scores", post(create_score).get(list_scores))
+        .route("/api/v1/scores", scores_collection)
         .route(
             "/api/v1/scores/{id}",
             get(get_score).put(update_score).delete(delete_score),
@@ -494,9 +514,23 @@ async fn create_score(
     // 去空白后校验：只有一个空格的署名等于匿名，不该占满长度配额。
     let author = req.author.unwrap_or_default().trim().to_string();
     validate_author(&author)?;
-    // 没带凭证也允许发布，但这条谱从此无主（谁也改不了、删不了），
-    // 由管理员直接操作数据库清理。比「随便谁都能删」安全得多。
+    // 发布必须带着「我是谁」：登录态或本机凭证，二者有其一即可。
+    //
+    // 以前没带也放行，代价是出现**无主谱**——谁也改不了、删不了，只能管理员
+    // 进数据库手工清。脚本灌库时每一行都是这种死数据，事后清理比事前拦下贵得多。
+    // 现在改成「至少有一条腿」：浏览器端 `getOwnerToken()` 首次调用就会生成并
+    // 持久化凭证，用户完全感觉不到；而一个裸 `curl` 会被挡在门外。
+    //
+    // 注意这不等于反垃圾的全部：脚本随手造一个 UUID 也能算「有主」。真正治本
+    // 还得靠发布限流（见 `write_limiter`）与未来的账号配额，这里先把死数据堵住。
     let caller = read_caller(&headers, &state.pool).await?;
+    if caller.user_id.is_none() && caller.owner_token.is_none() {
+        return Err(AppError::Unauthorized(
+            "发布到社区需要发布者身份：页面会自动带上本机凭证，\
+             脚本请加 x-owner-token 请求头（或带上登录态的 Authorization）"
+                .into(),
+        ));
+    }
 
     let score = sqlx::query_as::<_, Score>(
         "INSERT INTO scores (title, notes, tuning, author, owner_token, owner_user_id) \
