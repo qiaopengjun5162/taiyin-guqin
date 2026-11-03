@@ -12,7 +12,7 @@
 #   2. /health 200，且 CORS 白名单对陌生来源不回 allow-origin；
 #   3. 所有权链路：带钥匙发布 → 错钥匙改 403 → 对钥匙改 200 → 对钥匙删 200；
 #   4. 无身份发布 → 401（不再产生谁也删不掉的无主谱）；
-#   5. 账号链路：注册 → 只凭登录态发布 → 换设备凭登录态改 → 认领旧谱
+#   5. 账号链路：注册 → 只凭登录态发布 → 换设备凭登录态改 → 认领旧谱 → 收藏；
 #      （认领必须出示原凭证，否则注册一下就能认领别人的谱）→ 登出即失效；
 #   6. 列表分页：limit 夹紧、越界返回空数组、响应带总数头；
 #   7. 限流层真的挂上了（响应带 x-ratelimit-* 头）——配置项写了却没接线
@@ -189,6 +189,24 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/auth/login"
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"$EMAIL\",\"password\":\"wrong-password\"}")
 [[ "$code" == "401" ]] && ok "错误口令登录 → 401" || fail "错误口令应 401，实际 $code"
+
+echo "▶ 验收藏（必须登录，取消幂等）"
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/scores/$AID/favorite")
+[[ "$code" == "401" ]] && ok "未登录收藏 → 401（收藏跟账号走，不跟设备走）" \
+  || fail "未登录收藏应 401，实际 $code"
+
+FAV=$(curl -sS -X PUT "$BASE/api/v1/scores/$AID/favorite" -H "Authorization: Bearer $TOKEN")
+printf '%s' "$FAV" | grep -q '"favorited":true' && ok "登录后收藏 → favorited:true" \
+  || fail "收藏响应不对：$FAV"
+
+FAVLIST=$(curl -sS "$BASE/api/v1/favorites" -H "Authorization: Bearer $TOKEN")
+printf '%s' "$FAVLIST" | grep -q '账号发布的谱' && ok "收藏列表里能找到刚收的谱" \
+  || fail "收藏列表里没有刚收的谱：$FAVLIST"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/v1/scores/$AID/favorite" \
+  -H "Authorization: Bearer $TOKEN")
+[[ "$code" == "200" ]] && ok "取消收藏 → 200（重复取消也不报错）" \
+  || fail "取消收藏应 200，实际 $code"
 
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/auth/logout" \
   -H "Authorization: Bearer $TOKEN")
