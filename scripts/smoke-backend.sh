@@ -11,7 +11,9 @@
 #   1. 迁移内置：启动即自动建表，不需要手动跑 SQL；
 #   2. /health 200，且 CORS 白名单对陌生来源不回 allow-origin；
 #   3. 所有权链路：带钥匙发布 → 错钥匙改 403 → 对钥匙改 200 → 对钥匙删 200；
-#   4. 无钥匙发布 → 成「无主谱」 → 谁也改不了（403）。
+#   4. 无钥匙发布 → 成「无主谱」 → 谁也改不了（403）；
+#   5. 账号链路：注册 → 只凭登录态发布 → 换设备凭登录态改 → 认领旧谱
+#      （认领必须出示原凭证，否则注册一下就能认领别人的谱）→ 登出即失效。
 #
 set -euo pipefail
 
@@ -110,6 +112,70 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/scores/$GID"
   -H 'Content-Type: application/json' -H 'x-owner-token: smoke-key-1' -d '{"title":"谁也改不了"}')
 [[ "$code" == "403" ]] && ok "无主谱谁也改不了 → 403（手册承诺一致）" \
   || fail "无主谱应 403，实际 $code"
+
+echo "▶ 验账号链路（注册 → 跨设备改 → 认领旧谱）"
+# 邮箱带时间戳：脚本可重复跑，重复注册会 409
+EMAIL="smoke-$(date +%s)@example.com"
+
+REG=$(curl -sS -X POST "$BASE/api/v1/auth/register" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"smoke-pass-1234\",\"display_name\":\"冒烟\"}")
+TOKEN=$(printf '%s' "$REG" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])' 2>/dev/null) \
+  || fail "注册失败：$REG"
+ok "注册成功（返回会话 token）"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/v1/auth/me" \
+  -H "Authorization: Bearer $TOKEN")
+[[ "$code" == "200" ]] && ok "凭会话查到当前用户 → 200" || fail "/auth/me 应 200，实际 $code"
+
+# 只带会话、不带本机凭证发布：这首谱归属账号，不依赖任何一台设备
+ACC=$(curl -sS -X POST "$BASE/api/v1/scores" -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":"账号发布的谱","notes":[],"tuning":"zhengdiao"}')
+AID=$(printf '%s' "$ACC" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])' 2>/dev/null) \
+  || fail "登录态发布失败：$ACC"
+ok "登录态发布成功（归属账号）"
+
+# 换设备：新会话、没有原凭证，只凭登录态仍应改得动
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/scores/$AID" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":"账号发布的谱-已改"}')
+[[ "$code" == "200" ]] && ok "换设备凭登录态改 → 200（账号体系的核心承诺）" \
+  || fail "登录态改应 200，实际 $code"
+
+# 认领：先在没登录的情况下用本机凭证发一首，再挂到账号下
+OLD=$(curl -sS -X POST "$BASE/api/v1/scores" -H 'Content-Type: application/json' \
+  -H 'x-owner-token: smoke-key-2' -d '{"title":"待认领的谱","notes":[]}')
+OID=$(printf '%s' "$OLD" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])' 2>/dev/null) \
+  || fail "无账号发布失败：$OLD"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/scores/$OID/claim" \
+  -H "Authorization: Bearer $TOKEN" -H 'x-owner-token: smoke-key-1')
+[[ "$code" == "403" ]] && ok "拿错凭证认领 → 403（防「注册一下认领别人的谱」）" \
+  || fail "错凭证认领应 403，实际 $code"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/scores/$OID/claim" \
+  -H "Authorization: Bearer $TOKEN" -H 'x-owner-token: smoke-key-2')
+[[ "$code" == "200" ]] && ok "出示原凭证认领 → 200" || fail "认领应 200，实际 $code"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/scores/$OID" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":"已认领的谱"}')
+[[ "$code" == "200" ]] && ok "认领后只凭登录态就能改 → 200" \
+  || fail "认领后应可凭登录态改，实际 $code"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"wrong-password\"}")
+[[ "$code" == "401" ]] && ok "错误口令登录 → 401" || fail "错误口令应 401，实际 $code"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/auth/logout" \
+  -H "Authorization: Bearer $TOKEN")
+[[ "$code" == "200" ]] && ok "登出 → 会话即失效" || fail "登出应 200，实际 $code"
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/v1/auth/me" \
+  -H "Authorization: Bearer $TOKEN")
+[[ "$code" == "401" ]] && ok "登出后 /auth/me → 401（会话真被吊销，不是只清本地）" \
+  || fail "登出后应 401，实际 $code"
 
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/v1/scores/$ID" \
   -H "x-owner-token: smoke-key-1")

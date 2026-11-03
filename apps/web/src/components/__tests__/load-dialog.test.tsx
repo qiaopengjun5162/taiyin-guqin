@@ -289,3 +289,108 @@ describe("LoadDialog · 只读 tab 里自己的谱", () => {
     expect(container.querySelectorAll('[title="删除"]')).toHaveLength(0);
   });
 });
+
+/**
+ * 账号归属：换设备登录后，靠 `owner_user_id` 认出「这是我的谱」。
+ *
+ * 这是账号体系要兑现的核心承诺——不靠本机那把钥匙也能认出自己的谱。
+ * 认领入口则只对「本机发的、还没有账号归属」的谱开放：服务端要求出示原凭证，
+ * 别人的谱点了也只会 403，所以界面不该给那个按钮。
+ */
+describe("LoadDialog · 账号归属与认领", () => {
+  const items: ScoreListItem[] = [
+    {
+      id: "by-account",
+      title: "账号发的谱",
+      tuning: "zhengdiao",
+      owner_user_id: "u-1",
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:00:00Z",
+    },
+    {
+      id: "by-device",
+      title: "本机凭证发的谱",
+      tuning: "zhengdiao",
+      owner_user_id: null,
+      created_at: "2026-09-02T00:00:00Z",
+      updated_at: "2026-09-02T00:00:00Z",
+    },
+    {
+      id: "by-others",
+      title: "别人的谱",
+      tuning: "zhengdiao",
+      owner_user_id: "u-2",
+      created_at: "2026-09-03T00:00:00Z",
+      updated_at: "2026-09-03T00:00:00Z",
+    },
+  ];
+
+  it("登录后凭 owner_user_id 认出自己的谱（换了设备也认得）", () => {
+    const { container } = renderDialog([
+      { key: "community", label: "社区曲谱", scores: items, readOnly: true, myUserId: "u-1" },
+    ]);
+    // 只标「我的」，别人的不标
+    expect(container.querySelectorAll('[title="这首谱是你的，可以改删"]')).toHaveLength(1);
+    // 只读 tab 里自己的谱照样能删
+    expect(container.querySelectorAll('[title="删除"]')).toHaveLength(1);
+  });
+
+  it("未登录时只看本机凭证：账号发的那首不算我的", () => {
+    const { container } = renderDialog([
+      { key: "community", label: "社区曲谱", scores: items, readOnly: true },
+    ]);
+    expect(container.querySelectorAll('[title="这首谱是你的，可以改删"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[title="删除"]')).toHaveLength(0);
+  });
+
+  it("认领入口只给本机发的、还没有账号归属的谱", () => {
+    const onClaim = vi.fn();
+    renderDialog(
+      [
+        {
+          key: "community",
+          label: "社区曲谱",
+          scores: items,
+          readOnly: true,
+          myUserId: "u-1",
+          myScoreIds: ["by-device", "by-others"],
+        },
+      ],
+      { onClaim },
+    );
+
+    // 只有「本机凭证发的谱」可认领：别人的谱给了 myScoreIds 也不给按钮
+    // （本地记录可以伪造，服务端仍要求出示原凭证，界面不该误导）
+    const claimButtons = screen.getAllByText("认领");
+    expect(claimButtons).toHaveLength(1);
+    fireEvent.click(claimButtons[0]);
+    expect(onClaim).toHaveBeenCalledWith("by-device", "本机凭证发的谱");
+  });
+
+  it("已有账号归属的谱不再显示认领入口", () => {
+    const onClaim = vi.fn();
+    renderDialog(
+      [
+        {
+          key: "community",
+          label: "社区曲谱",
+          scores: items,
+          readOnly: true,
+          myUserId: "u-1",
+          myScoreIds: ["by-account"],
+        },
+      ],
+      { onClaim },
+    );
+    expect(screen.queryByText("认领")).toBeNull();
+  });
+
+  it("未登录时不显示认领入口（服务端要求先登录）", () => {
+    const onClaim = vi.fn();
+    renderDialog(
+      [{ key: "community", label: "社区曲谱", scores: items, readOnly: true, myScoreIds: ["by-device"] }],
+      { onClaim },
+    );
+    expect(screen.queryByText("认领")).toBeNull();
+  });
+});

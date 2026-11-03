@@ -19,6 +19,12 @@ export interface LoadDialogTab {
    */
   myScoreIds?: string[];
   /**
+   * 当前登录者的账号 id。列表用它比对每首谱的 `owner_user_id`：
+   * 匹配即「我的谱」，哪怕这首谱是别的设备发的、本机并没有它的凭证。
+   * 账号体系解决的就是这件事——换设备也认得出自己的谱。
+   */
+  myUserId?: string | null;
+  /**
    * 本机 tab 专属：连上社区后端时显示「一键发布本机谱到社区」入口，
    * 让老用户的本地曲谱批量进入共享池，激活空社区。
    */
@@ -33,6 +39,11 @@ interface LoadDialogProps {
   defaultTabKey?: string;
   onLoad: (id: string, tabKey: string) => void;
   onDelete?: (id: string, title: string) => void;
+  /**
+   * 认领旧谱：把「这台设备用凭证发布的谱」挂到登录账号下。
+   * 认领之后换设备、清缓存都不会再失去它。
+   */
+  onClaim?: (id: string, title: string) => void;
   /** 一键把本机谱批量发布到社区共享池（仅本机 tab 显示） */
   onMigrate?: () => void;
   /** 迁移进行中，禁用按钮并显示「发布中…」 */
@@ -41,7 +52,18 @@ interface LoadDialogProps {
   migrateMsg?: string | null;
 }
 
-export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelete, onMigrate, migrating, migrateMsg }: LoadDialogProps) {
+export function LoadDialog({
+  open,
+  tabs,
+  defaultTabKey,
+  onClose,
+  onLoad,
+  onDelete,
+  onClaim,
+  onMigrate,
+  migrating,
+  migrateMsg,
+}: LoadDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [activeKey, setActiveKey] = useState(defaultTabKey ?? tabs[0]?.key);
   const [query, setQuery] = useState("");
@@ -150,13 +172,30 @@ export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelet
             <p className="text-[10px] tracking-wider text-stone-500">没有匹配「{query.trim()}」的曲谱</p>
           )}
           <div className="space-y-1 max-h-60 overflow-y-auto">
-            {visible.map((s) => (
+            {visible.map((s) => {
+              // 「我的谱」两条腿：本机凭证记过它，或服务端记着它属于我这个账号。
+              // 后者才是换设备后仍能认出的依据。
+              const mine =
+                !!activeTab.myScoreIds?.includes(s.id) ||
+                (!!activeTab.myUserId && s.owner_user_id === activeTab.myUserId);
+              // 认领只对本机发的、还没有账号归属的谱开放：
+              // 服务端要求出示原凭证，别人的谱点了也只会 403。
+              const claimable = !!onClaim && !!activeTab.myUserId && !s.owner_user_id && mine;
+              return (
               <div
                 key={s.id}
                 className="group flex items-center gap-1 px-3 py-2 text-[11px] tracking-wider rounded border border-amber-700/10 hover:border-amber-600/30 hover:bg-amber-900/10 transition-all cursor-pointer"
                 onClick={() => onLoad(s.id, activeTab.key)}
               >
                 <span className="flex-1 text-stone-800 truncate">{s.title}</span>
+                {mine && (
+                  <span
+                    className="shrink-0 rounded border border-emerald-700/30 px-1 text-[9px] text-emerald-700/80"
+                    title="这首谱是你的，可以改删"
+                  >
+                    我的
+                  </span>
+                )}
                 {/* 署名：同一首曲有多个打法版本时，这是区分「谁打的谱」的唯一线索 */}
                 {s.author && (
                   <span
@@ -176,7 +215,19 @@ export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelet
                 <span className="text-[9px] text-stone-500 shrink-0">
                   {new Date(s.updated_at).toLocaleString("zh-CN")}
                 </span>
-                {onDelete && (!activeTab.readOnly || activeTab.myScoreIds?.includes(s.id)) && (
+                {claimable && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClaim(s.id, s.title);
+                    }}
+                    className="shrink-0 rounded border border-emerald-700/30 px-1 text-[9px] text-emerald-700/80 hover:bg-emerald-900/10 transition-all"
+                    title="挂到我的账号下，换设备也能改删"
+                  >
+                    认领
+                  </button>
+                )}
+                {onDelete && (!activeTab.readOnly || mine) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); onDelete(s.id, s.title); }}
                     className="ml-1 size-4 flex items-center justify-center rounded text-stone-400 hover:text-red-600 hover:bg-red-900/10 opacity-0 group-hover:opacity-100 transition-all"
@@ -186,7 +237,8 @@ export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelet
                   </button>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
           <button
             onClick={onClose}

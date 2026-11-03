@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import { AccountPanel } from "./account-panel";
 import {
   subscribeApiBase,
   subscribeSettings,
@@ -114,6 +115,7 @@ export function BackendSettings() {
         <p className="mt-1 text-[10px] tracking-wider text-stone-500">
           {author ? `发布署名：${author}` : "发布署名：匿名"}
         </p>
+        <AccountPanel />
       </div>
     </div>
   );

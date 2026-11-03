@@ -32,6 +32,7 @@ import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
 import { buildScoreShareUrl, readSharedScoreId } from "@/lib/share-link";
 import { getStoredAuthor } from "@/lib/settings";
 import { forgetMyScore, isMyScore, rememberMyScore } from "@/lib/owner-token";
+import { getCurrentUserId } from "@/lib/auth";
 import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
 import { useMetronome } from "@/lib/use-metronome";
@@ -484,6 +485,8 @@ export default function Home() {
             readOnly: true,
             // 只读是「不让你删别人的谱」，自己发布的仍要能删（否则发布即不可撤回）
             myScoreIds: serverList.filter((s) => isMyScore(s.id)).map((s) => s.id),
+            // 登录者的账号 id：换设备发的谱，靠它也能认出是「我的」
+            myUserId: getCurrentUserId(),
           },
         ];
         if (localList.length > 0) {
@@ -540,6 +543,34 @@ export default function Home() {
   }
 
   /**
+   * 认领旧谱：把「这台设备用凭证发布的谱」挂到登录账号下。
+   *
+   * 认领前这首谱只认本机凭证——清缓存、换电脑就再也改不动它。
+   * 认领后服务端记的是账号，换设备登录照样改删。
+   * 服务端要求同时出示登录态与原凭证，所以别人的谱点了也只会 403。
+   */
+  async function handleClaimScore(id: string, title: string) {
+    if (!getCurrentUserId()) {
+      showError("请先登录，再认领曲谱");
+      return;
+    }
+    if (!confirm(`把「${title}」挂到我的账号下？之后换设备也能改删它。`)) return;
+    try {
+      const claimed = await api.claimScore(id);
+      // 就地更新列表：让「我的」标记立刻出现，不必关掉对话框重开
+      setLoadTabs((prev) =>
+        prev.map((t) => ({
+          ...t,
+          scores: t.scores.map((s) => (s.id === id ? { ...s, owner_user_id: claimed.owner_user_id } : s)),
+        })),
+      );
+      showInfo("已认领到我的账号，之后换设备也能改删它");
+    } catch (err) {
+      showError(err instanceof api.ApiError ? err.message : "认领失败");
+    }
+  }
+
+  /**
    * 加载选中的曲谱。
    * browser 模式下 api.getScore 内部已走本地存储，无需分流；
    * 仅 server 模式下的「本机」tab 才强制走本地——否则 api.getScore 会把本地 id 发到服务器而 404。
@@ -562,6 +593,12 @@ export default function Home() {
       // 社区 tab 的谱保留 id：它确实是服务器上那首；若不是我发布的，
       // handleSave 会在 403 时自动另存为新谱（见下），不必在这里提前丢弃。
       setCurrentScoreId(storageMode === "server" && tabKey === "local" ? null : scoreData.id);
+      // 账号归属也算「我的」：换设备登录后载入自己以前发的谱，
+      // 保存应当走更新而不是另建副本——这正是账号体系要兑现的承诺。
+      // `owner_user_id` 只有服务端谱才有，本机谱没有该字段，故按可选读取。
+      const myId = getCurrentUserId();
+      const ownerId = (scoreData as { owner_user_id?: string | null }).owner_user_id;
+      if (myId && ownerId === myId) rememberMyScore(scoreData.id);
       setShowLoadDialog(false);
       setEditingIndex(null);
       // 刚载入的内容就是「干净基线」，不该一进来就提示未保存
@@ -984,6 +1021,7 @@ export default function Home() {
         tabs={loadTabs}
         onLoad={handleLoadScore}
         onDelete={handleDeleteScore}
+        onClaim={handleClaimScore}
         onMigrate={handleMigrateLocalToCommunity}
         migrating={migrating}
         migrateMsg={migrateMsg}

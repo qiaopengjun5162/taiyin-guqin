@@ -9,6 +9,7 @@ import {
 } from "./local-score-store";
 import { getStoredApiBase } from "./settings";
 import { getOwnerToken } from "./owner-token";
+import { getSessionToken, setStoredSession, clearStoredSession, type SessionUser } from "./auth";
 
 /** 本地曲谱读写：连后端时，首页「本机」tab 用它们直接操作浏览器存储，
  *  不走 api 的 server/browser 分支判断（否则本地 id 会被误发到服务器）。 */
@@ -68,10 +69,17 @@ function authHeaders(): Record<string, string> {
  *
  * 不带也能发布（成为「无主谱」，此后谁也改不了），但本机创建时总会带，
  * 让「我发布的谱」在换页面、换标签后仍然改得动。
+ *
+ * 登录后额外带上会话：服务端两条腿认一条即可（账号 OR 凭证），
+ * 所以换设备登录之后，不再依赖这台机器上那把钥匙。
  */
 function ownerHeaders(): Record<string, string> {
   const token = getOwnerToken();
-  return token ? { "x-owner-token": token } : {};
+  const session = getSessionToken();
+  return {
+    ...(token ? { "x-owner-token": token } : {}),
+    ...(session ? { Authorization: `Bearer ${session}` } : {}),
+  };
 }
 
 export class ApiError extends Error {
@@ -130,6 +138,11 @@ export interface ScoreListItem {
    * 定为可选是因为「尚未升级的后端」不会返回该字段。
    */
   author?: string;
+  /**
+   * 归属账号 id；`null` 表示还只是「某台设备用凭证发的」，没有账号归属。
+   * 前端拿它与当前登录者比对，决定这首谱是不是「我的」。
+   */
+  owner_user_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -207,6 +220,112 @@ export async function deleteScore(id: string): Promise<void> {
     headers: ownerHeaders(),
   });
   await handleResponse(res);
+}
+
+/* ────────────────────────── 社区账号 ────────────────────────── */
+
+/** 未配置后端时账号功能的提示（纯前端模式下根本发不出去，别静默失败）。 */
+const ACCOUNT_NEEDS_BACKEND = "登录 / 注册需要社区后端，请先在上方填写后端地址。";
+
+function ensureBackend(): void {
+  if (isBrowserOnlyMode()) throw new ApiError(ACCOUNT_NEEDS_BACKEND, 0);
+}
+
+export interface AuthResult {
+  user: SessionUser;
+  token: string;
+}
+
+async function authRequest<T>(path: string, body: unknown, token?: string): Promise<T> {
+  ensureBackend();
+  const res = await fetchWithTimeout(`${resolveBase()}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<T>(res);
+}
+
+/** 注册（注册即登录，省一步）。昵称可省略。 */
+export async function registerAccount(
+  email: string,
+  password: string,
+  displayName?: string,
+): Promise<AuthResult> {
+  const name = displayName?.trim();
+  const result = await authRequest<AuthResult>("/api/v1/auth/register", {
+    email,
+    password,
+    ...(name ? { display_name: name } : {}),
+  });
+  setStoredSession({ token: result.token, user: result.user });
+  return result;
+}
+
+/**
+ * 登录。
+ *
+ * 后端对「邮箱不存在」与「口令不对」返回同一句话（区分了等于帮人枚举账号），
+ * 所以这里不额外做本地判别，直接把后端原话抛给界面。
+ */
+export async function loginAccount(email: string, password: string): Promise<AuthResult> {
+  const result = await authRequest<AuthResult>("/api/v1/auth/login", { email, password });
+  setStoredSession({ token: result.token, user: result.user });
+  return result;
+}
+
+/**
+ * 登出：让服务端删掉会话行，再清本地。
+ *
+ * 即使请求失败也要清本地——「登出」这个动作本身不该依赖网络，
+ * 否则后端一挂用户就困在已登录状态里出不来。
+ */
+export async function logoutAccount(): Promise<void> {
+  const token = getSessionToken();
+  try {
+    if (token) await authRequest<{ ok: boolean }>("/api/v1/auth/logout", {}, token);
+  } finally {
+    clearStoredSession();
+  }
+}
+
+/**
+ * 查询当前登录者（校验会话是否还有效）。
+ *
+ * 会话过期 / 被吊销时后端返回 401，这里顺手清掉本地登录态——
+ * 否则界面一直显示「已登录」，一点保存却 403，用户完全不知道发生了什么。
+ */
+export async function fetchCurrentUser(): Promise<SessionUser | null> {
+  const token = getSessionToken();
+  if (!token) return null;
+  ensureBackend();
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) {
+    clearStoredSession();
+    return null;
+  }
+  return handleResponse<SessionUser>(res);
+}
+
+/**
+ * 认领旧谱：把「这台设备用凭证发布的谱」挂到账号下。
+ *
+ * 认领之后换设备、清缓存都不会再失去它——这是账号体系解决的核心问题。
+ * 必须同时具备登录态与原凭证（请求头由 `ownerHeaders` 一并提供），
+ * 缺一样服务端都会拒绝：否则任何人注册一下就能把别人的谱认领走。
+ */
+export async function claimScore(id: string): Promise<ScoreListItem> {
+  ensureBackend();
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders() },
+  });
+  return normalizeTuning(await handleResponse<ScoreListItem>(res));
 }
 
 export interface CandidateSelection {
