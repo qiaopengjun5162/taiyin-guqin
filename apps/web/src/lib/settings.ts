@@ -14,6 +14,15 @@
  */
 
 const STORAGE_KEY = "taiyin.apiBaseUrl";
+const AUTHOR_KEY = "taiyin.author";
+
+/**
+ * 署名长度上限，必须与后端 `MAX_AUTHOR_LENGTH` 一致。
+ *
+ * 前端先截断而不是等后端 400：用户敲超了当场看到被截短，比提交后收到
+ * 一句「署名不能超过 40 字」再回头找哪儿超了要省事。
+ */
+export const MAX_AUTHOR_LENGTH = 40;
 
 /** 去掉首尾空白与结尾斜杠，避免 `http://x/` 与 `http://x` 被当成两个地址。 */
 function normalize(url: string): string {
@@ -77,4 +86,58 @@ export function getApiBaseSnapshot(): string | null {
 /** 服务端 / 水合快照：永远 null，避免 hydration 不一致。 */
 export function getServerApiBaseSnapshot(): string | null {
   return null;
+}
+
+/* ────────────────────────── 打谱人署名 ────────────────────────── */
+
+/**
+ * 归一化署名：去首尾空白，按**字符**（非字节）截到上限。
+ *
+ * 不在前端做「非空校验」：空署名等于匿名发布，是合法状态。
+ */
+function normalizeAuthor(name: string): string {
+  // Array.from 按码点切分，避免把 emoji / 生僻字（代理对）截成半个字
+  return Array.from(name.trim()).slice(0, MAX_AUTHOR_LENGTH).join("");
+}
+
+function readAuthor(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return normalizeAuthor(window.localStorage.getItem(AUTHOR_KEY) ?? "");
+  } catch {
+    // 隐私模式 / 禁用存储：视为匿名
+    return "";
+  }
+}
+
+/** 读取本机记住的署名（未设置为空串，表示匿名发布）。 */
+export function getStoredAuthor(): string {
+  return readAuthor();
+}
+
+/** 写入 / 更新署名；传入空白等价于清空（回到匿名）。 */
+export function setStoredAuthor(name: string): void {
+  const value = normalizeAuthor(name);
+  if (typeof window !== "undefined") {
+    try {
+      if (value) window.localStorage.setItem(AUTHOR_KEY, value);
+      else window.localStorage.removeItem(AUTHOR_KEY);
+    } catch {
+      // 存储不可用：本次发布仍可用当前输入值，只是记不住
+    }
+  }
+  emit();
+}
+
+/** 设置项的通用订阅（后端地址与署名共用同一批监听器）。 */
+export const subscribeSettings = subscribeApiBase;
+
+/** 客户端署名快照。 */
+export function getAuthorSnapshot(): string {
+  return readAuthor();
+}
+
+/** 服务端 / 水合快照：空串（匿名），避开 hydration 不一致。 */
+export function getServerAuthorSnapshot(): string {
+  return "";
 }

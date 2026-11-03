@@ -31,6 +31,8 @@ use crate::sheet_segment;
 use crate::template_match::{self, RecognizeMode};
 
 const MAX_TITLE_LENGTH: usize = 200;
+/// 署名上限：留足「某某琴社·某某」这类写法，又不至于把列表撑爆。
+const MAX_AUTHOR_LENGTH: usize = 40;
 
 /// 构造 CORS 层。
 ///
@@ -97,7 +99,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
 
 async fn fetch_score(pool: &PgPool, id: Uuid) -> AppResult<Score> {
     sqlx::query_as::<_, Score>(
-        "SELECT id, title, notes, tuning, created_at, updated_at FROM scores WHERE id = $1",
+        "SELECT id, title, notes, tuning, author, created_at, updated_at FROM scores WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -121,10 +123,26 @@ fn validate_tuning(tuning: &str) -> AppResult<()> {
     }
 }
 
+/// 校验标题长度。
+///
+/// 用 `chars().count()` 而非 `len()`：`len()` 数的是 UTF-8 **字节**，
+/// 一个汉字占 3 字节，会让「200 字」实际只允许 66 个汉字，与提示文案不符
+/// （英文标题则刚好卡在 200 字符）。按字符数才是用户感知的长度。
 fn validate_title(title: &str) -> AppResult<()> {
-    if title.len() > MAX_TITLE_LENGTH {
+    if title.chars().count() > MAX_TITLE_LENGTH {
         Err(AppError::Validation(format!(
             "标题不能超过 {MAX_TITLE_LENGTH} 字"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+/// 校验署名长度。空串合法（等价于匿名），不做必填。
+fn validate_author(author: &str) -> AppResult<()> {
+    if author.chars().count() > MAX_AUTHOR_LENGTH {
+        Err(AppError::Validation(format!(
+            "署名不能超过 {MAX_AUTHOR_LENGTH} 字"
         )))
     } else {
         Ok(())
@@ -349,14 +367,18 @@ async fn create_score(
     validate_title(&title)?;
     let tuning = req.tuning.unwrap_or_else(|| DEFAULT_TUNING.to_string());
     validate_tuning(&tuning)?;
+    // 去空白后校验：只有一个空格的署名等于匿名，不该占满长度配额。
+    let author = req.author.unwrap_or_default().trim().to_string();
+    validate_author(&author)?;
 
     let score = sqlx::query_as::<_, Score>(
-        "INSERT INTO scores (title, notes, tuning) VALUES ($1, $2, $3) \
-         RETURNING id, title, notes, tuning, created_at, updated_at",
+        "INSERT INTO scores (title, notes, tuning, author) VALUES ($1, $2, $3, $4) \
+         RETURNING id, title, notes, tuning, author, created_at, updated_at",
     )
     .bind(&title)
     .bind(&req.notes)
     .bind(&tuning)
+    .bind(&author)
     .fetch_one(&state.pool)
     .await?;
 
@@ -365,7 +387,7 @@ async fn create_score(
 
 async fn list_scores(State(state): State<AppState>) -> AppResult<Json<Vec<ScoreListItem>>> {
     let scores = sqlx::query_as::<_, ScoreListItem>(
-        "SELECT id, title, tuning, created_at, updated_at FROM scores ORDER BY updated_at DESC",
+        "SELECT id, title, tuning, author, created_at, updated_at FROM scores ORDER BY updated_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -390,14 +412,21 @@ async fn update_score(
     let notes = req.notes.unwrap_or(existing.notes);
     let tuning = req.tuning.unwrap_or(existing.tuning);
     validate_tuning(&tuning)?;
+    let author = req
+        .author
+        .map(|a| a.trim().to_string())
+        .unwrap_or(existing.author);
+    validate_author(&author)?;
 
     let score = sqlx::query_as::<_, Score>(
-        "UPDATE scores SET title = $1, notes = $2, tuning = $3, updated_at = now() WHERE id = $4 \
-         RETURNING id, title, notes, tuning, created_at, updated_at",
+        "UPDATE scores SET title = $1, notes = $2, tuning = $3, author = $4, updated_at = now() \
+         WHERE id = $5 \
+         RETURNING id, title, notes, tuning, author, created_at, updated_at",
     )
     .bind(&title)
     .bind(&notes)
     .bind(&tuning)
+    .bind(&author)
     .bind(id)
     .fetch_one(&state.pool)
     .await?;
@@ -425,6 +454,29 @@ async fn delete_score(
 mod tests {
     use super::*;
     use crate::template_match::{INDEX, RecognizeStrategy};
+
+    #[test]
+    fn title_limit_counts_chars_not_bytes() {
+        // 200 个汉字 = 600 字节，按 `len()` 会被误拒；按字符数应放行。
+        let ok = "琴".repeat(MAX_TITLE_LENGTH);
+        assert!(validate_title(&ok).is_ok(), "200 个汉字应合法");
+
+        let too_long = "琴".repeat(MAX_TITLE_LENGTH + 1);
+        assert!(validate_title(&too_long).is_err(), "201 个汉字应拒绝");
+    }
+
+    #[test]
+    fn author_validation_allows_empty_and_caps_chars() {
+        assert!(validate_author("").is_ok(), "匿名发布（空署名）应合法");
+        assert!(validate_author("张百忍").is_ok());
+
+        let ok = "琴".repeat(MAX_AUTHOR_LENGTH);
+        assert!(validate_author(&ok).is_ok(), "40 个汉字应合法");
+
+        let too_long = "琴".repeat(MAX_AUTHOR_LENGTH + 1);
+        let err = validate_author(&too_long).expect_err("41 个汉字应拒绝");
+        assert!(matches!(err, AppError::Validation(_)), "{err:?}");
+    }
 
     /// 用索引模板拼一张 2x2 合成整页（墨=0 白底），编码为 PNG base64 ——
     /// 与 sheet_segment 回环测试同一构造，端到端验证「切分→匹配→响应」接线。

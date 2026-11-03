@@ -373,6 +373,39 @@ describe("Home · 保存与加载", () => {
     expect(h.updateScore.mock.calls[0][0]).toBe("new-id");
   });
 
+  it("首次发布带上本机记住的署名", async () => {
+    window.localStorage.setItem("taiyin.author", "张百忍");
+    await loadExample();
+
+    fireEvent.click(screen.getByLabelText("保存"));
+
+    await waitFor(() => expect(h.createScore).toHaveBeenCalledTimes(1));
+    // 第 4 个参数是署名；空串等价匿名，由 api 层决定不发给后端
+    expect(h.createScore.mock.calls[0][3]).toBe("张百忍");
+  });
+
+  it("未设置署名时按匿名发布（传空串）", async () => {
+    await loadExample();
+
+    fireEvent.click(screen.getByLabelText("保存"));
+
+    await waitFor(() => expect(h.createScore).toHaveBeenCalledTimes(1));
+    expect(h.createScore.mock.calls[0][3]).toBe("");
+  });
+
+  it("再次保存不覆盖署名（避免编辑他人的谱时改掉作者）", async () => {
+    window.localStorage.setItem("taiyin.author", "张百忍");
+    await loadExample();
+
+    const saveBtn = screen.getByLabelText("保存");
+    fireEvent.click(saveBtn);
+    await waitFor(() => expect(saveBtn.textContent).toBe("已保存"));
+
+    fireEvent.click(saveBtn);
+    await waitFor(() => expect(h.updateScore).toHaveBeenCalledTimes(1));
+    expect(h.updateScore.mock.calls[0][1]).not.toHaveProperty("author");
+  });
+
   it("保存失败时展示后端错误消息", async () => {
     await loadExample();
     h.createScore.mockRejectedValue(new ApiError("数据库连接失败", 500));
@@ -736,6 +769,8 @@ describe("Home · 本机→社区一键迁移", () => {
 
   it("server 模式下把本机谱逐个发布到社区", async () => {
     storeState.storageMode = "server";
+    // 设置了署名后迁移的谱应挂上署名（迁移 = 一次性发布多首）
+    window.localStorage.setItem("taiyin.author", "张百忍");
     h.listScores.mockResolvedValue([]);
     h.localListScores.mockResolvedValue(LOCAL_TWO);
     h.localGetScore.mockImplementation(async (id: string) => {
@@ -753,6 +788,7 @@ describe("Home · 本机→社区一键迁移", () => {
     await waitFor(() => expect(h.createScore).toHaveBeenCalledTimes(2));
     expect(confirmSpy).toHaveBeenCalled();
     expect(h.createScore.mock.calls.map((c) => c[0])).toEqual(["平沙落雁", "潇湘水云"]);
+    expect(h.createScore.mock.calls.map((c) => c[3])).toEqual(["张百忍", "张百忍"]);
     confirmSpy.mockRestore();
   });
 
@@ -816,6 +852,16 @@ describe("Home · 曲谱分享链接", () => {
     );
     // 加载后记下服务器 id，分享按钮随之出现
     expect(await screen.findByLabelText("复制分享链接")).toBeTruthy();
+  });
+
+  it("分享链接打开时亮出打谱人署名", async () => {
+    storeState.storageMode = "server";
+    window.history.replaceState({}, "", "/?score=abc");
+    h.getScore.mockResolvedValue({ ...SHARED, author: "张百忍" });
+
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByText("已载入 张百忍 的《平沙落雁》")).toBeTruthy());
   });
 
   it("点分享按钮把含 ?score= 的链接写入剪贴板", async () => {

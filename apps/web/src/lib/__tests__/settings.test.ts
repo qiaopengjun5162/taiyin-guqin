@@ -4,6 +4,10 @@ import {
   setStoredApiBase,
   clearStoredApiBase,
   subscribeApiBase,
+  getStoredAuthor,
+  setStoredAuthor,
+  subscribeSettings,
+  MAX_AUTHOR_LENGTH,
 } from "@/lib/settings";
 
 describe("settings: 后端地址运行时配置", () => {
@@ -51,5 +55,55 @@ describe("settings: 后端地址运行时配置", () => {
     });
     expect(getStoredApiBase()).toBeNull();
     spy.mockRestore();
+  });
+});
+
+describe("settings: 打谱人署名", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("默认空串（匿名）", () => {
+    expect(getStoredAuthor()).toBe("");
+  });
+
+  it("set 后可读回，并去掉首尾空白", () => {
+    setStoredAuthor("  张百忍  ");
+    expect(getStoredAuthor()).toBe("张百忍");
+    expect(window.localStorage.getItem("taiyin.author")).toBe("张百忍");
+  });
+
+  it("按字符截断到上限，不把汉字截成半个", () => {
+    setStoredAuthor("琴".repeat(MAX_AUTHOR_LENGTH + 5));
+    const saved = getStoredAuthor();
+    expect(Array.from(saved)).toHaveLength(MAX_AUTHOR_LENGTH);
+    // 截断后仍是合法汉字，没有出现 U+FFFD 替换符
+    expect(saved).not.toContain("\uFFFD");
+  });
+
+  it("只输入空白等价于清空（回到匿名）", () => {
+    setStoredAuthor("张百忍");
+    setStoredAuthor("   ");
+    expect(getStoredAuthor()).toBe("");
+    expect(window.localStorage.getItem("taiyin.author")).toBeNull();
+  });
+
+  it("读取抛错时不崩溃，退回空串", () => {
+    const spy = vi.spyOn(window.localStorage, "getItem");
+    spy.mockImplementation(() => {
+      throw new Error("SecurityError");
+    });
+    expect(getStoredAuthor()).toBe("");
+    spy.mockRestore();
+  });
+
+  it("修改署名会通知订阅者", () => {
+    const listener = vi.fn();
+    const unsub = subscribeSettings(listener);
+    setStoredAuthor("张三");
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsub();
+    setStoredAuthor("李四");
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

@@ -278,3 +278,115 @@ async fn test_score_tuning_roundtrip() {
         .unwrap();
     assert_eq!(resp.status(), 400);
 }
+
+/// 署名随谱走：不传即匿名、能改、能读回、列表项也带、超长被拒。
+///
+/// 社区里同一首曲谱有多个打法版本，署名是区分「这是谁打的谱」的唯一线索；
+/// 断掉的话列表全变成匿名，分享出去的链接也说不清出处。
+#[tokio::test]
+async fn test_score_author_roundtrip() {
+    let pool = common::test_pool().await;
+    sqlx::query("DELETE FROM scores")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let state = AppState {
+        pool: pool.clone(),
+        llm: Default::default(),
+    };
+
+    // 不传 author → 匿名（空串，与迁移默认值一致）
+    let body_str = serde_json::to_string(&json!({"title": "匿名谱", "notes": []})).unwrap();
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/scores")
+                .header("content-type", "application/json")
+                .body(Body::from(body_str))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(created["author"], "");
+    let id = created["id"].as_str().unwrap().to_string();
+
+    // 补上署名（前后空白要去掉，否则列表里会顶着空格显示）
+    let body_str = serde_json::to_string(&json!({"author": "  张百忍  "})).unwrap();
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/v1/scores/{id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body_str))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let updated: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(updated["author"], "张百忍", "署名应去空白后入库");
+
+    // 重新读：确认落库，而不是只回显请求
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/scores/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let fetched: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(fetched["author"], "张百忍");
+
+    // 列表项也要带署名，否则社区列表没得显示
+    let resp = app(state.clone(), &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/scores")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let items: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let mine = items
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == id.as_str())
+        .expect("刚建的曲谱应出现在列表里");
+    assert_eq!(mine["author"], "张百忍");
+
+    // 超长署名（41 个汉字）应被拒，避免把列表撑爆
+    let too_long = "琴".repeat(41);
+    let body_str = serde_json::to_string(&json!({"author": too_long})).unwrap();
+    let resp = app(state, &ServerConfig::default())
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/v1/scores/{id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body_str))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}

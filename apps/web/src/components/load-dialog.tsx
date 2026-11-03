@@ -60,8 +60,14 @@ export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelet
   if (!open || !activeTab) return null;
 
   const keyword = query.trim().toLowerCase();
+  // 曲名与署名都参与匹配：社区里常有「找某某打的谱」这种需求，
+  // 而署名往往比曲名更好记。
   const visible = keyword
-    ? activeTab.scores.filter((s) => s.title.toLowerCase().includes(keyword))
+    ? activeTab.scores.filter(
+        (s) =>
+          s.title.toLowerCase().includes(keyword) ||
+          (s.author ?? "").toLowerCase().includes(keyword),
+      )
     : activeTab.scores;
 
   const showTabs = tabs.length > 1;
@@ -107,7 +113,7 @@ export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelet
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               aria-label="按曲名搜索"
-              placeholder="按曲名搜索…"
+              placeholder="按曲名 / 署名搜索…"
               className="mb-2 w-full px-2 py-1.5 min-h-[36px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-stone-800 placeholder-stone-400 outline-none focus:border-amber-600/50 transition-colors"
             />
           )}
@@ -146,6 +152,15 @@ export function LoadDialog({ open, tabs, defaultTabKey, onClose, onLoad, onDelet
                 onClick={() => onLoad(s.id, activeTab.key)}
               >
                 <span className="flex-1 text-stone-800 truncate">{s.title}</span>
+                {/* 署名：同一首曲有多个打法版本时，这是区分「谁打的谱」的唯一线索 */}
+                {s.author && (
+                  <span
+                    className="shrink-0 max-w-[6em] truncate text-[9px] text-stone-500"
+                    title={`打谱：${s.author}`}
+                  >
+                    {s.author}
+                  </span>
+                )}
                 {/* 定弦：加载时会跟着切换，提前让用户知道这首谱按哪种调式弹 */}
                 <span
                   className="shrink-0 rounded border border-amber-700/20 px-1 text-[9px] text-amber-800/70"

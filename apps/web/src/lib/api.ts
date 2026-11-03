@@ -113,6 +113,11 @@ export interface ScoreListItem {
    * 但读端仍按 `isTuningId` 校验后再用——老接口/手工改库都可能给出意料外的字符串。
    */
   tuning: TuningId;
+  /**
+   * 打谱人署名。空串 = 匿名（迁移前的老谱、或发布时没填）。
+   * 定为可选是因为「尚未升级的后端」不会返回该字段。
+   */
+  author?: string;
   created_at: string;
   updated_at: string;
 }
@@ -131,16 +136,25 @@ function normalizeTuning<T extends { tuning: TuningId }>(score: T): T {
   return isTuningId(score.tuning) ? score : { ...score, tuning: DEFAULT_TUNING };
 }
 
+/**
+ * 保存曲谱。连后端时即「发布到社区共享池」。
+ *
+ * `author` 只在服务器模式生效：本机存储是私有草稿，署不署名没有意义，
+ * 所以本地分支忽略该参数（`localCreateScore` 也不存它）。
+ */
 export async function createScore(
   title: string,
   notes: NoteColumn[],
   tuning: TuningId = DEFAULT_TUNING,
+  author?: string,
 ): Promise<Score> {
   if (isBrowserOnlyMode()) return localCreateScore(title, notes, tuning);
+  const name = author?.trim();
   const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, notes, tuning }),
+    // 空署名不传字段：让后端落默认匿名，而不是存一个空字符串以外的脏值
+    body: JSON.stringify({ title, notes, tuning, ...(name ? { author: name } : {}) }),
   });
   return normalizeTuning(await handleResponse<Score>(res));
 }
@@ -160,7 +174,7 @@ export async function getScore(id: string): Promise<Score> {
 
 export async function updateScore(
   id: string,
-  data: { title?: string; notes?: NoteColumn[]; tuning?: TuningId },
+  data: { title?: string; notes?: NoteColumn[]; tuning?: TuningId; author?: string },
 ): Promise<Score> {
   if (isBrowserOnlyMode()) return localUpdateScore(id, data);
   const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}`, {

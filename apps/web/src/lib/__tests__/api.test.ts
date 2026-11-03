@@ -62,6 +62,24 @@ describe("api: scores CRUD", () => {
     expect(JSON.parse(options.body)).toEqual({ title: "流水", notes, tuning: "zhengdiao" });
   });
 
+  it("createScore 带署名时去空白后一并提交", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "s3", tuning: "zhengdiao" }));
+    const { createScore } = await import("@/lib/api");
+
+    await createScore("平沙落雁", [], "zhengdiao", "  张百忍  ");
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).author).toBe("张百忍");
+  });
+
+  it("署名为空白时不提交 author 字段（走后端默认匿名）", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "s4", tuning: "zhengdiao" }));
+    const { createScore } = await import("@/lib/api");
+
+    await createScore("平沙落雁", [], "zhengdiao", "   ");
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("author");
+  });
+
   it("createScore 指定定弦时原样提交（蕤宾调）", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ id: "s2", tuning: "ruibin" }));
     const { createScore } = await import("@/lib/api");

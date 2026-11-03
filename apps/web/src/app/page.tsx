@@ -22,6 +22,7 @@ import { useScoreHistory } from "@/lib/use-score-history";
 import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
 import { buildScoreShareUrl, readSharedScoreId } from "@/lib/share-link";
+import { getStoredAuthor } from "@/lib/settings";
 import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
 import { useMetronome } from "@/lib/use-metronome";
@@ -179,6 +180,8 @@ export default function Home() {
         commitScoreTitle(data.title);
         setTuning(data.tuning);
         setCurrentScoreId(data.id);
+        // 分享链接打开时把署名亮出来：让人知道这首谱是谁打的
+        if (data.author) showInfo(`已载入 ${data.author} 的《${data.title}》`);
       } catch {
         showError(
           storageMode === "server"
@@ -308,9 +311,11 @@ export default function Home() {
     setSaveStatus("saving");
     try {
       if (currentScoreId) {
+        // 署名只在「首次发布」时写入：每次保存都带上当前昵称的话，
+        // 别人打开你的社区谱随手保存一次，作者就变成他了。
         await api.updateScore(currentScoreId, { title: scoreTitle, notes: score, tuning });
       } else {
-        const created = await api.createScore(scoreTitle, score, tuning);
+        const created = await api.createScore(scoreTitle, score, tuning, getStoredAuthor());
         setCurrentScoreId(created.id);
       }
       setSaveStatus("saved");
@@ -445,6 +450,8 @@ export default function Home() {
       }
       const community = await api.listScores();
       const existing = new Set(community.map((c) => c.title));
+      // 迁移等价于「一次性发布多首」，统一记当前昵称；没设置则为匿名。
+      const author = getStoredAuthor();
       let migrated = 0;
       let skipped = 0;
       for (const item of localList) {
@@ -453,7 +460,7 @@ export default function Home() {
           continue;
         }
         const full = await api.localGetScore(item.id);
-        await api.createScore(item.title, full.notes, item.tuning);
+        await api.createScore(item.title, full.notes, item.tuning, author);
         migrated++;
       }
       await openLoadDialog(); // 刷新社区 tab，刚发布的谱立即可见

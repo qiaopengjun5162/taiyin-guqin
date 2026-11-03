@@ -191,3 +191,54 @@ describe("LoadDialog · 本机→社区迁移入口", () => {
     expect(screen.queryByLabelText("一键发布本机谱到社区")).toBeNull();
   });
 });
+
+/**
+ * 署名：同一首曲在社区里可能有多个打法版本，署名是区分「谁打的谱」的唯一线索。
+ * 匿名（空串）时不能留下一个空的占位块，否则列表看着像缺了块。
+ */
+describe("LoadDialog · 打谱人署名", () => {
+  const withAuthors: ScoreListItem[] = [
+    {
+      id: "c1",
+      title: "平沙落雁",
+      tuning: "zhengdiao",
+      author: "张百忍",
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:00:00Z",
+    },
+    {
+      id: "c2",
+      title: "潇湘水云",
+      tuning: "zhengdiao",
+      author: "",
+      created_at: "2026-09-02T00:00:00Z",
+      updated_at: "2026-09-02T00:00:00Z",
+    },
+    {
+      id: "c3",
+      title: "流水",
+      tuning: "zhengdiao",
+      author: "李四",
+      created_at: "2026-09-03T00:00:00Z",
+      updated_at: "2026-09-03T00:00:00Z",
+    },
+  ];
+
+  it("有署名的谱显示署名，匿名的谱不显示", () => {
+    renderDialog([{ key: "community", label: "社区曲谱", scores: withAuthors }]);
+    expect(screen.getByText("张百忍")).toBeTruthy();
+    expect(screen.getByText("李四")).toBeTruthy();
+    // 匿名谱只有曲名，没有第二个文本块
+    expect(screen.queryByText("匿名")).toBeNull();
+  });
+
+  it("可以按署名搜索（找某位打谱人的谱）", () => {
+    renderDialog([{ key: "community", label: "社区曲谱", scores: withAuthors }]);
+    fireEvent.change(screen.getByLabelText("按曲名搜索"), {
+      target: { value: "张百忍" },
+    });
+    expect(screen.getByText("平沙落雁")).toBeTruthy();
+    expect(screen.queryByText("流水")).toBeNull();
+    expect(screen.queryByText("潇湘水云")).toBeNull();
+  });
+});

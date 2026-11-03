@@ -1,5 +1,36 @@
 # 更新日志
 
+## [0.19.0] - 2026-11-03
+
+### 新增（社区作者署名）
+
+社区里同一首曲谱常有多个打法版本，但此前只有标题，分不清「这是谁打的谱」。
+减字谱的指法处理带很强的个人风格，署名既是出处，也是琴友之间认人、找同一位打谱人的唯一线索。
+
+- **数据层**：`scores` 表新增 `author TEXT NOT NULL DEFAULT ''`（迁移 `003_add_score_author.sql`）。
+  用空串而非 NULL 表示匿名，让老数据与「发布时不填」统一成一种状态，前端判空即可。
+- **接口**：`POST/PUT /api/v1/scores` 接受 `author`（可选），单条与列表响应都带该字段；
+  入库前 `trim()`，长度按**字符**计上限 40，超长返回 400。
+- **前端**：设置面板新增「我的署名」（与后端地址共用一次「保存」，存 localStorage）；
+  发布到社区、批量迁移本机谱时自动带上；社区列表每条显示署名，搜索支持按署名匹配；
+  分享链接打开时提示「已载入 张百忍 的《平沙落雁》」。
+- **只在首次发布写入**：`updateScore` 不发送 `author`——否则任何人打开别人的社区谱随手保存一次，
+  作者就变成他了。要改署名请重新发布。
+
+### 修复
+
+- `validate_title` 原本用 `title.len()`（UTF-8 **字节**数）判 200 上限，
+  一个汉字占 3 字节，实际只允许 66 个汉字，与「不能超过 200 字」的提示文案不符。
+  改为 `chars().count()`，英文标题行为不变。
+
+### 验证
+
+- Rust：`cargo check` / `clippy -D warnings` / `fmt --check` 全过；
+  新增 `validate_title`、`validate_author` 单测；`test_score_author_roundtrip`
+  在本地 Postgres 上真跑（建→改署名→读回→列表→超长 400），迁移 003 已验证可应用。
+- 前端：`settings` 12 例、`api` 22 例、`backend-settings` 4 例、`load-dialog` 19 例、
+  `page-interactions` 42 例全绿；`tsc --noEmit` 与 `eslint --max-warnings 0` 干净。
+
 ## [0.18.0] - 2026-11-03
 
 ### 修复（部署硬伤：distroless 镜像启动即失败）
