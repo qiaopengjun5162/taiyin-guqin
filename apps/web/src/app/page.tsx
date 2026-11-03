@@ -434,6 +434,19 @@ export default function Home() {
     downloadMidi(bytes, `${scoreTitle || "taiyin-score"}.mid`);
   }
 
+  /**
+   * 导出 PDF —— 走浏览器原生打印通道。
+   *
+   * jsPDF 这类库没法嵌入古琴减字字体（中文字库以 MB 计，根本塞不进 PDF），
+   * 而浏览器打印到 PDF 会自动把用到的字形子集嵌进文件，
+   * 减字才能正确显示、且矢量无损。用户在打印框里选「另存为 PDF」即可。
+   * 具体页面尺寸 / 边距 / 隐藏交互都在 globals.css 的 @media print 里。
+   */
+  function handleExportPdf() {
+    if (score.length === 0) return;
+    window.print();
+  }
+
   return (
     <main className="flex flex-col items-center min-h-dvh py-10 px-4">
       {/* ── 品牌：朱砂印章（主视觉标识） ── */}
@@ -503,6 +516,7 @@ export default function Home() {
         onExportText={handleExportText}
         onExportWav={handleExportWav}
         onExportMidi={handleExportMidi}
+        onExportPdf={handleExportPdf}
         isExportingAudio={isExportingAudio}
         examples={EXAMPLE_SCORES}
         onLoadExample={handleLoadExample}

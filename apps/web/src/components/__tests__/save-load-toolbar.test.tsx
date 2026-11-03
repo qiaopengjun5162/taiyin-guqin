@@ -231,6 +231,37 @@ describe("SaveLoadToolbar", () => {
     expect(onExportSvg).toHaveBeenCalledTimes(1);
   });
 
+  it("shows PDF export button when onExportPdf provided and calls it", () => {
+    const onExportPdf = vi.fn();
+    const { getByText } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        hasNotes
+        saveStatus="idle"
+        onExportPdf={onExportPdf}
+      />,
+    );
+    fireEvent.click(getByText("PDF"));
+    expect(onExportPdf).toHaveBeenCalledTimes(1);
+
+    // 没音符时不该出现（导空谱没有意义）
+    const { container: empty } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        hasNotes={false}
+        saveStatus="idle"
+        onExportPdf={onExportPdf}
+      />,
+    );
+    expect(empty.textContent).not.toContain("PDF");
+  });
+
   it("hides export button when hasNotes is false", () => {
     const { container } = render(
       <SaveLoadToolbar

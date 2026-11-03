@@ -11,6 +11,7 @@ interface SaveLoadToolbarProps {
   onExportText?: () => void;
   onExportWav?: () => void;
   onExportMidi?: () => void;
+  onExportPdf?: () => void;
   isExportingAudio?: boolean;
   examples?: ExampleScore[];
   onLoadExample?: (id: string) => void;
@@ -36,6 +37,7 @@ export function SaveLoadToolbar({
   onExportText,
   onExportWav,
   onExportMidi,
+  onExportPdf,
   isExportingAudio,
   examples,
   onLoadExample,
@@ -161,6 +163,16 @@ export function SaveLoadToolbar({
           className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isExporting ? "导出中…" : "SVG"}
+        </button>
+      )}
+      {hasNotes && onExportPdf && (
+        <button
+          onClick={onExportPdf}
+          aria-label="导出 PDF"
+          title="导出 PDF：走浏览器打印通道，在打印框选「另存为 PDF」即得矢量文件；含曲名、定弦与减字字体，适合打印出版 / 分享"
+          className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 transition-all"
+        >
+          PDF
         </button>
       )}
       {hasNotes && onExportText && (

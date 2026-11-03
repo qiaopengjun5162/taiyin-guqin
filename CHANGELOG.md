@@ -1,5 +1,30 @@
 # 更新日志
 
+## [0.15.0] - 2026-11-03
+
+### 新增（出版级 PDF 导出 · 对标 JPW 简谱软件）
+
+- **「PDF」导出按钮**：`SaveLoadToolbar` 新增 `onExportPdf` 入口，`page.tsx` 的
+  `handleExportPdf` 调用 `window.print()`。用户在点完按钮的打印框里选「另存为 PDF」
+  即得矢量文件——含曲名、定弦与减字字体（浏览器自动嵌入用到的字形子集）。
+- 选这条路而非 jsPDF：古琴减字字体文件以 MB 计，jsPDF 无法把中文字库塞进 PDF，
+  会导成一片空白；浏览器原生打印到 PDF 是唯一能正确显示减字、且矢量无损的方案，
+  同时零新依赖、不破坏静态导出体积与 CI 覆盖率闸门。
+- 强化 `globals.css` 的 `@media print`：只打印 `#score-area`（其余品牌/工具栏/导出选项
+  连同布局空白一并 `visibility` 隔离）、A4 纵向、保留朱砂色与曲名/定弦页脚、
+  单音符列 `break-inside: avoid` 防跨页断裂、隐藏谱面内编辑/删除按钮。
+
+### 测试
+
+- `save-load-toolbar.test.tsx` +1：PDF 按钮在 `hasNotes` 时显示并回调 `onExportPdf`，空谱时隐藏。
+- `page-interactions.test.tsx` +1：点击「导出 PDF」触发 `window.print`。
+
+### 竞品启示（来自 JP-Word 简谱软件分析）
+
+- JPW 是**简谱**通用编辑器（Windows 桌面、出版级矢量 PDF / 动态谱），与太音的**减字谱**
+  Web 应用并非正面竞品，但「出版级 PDF 导出」正是其最强能力之一，故优先补齐以缩小短板。
+  （另两项对标项——可分享文本谱、MIDI 导出——经核查此前已实现，无需重复。）
+
 ## [0.14.0] - 2026-11-03
 
 ### 新增（接通琴友社区 · Step 2+3）

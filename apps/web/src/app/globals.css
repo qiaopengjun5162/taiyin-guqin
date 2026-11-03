@@ -134,6 +134,7 @@ body {
 @media print {
   @page {
     margin: 15mm 12mm;
+    size: A4 portrait;
   }
 
   body {
@@ -141,20 +142,28 @@ body {
     color: #1c1b1a !important;
   }
 
-  .no-print {
-    display: none !important;
+  /* 只打印乐谱区：其余（品牌印章、工具栏、导出选项）连同布局空白一并隔离，
+     避免谱纸顶部留出大段空当。visibility 而非 display，是不动 #score-area 内部排版。 */
+  body * {
+    visibility: hidden;
   }
-
+  #score-area,
+  #score-area * {
+    visibility: visible;
+  }
   #score-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
     max-width: 100% !important;
     margin: 0 !important;
     padding: 0;
     display: flex;
-    justify-content: center;
-  }
-
-  #score-area .bg-\[\#f8f3eb\] {
-    background: transparent !important;
+    flex-direction: column;
+    align-items: center;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   #score-area [data-note-column] {

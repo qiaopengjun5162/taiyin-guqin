@@ -529,6 +529,18 @@ describe("Home · 导出图片", () => {
   });
 });
 
+describe("Home · 导出 PDF", () => {
+  it("点击 PDF 按钮走浏览器打印通道（window.print）", async () => {
+    const printSpy = vi.spyOn(window, "print").mockImplementation(() => {});
+    await loadExample();
+
+    fireEvent.click(screen.getByLabelText("导出 PDF"));
+    expect(printSpy).toHaveBeenCalledTimes(1);
+
+    printSpy.mockRestore();
+  });
+});
+
 describe("Home · 歌词跳转", () => {
   it("点歌词从该字起播（无音符在播时只起播）", async () => {
     const { container } = render(<Home />);
