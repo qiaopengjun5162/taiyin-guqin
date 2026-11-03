@@ -74,15 +74,19 @@ sudo ufw allow 22 && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw enable
 容器重建而丢失」的地方（叫数据卷）。
 
 ```bash
-# 建一个专门的目录，以后备份就备这个目录
+# 0) 建一个专用网络：后端用它按名字找到数据库（比 --link 干净，也不会过期失效）
+docker network create taiyin-net
+
+# 1) 建一个专门的目录，以后备份就备这个目录
 sudo mkdir -p /opt/taiyin/pgdata
 
-# 起数据库容器
+# 2) 起数据库容器
 #   - 把数据落到 /opt/taiyin/pgdata（容器删了数据还在）
 #   - 密码改成自己的强密码，别用示例值
 #   - 端口 5432 只绑本机 127.0.0.1，外面连不进来
 docker run -d \
   --name taiyin-pg \
+  --network taiyin-net \
   --restart unless-stopped \
   -e POSTGRES_USER=taiyin \
   -e POSTGRES_PASSWORD=改成你自己的强密码 \
@@ -112,12 +116,12 @@ cd taiyin-guqin
 docker build -t taiyin-server .
 
 # 3) 启动后端
-#   - --link 让后端能用 "taiyin-pg" 这个名字找到数据库
+#   - --network taiyin-net：后端直接用 "taiyin-pg" 这个名字连数据库
 #   - 3001 端口只绑本机，让反向代理去转发，外面直接访问不到
 docker run -d \
   --name taiyin-server \
+  --network taiyin-net \
   --restart unless-stopped \
-  --link taiyin-pg \
   -p 127.0.0.1:3001:3001 \
   -e DATABASE_URL='postgres://taiyin:改成你自己的强密码@taiyin-pg:5432/taiyin' \
   -e ALLOWED_ORIGINS='https://paxonqiao.com,https://qiaopengjun5162.github.io' \
@@ -238,6 +242,21 @@ curl -i -X PUT $BASE/api/v1/scores/把id贴这里 \
 - [ ] 无痕窗口里试着删 → 删不掉（因为没有钥匙）——这是**预期行为**
 - [ ] 回到原来那个浏览器，能改能删
 - [ ] 清掉浏览器缓存后，旧谱只能看和「另存为新谱」，不能改删——同样是预期行为
+
+### 不想手工逐条 curl？有一键脚本
+
+仓库里 `scripts/smoke-backend.sh` 会照本节全链路原样跑一遍：起 Postgres → 起后端
+→ 验 `/health` 与 CORS 白名单 → 验所有权链路（带钥匙发布 / 错钥匙 403 / 对钥匙
+200 / 无主谱 403 / 对钥匙删 200），跑完自动清理容器。
+
+```bash
+bash scripts/smoke-backend.sh            # 跑完自动清理
+bash scripts/smoke-backend.sh --keep     # 保留容器，方便接着手测
+```
+
+CI 已经在替我们盯着它：改 Dockerfile、手册或服务端代码时，
+`.github/workflows/runbook-smoke.yml` 会自动跑一遍，
+**手册和代码不会各说各话**。
 
 ---
 

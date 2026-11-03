@@ -1,0 +1,27 @@
+name: Runbook Smoke
+
+# 手册（docs/deploy-backend-runbook.md）是「上线照着敲」的说明书，最容易过时的
+# 是两类：Dockerfile 编不出来、后端行为变了命令还对不上。这个 workflow 用真 Docker
+# 把手册第 2—6 节原样跑一遍（含所有权链路），让手册和代码始终对齐。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - Dockerfile
+      - scripts/smoke-backend.sh
+      - docs/deploy-backend-runbook.md
+      - crates/taiyin-server/**
+      - crates/taiyin-server/migrations/**
+      - .github/workflows/runbook-smoke.yml
+
+jobs:
+  smoke:
+    name: 照手册全链路验证
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 后端全链路冒烟（Postgres + 容器 + 所有权链路）
+        run: bash scripts/smoke-backend.sh
