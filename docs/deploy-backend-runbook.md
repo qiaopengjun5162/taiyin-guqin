@@ -278,7 +278,7 @@ docker rm -f taiyin-server          # 删掉旧容器（数据库容器不动，
 | 一会儿就 429（限流） | 反向代理没传 `X-Forwarded-For`，所有人被算成一个 IP | 按第 4 节把转发头补上 |
 | 容器启动几秒就退出 | `DATABASE_URL` 写错 / 数据库没起来 | `docker logs taiyin-server` 看最后一行；`docker logs taiyin-pg` 看数据库 |
 | 启动报 `Address already in use` | 上一个实例没退干净，还占着 3001 | `lsof -nP -iTCP:3001 -sTCP:LISTEN` 找到旧 PID，`kill` 掉再启 |
-| `docker build` 报 rustc 版本不够 | 部分依赖要求比 1.85 更新的编译器 | 把 Dockerfile 的 `rust:1.85-slim-bookworm` 换成 `rust:1.98-slim-bookworm` 再 build |
+| `docker build` 拉不到 rust 镜像 / 报编译器版本不够 | 部分镜像源没有 `rust:1.85` 这个旧标签（本机实测 403），且 edition 2024 的 workspace 本身就要更新编译器 | Dockerfile 已固定 `rust:1.98-slim-bookworm`；仍失败就检查本机的 Docker 镜像源配置 |
 | AI 优选 / 图片识别没反应 | 只是没配 `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | 属于可选功能，不影响社区存谱；配上后重启容器 |
 | 想看后端实时日志 | — | `docker logs -f taiyin-server`（distroless 镜像没有 shell，只能看日志） |
 
