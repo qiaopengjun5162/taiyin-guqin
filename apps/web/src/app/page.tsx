@@ -19,6 +19,13 @@ import { JianpuTranslator } from "@/components/jianpu-translator";
 import { JianziCodeImport } from "@/components/jianzi-code-import";
 import { useExportImage } from "@/lib/use-export-image";
 import { scoreFingerprint, confirmDiscard } from "@/lib/unsaved-guard";
+import {
+  clearDraft,
+  formatDraftAge,
+  readDraft,
+  writeDraft,
+  type ScoreDraft,
+} from "@/lib/draft-store";
 import { useScoreHistory } from "@/lib/use-score-history";
 import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
 import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
@@ -180,6 +187,61 @@ export default function Home() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
+
+  /**
+   * 自动草稿：有未保存修改时把谱写进 localStorage，下次打开可恢复。
+   *
+   * `pendingDraft` 是「上次没保存的内容」，只在编辑区还是空的时候提示。
+   * 一旦用户开始录入（isPristine 不再成立），提示自动消失、草稿照常被新内容覆盖——
+   * 这比加一堆「要不要放弃」的判断更符合直觉：开始录就是选了「不恢复」。
+   */
+  const [pendingDraft, setPendingDraft] = useState<ScoreDraft | null>(null);
+  const isPristine = score.length === 0 && scoreTitle === UNTITLED_TITLE;
+  const showDraftBanner = pendingDraft !== null && isPristine;
+
+  // 读草稿只能在 effect 里做：渲染期读 localStorage 会让 SSR 预渲染与客户端首帧不一致。
+  useEffect(() => {
+    // 分享直达（?score=）本身就是「载入一份内容」，此时再弹草稿提示会互相打架
+    if (readSharedScoreId(window.location.search)) return;
+    const draft = readDraft();
+    if (!draft || draft.notes.length === 0) return;
+    // 把「外部存储里的草稿」搬进 React 状态，正是 effect 存在的意义
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPendingDraft(draft);
+  }, []);
+
+  // 有未保存修改时防抖写草稿（600ms，避免每敲一个音就写一次盘）
+  useEffect(() => {
+    if (!isDirty) return;
+    const timer = setTimeout(() => {
+      writeDraft({ title: scoreTitle, notes: score, tuning, scoreId: currentScoreId });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [isDirty, scoreTitle, score, tuning, currentScoreId]);
+
+  /** 恢复上次没保存的草稿（草稿本身未保存，恢复后仍显示「未保存」）。 */
+  function handleRestoreDraft() {
+    if (!pendingDraft) return;
+    commitScore(() => pendingDraft.notes);
+    commitScoreTitle(pendingDraft.title);
+    setTuning(pendingDraft.tuning);
+    // 本机 id（local-xxx）在 server 模式下发给后端只会 404：
+    // 与 handleLoadScore 同一处理——置 null 让保存走「新建」。
+    setCurrentScoreId(
+      storageMode === "server" && pendingDraft.scoreId?.startsWith("local-")
+        ? null
+        : pendingDraft.scoreId,
+    );
+    setEditingIndex(null);
+    setPendingDraft(null);
+    showInfo("已恢复上次未保存的草稿，记得保存");
+  }
+
+  /** 丢弃草稿。 */
+  function handleDiscardDraft() {
+    clearDraft();
+    setPendingDraft(null);
+  }
 
   const { exportPng, exportSvg, isExporting } = useExportImage({
     containerRef: exportRef,
@@ -373,6 +435,8 @@ export default function Home() {
       }
       // 保存成功：当前内容成为新的「干净基线」，之后再改动才算未保存
       setSavedFingerprint(scoreFingerprint(scoreTitle, score, tuning));
+      // 已经存进库里了，草稿不再需要——否则下次打开会提示「恢复」一份早就存好的谱
+      clearDraft();
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
@@ -467,6 +531,8 @@ export default function Home() {
         setCurrentScoreId(null);
         // 删掉当前谱后编辑区回到空谱，应算「干净」——否则关页会莫名拦一次
         setSavedFingerprint(scoreFingerprint(UNTITLED_TITLE, [], tuning));
+        // 谱已经删了，别在下次打开时提示恢复它
+        clearDraft();
       }
     } catch (err) {
       showError(err instanceof api.ApiError ? err.message : "删除失败");
@@ -500,6 +566,8 @@ export default function Home() {
       setEditingIndex(null);
       // 刚载入的内容就是「干净基线」，不该一进来就提示未保存
       setSavedFingerprint(scoreFingerprint(scoreData.title, scoreData.notes, scoreData.tuning));
+      // 用户已明确选择载入别的谱，旧草稿作废
+      clearDraft();
     } catch {
       showError("加载失败");
     }
@@ -563,6 +631,8 @@ export default function Home() {
     setCurrentScoreId(null);
     setEditingIndex(null);
     setSavedFingerprint(scoreFingerprint(example.title, example.notes, tuning));
+    // 载入示例是明确的内容选择，旧草稿一并作废
+    clearDraft();
   }
 
   /**
@@ -664,6 +734,32 @@ export default function Home() {
       </div>
 
       {/* ── 全局错误 / 中性提示 ── */}
+      {/* ── 未保存草稿恢复提示（只在编辑区还空着时出现） ── */}
+      {showDraftBanner && pendingDraft && (
+        <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/30 bg-[var(--paper)] shadow-sm">
+          <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+          <div className="flex items-center gap-2 px-3 py-2">
+            <p className="flex-1 text-[11px] leading-relaxed tracking-wider text-stone-700">
+              上次有未保存的草稿：《{pendingDraft.title}》· {pendingDraft.notes.length} 个音 ·{" "}
+              {formatDraftAge(pendingDraft.updatedAt)}
+            </p>
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="px-2 py-1 text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/40 text-stone-700 hover:text-stone-900 hover:border-amber-700/60 transition-all"
+            >
+              恢复
+            </button>
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="px-2 py-1 text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/20 text-stone-400 hover:text-red-600 transition-all"
+            >
+              丢弃
+            </button>
+          </div>
+        </div>
+      )}
       {errorMessage && (
         <div className="no-print mt-4 w-full max-w-md px-3 py-2 rounded border border-red-400/30 bg-red-900/20 text-[11px] tracking-wider text-red-200/80">
           {errorMessage}

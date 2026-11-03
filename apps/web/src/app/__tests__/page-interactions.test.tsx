@@ -138,6 +138,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
 import Home from "@/app/page";
 import { ApiError } from "@/lib/api";
 import { resetTuningCache } from "@/lib/tuning";
+import { createEmptyState } from "@/lib/jianzi";
 
 const EXAMPLE = "沧海一声笑";
 
@@ -1071,5 +1072,113 @@ describe("Home · 未保存保护", () => {
       window.dispatchEvent(evt);
       expect(evt.defaultPrevented).toBe(false);
     });
+  });
+});
+
+describe("Home · 自动草稿", () => {
+  const DRAFT_KEY = "taiyin.draft.v1";
+
+  function makeDraftNote(id: string): NoteColumn {
+    return {
+      id,
+      jianpuNumber: "5",
+      jianpuOctave: "",
+      jianpuDot: false,
+      duration: "四分",
+      jianzi: createEmptyState(),
+    };
+  }
+
+  function seedDraft(overrides: Record<string, unknown> = {}) {
+    window.localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({
+        title: "昨夜录的谱",
+        notes: [makeDraftNote("d1"), makeDraftNote("d2")],
+        tuning: "zhengdiao",
+        scoreId: null,
+        updatedAt: Date.now() - 5 * 60_000,
+        ...overrides,
+      }),
+    );
+  }
+
+  it("有草稿且编辑区为空时提示恢复，并说清有几个音、多久之前", async () => {
+    seedDraft();
+    const { container } = render(<Home />);
+
+    expect(await screen.findByRole("button", { name: "恢复" })).toBeTruthy();
+    // 文案被拆在多个文本节点里，用整页文本断言比 getByText 稳
+    expect(container.textContent).toContain("昨夜录的谱");
+    expect(container.textContent).toContain("2 个音");
+    expect(container.textContent).toContain("分钟前");
+  });
+
+  it("点「恢复」把草稿内容载入编辑区，并还原来源谱 id", async () => {
+    seedDraft({ scoreId: "srv-1" });
+    const { container } = render(<Home />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "恢复" }));
+
+    await waitFor(() => expect(noteColumns(container).length).toBe(2));
+    expect((screen.getByLabelText("曲谱名称") as HTMLInputElement).value).toBe("昨夜录的谱");
+    // 草稿本来就没存进库，恢复后仍应显示「未保存」
+    expect(screen.getByLabelText("有未保存的修改")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "恢复" })).toBeNull();
+  });
+
+  it("点「丢弃」清掉 localStorage 里的草稿，提示随之消失", async () => {
+    seedDraft();
+    render(<Home />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "丢弃" }));
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(screen.queryByRole("button", { name: "恢复" })).toBeNull();
+  });
+
+  it("分享直达（?score=）时不弹草稿提示，避免两份内容打架", async () => {
+    window.history.replaceState({}, "", "/?score=s1");
+    seedDraft();
+    h.getScore.mockResolvedValue({
+      id: "s1",
+      title: "社区谱",
+      notes: [],
+      tuning: "zhengdiao",
+      author: "",
+    });
+
+    render(<Home />);
+    await waitFor(() => expect(h.getScore).toHaveBeenCalled());
+
+    expect(screen.queryByRole("button", { name: "恢复" })).toBeNull();
+  });
+
+  it("编辑后会把草稿写进 localStorage（这才是刷新能救回来的原因）", async () => {
+    await loadExample();
+    fireEvent.change(screen.getByLabelText("曲谱名称"), {
+      target: { value: "待存稿" },
+    });
+
+    await waitFor(
+      () => {
+        const raw = window.localStorage.getItem(DRAFT_KEY);
+        expect(raw).not.toBeNull();
+        expect(JSON.parse(raw as string).title).toBe("待存稿");
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("保存成功后清掉草稿，不再提示恢复", async () => {
+    seedDraft();
+    const { container } = render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "恢复" }));
+    await waitFor(() => expect(noteColumns(container).length).toBe(2));
+
+    fireEvent.click(screen.getByLabelText("保存"));
+    await waitFor(() => expect(h.createScore).toHaveBeenCalled());
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
   });
 });
