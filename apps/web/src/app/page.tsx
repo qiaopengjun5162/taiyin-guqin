@@ -240,8 +240,13 @@ export default function Home() {
   function handleRemove(id: string) {
     const removedIdx = score.findIndex((n) => n.id === id);
     commitScore((prev) => prev.filter((n) => n.id !== id));
-    if (removedIdx >= 0 && editingIndex === removedIdx) {
+    if (editingIndex === null) return;
+    if (removedIdx === editingIndex) {
       setEditingIndex(null);
+    } else if (removedIdx >= 0 && removedIdx < editingIndex) {
+      // 删除发生在「正在编辑的音」之前：数组整体前移一位，
+      // editingIndex 必须同步减一，否则键盘会错位到别的音、确认时改错音。
+      setEditingIndex(editingIndex - 1);
     }
   }
 

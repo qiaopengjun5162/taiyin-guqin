@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { NoteColumn } from "@/lib/types";
+import type { NoteColumn, JianpuNumber } from "@/lib/types";
 import { createEmptyState } from "@/lib/jianzi";
 import { translateJianpuSequenceToJianzi } from "@/lib/taiyin-wasm";
 import { selectCandidates } from "@/lib/api";
@@ -111,7 +111,29 @@ export function SequenceMode({
       const candidates = candidatesPerNote[i];
       const idx = selectedIndex[i] ?? 0;
       const candidate = candidates[idx];
-      if (!candidate) continue;
+      if (!candidate) {
+        // 翻译没给这个音候选（罕见：后端返回的候选数少于音数）：
+        // 不要静默丢掉——保留简谱、减字留空，播放时退回简谱音高，
+        // 旋律与节奏不破。否则后续音符整体左移、小节线全错位。
+        columns.push({
+          id: crypto.randomUUID(),
+          jianpuNumber: String(item.number) as JianpuNumber,
+          jianpuOctave:
+            item.octave === 2
+              ? "··"
+              : item.octave === 1
+                ? "·"
+                : item.octave === -1
+                  ? ","
+                  : item.octave === -2
+                    ? ",,"
+                    : "",
+          jianpuDot: item.dotted,
+          duration: item.duration,
+          jianzi: createEmptyState(),
+        });
+        continue;
+      }
       columns.push(candidateToNoteColumn(candidate, item));
     }
     if (columns.length === 0) return;
