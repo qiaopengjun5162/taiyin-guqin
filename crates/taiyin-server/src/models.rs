@@ -36,6 +36,8 @@ pub struct ScoreListItem {
     pub author: String,
     /// 归属账号；前端拿它与「我」比对，决定要不要显示改 / 删按钮。
     pub owner_user_id: Option<Uuid>,
+    /// 收藏数（热度）。列表「按热度排序」直接读这一列，不实时 COUNT。
+    pub favorites_count: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

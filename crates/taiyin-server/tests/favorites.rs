@@ -408,3 +408,152 @@ async fn favorites_are_paginated_newest_first() {
         .await
         .ok();
 }
+
+/// 收藏 / 取消会维护 scores.favorites_count，且幂等不会把计数撑大。
+#[tokio::test]
+async fn favorites_count_tracks_favorites() {
+    let pool = common::test_pool().await;
+    let app = router(pool.clone());
+    let token = register(
+        &app,
+        &format!("fav-cnt-{}@example.com", uuid::Uuid::new_v4()),
+    )
+    .await;
+    let id = create_score(&app, "收藏计数测试").await;
+
+    // 收一次 → 计数为 1
+    let (status, _, _) = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/scores/{id}/favorite"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    // 再收一次（幂等）→ 仍是 1，不变成 2
+    call(
+        &app,
+        "PUT",
+        &format!("/api/v1/scores/{id}/favorite"),
+        Some(&token),
+        None,
+    )
+    .await;
+
+    let count: i64 = sqlx::query_scalar("SELECT favorites_count FROM scores WHERE id = $1")
+        .bind(uuid::Uuid::parse_str(&id).expect("score id 是合法 uuid"))
+        .fetch_one(&pool)
+        .await
+        .expect("应能查到刚建的谱");
+    assert_eq!(count, 1, "重复收藏不应把计数撑大");
+
+    // 取消 → 归零
+    let (status, _, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/v1/scores/{id}/favorite"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let count: i64 = sqlx::query_scalar("SELECT favorites_count FROM scores WHERE id = $1")
+        .bind(uuid::Uuid::parse_str(&id).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "取消收藏后计数应归零");
+
+    sqlx::query("DELETE FROM scores WHERE title = '收藏计数测试'")
+        .execute(&pool)
+        .await
+        .ok();
+}
+
+/// 列表按收藏数排序：收得多排前面，且列表项带 favorites_count 字段。
+#[tokio::test]
+async fn list_scores_popular_sort_orders_by_count() {
+    let pool = common::test_pool().await;
+    let app = router(pool.clone());
+    let ua = register(&app, &format!("pop-a-{}@example.com", uuid::Uuid::new_v4())).await;
+    let ub = register(&app, &format!("pop-b-{}@example.com", uuid::Uuid::new_v4())).await;
+    let uc = register(&app, &format!("pop-c-{}@example.com", uuid::Uuid::new_v4())).await;
+
+    let id_hot = create_score(&app, "热度红").await;
+    let id_mid = create_score(&app, "热度黄").await;
+    let id_cold = create_score(&app, "热度蓝").await;
+
+    // 红被 3 人收、黄被 2 人收、蓝被 1 人收
+    for u in [&ua, &ub, &uc] {
+        call(
+            &app,
+            "PUT",
+            &format!("/api/v1/scores/{id_hot}/favorite"),
+            Some(u),
+            None,
+        )
+        .await;
+    }
+    for u in [&ua, &ub] {
+        call(
+            &app,
+            "PUT",
+            &format!("/api/v1/scores/{id_mid}/favorite"),
+            Some(u),
+            None,
+        )
+        .await;
+    }
+    call(
+        &app,
+        "PUT",
+        &format!("/api/v1/scores/{id_cold}/favorite"),
+        Some(&ua),
+        None,
+    )
+    .await;
+
+    let (status, body, _) = call(
+        &app,
+        "GET",
+        "/api/v1/scores?sort=popular&limit=200",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body.as_array().expect("列表应是数组");
+    let pos = |target: &str| -> i64 {
+        items
+            .iter()
+            .position(|s| s["id"].as_str() == Some(target))
+            .expect("我建的谱应在列表中") as i64
+    };
+    assert!(pos(&id_hot) < pos(&id_mid), "红(3收藏)应排在黄(2收藏)前");
+    assert!(pos(&id_mid) < pos(&id_cold), "黄(2收藏)应排在蓝(1收藏)前");
+
+    // 字段也对：最热的该是 3
+    let hot = items
+        .iter()
+        .find(|s| s["id"].as_str() == Some(&id_hot))
+        .expect("能找到红");
+    assert_eq!(hot["favorites_count"].as_i64(), Some(3));
+
+    // 不传 sort：按更新时间倒序，我建的三首里蓝最后被收藏写入、应最前
+    let (_, body2, _) = call(&app, "GET", "/api/v1/scores?limit=200", None, None).await;
+    let items2 = body2.as_array().unwrap();
+    let pos2 = |target: &str| -> i64 {
+        items2
+            .iter()
+            .position(|s| s["id"].as_str() == Some(target))
+            .expect("应有该谱") as i64
+    };
+    assert!(pos2(&id_cold) < pos2(&id_mid), "近期：蓝应排在黄前");
+    assert!(pos2(&id_mid) < pos2(&id_hot), "近期：黄应排在红前");
+
+    sqlx::query("DELETE FROM scores WHERE title IN ('热度红','热度黄','热度蓝')")
+        .execute(&pool)
+        .await
+        .ok();
+}

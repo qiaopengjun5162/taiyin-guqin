@@ -27,6 +27,11 @@ export interface StoredScore {
   tuning: TuningId;
   created_at: string;
   updated_at: string;
+  /**
+   * 收藏数（热度）。纯前端模式下本地存储不追踪收藏，这一项恒为 0 / 缺省；
+   * 加在这里只是为了与 `ScoreListItem` 共用排序逻辑时不报类型错。
+   */
+  favorites_count?: number;
 }
 
 function storage(): Storage | null {

@@ -563,6 +563,9 @@ async fn create_score(
 struct ListScoresQuery {
     limit: Option<i64>,
     offset: Option<i64>,
+    /// `recent`（默认）= 按更新时间倒序；`popular` = 按收藏数倒序（热度）。
+    /// 只认这两个值，其它一律当 `recent`——不把任意字符串塞进 SQL（排序子句无法参数化）。
+    sort: Option<String>,
 }
 
 /// 社区曲谱列表（分页）。
@@ -579,10 +582,16 @@ async fn list_scores(
     let limit = q.limit.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
     let offset = q.offset.unwrap_or(0).max(0);
 
-    let scores = sqlx::query_as::<_, ScoreListItem>(
-        "SELECT id, title, tuning, author, owner_user_id, created_at, updated_at \
-         FROM scores ORDER BY updated_at DESC LIMIT $1 OFFSET $2",
-    )
+    // 排序方向由 Rust 选中常量后再拼进 SQL：sort 只可能取两个写死的字面量之一，
+    // 用户传的任何其它字符串都会被 `match` 落到 `recent` 分支，绝不会进语句。
+    let order_by = match q.sort.as_deref() {
+        Some("popular") => "ORDER BY favorites_count DESC, updated_at DESC",
+        _ => "ORDER BY updated_at DESC",
+    };
+    let scores = sqlx::query_as::<_, ScoreListItem>(&format!(
+        "SELECT id, title, tuning, author, owner_user_id, favorites_count, created_at, updated_at \
+         FROM scores {order_by} LIMIT $1 OFFSET $2"
+    ))
     .bind(limit)
     .bind(offset)
     .fetch_all(&state.pool)

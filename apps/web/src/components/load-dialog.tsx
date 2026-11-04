@@ -40,6 +40,11 @@ export interface LoadDialogTab {
   onLoadMore?: () => void;
   /** 下一页请求进行中 */
   loadingMore?: boolean;
+  /**
+   * 社区列表排序：`recent`（默认，按更新时间）/ `popular`（按收藏数）。
+   * 只在社区 tab 有意义；翻页与重新拉取都靠它决定取哪一版顺序。
+   */
+  sort?: "recent" | "popular";
 }
 
 interface LoadDialogProps {
@@ -70,6 +75,8 @@ interface LoadDialogProps {
   favoriteIds?: string[];
   /** 切换收藏。`favorited` 是点击**后**期望的状态，而不是当前状态。 */
   onToggleFavorite?: (id: string, favorited: boolean) => void;
+  /** 切换社区列表排序（最新 / 最热）。仅社区 tab 显示对应控件时调用。 */
+  onCommunitySortChange?: (sort: "recent" | "popular") => void;
 }
 
 /**
@@ -124,6 +131,7 @@ export function LoadDialog({
   migrateMsg,
   favoriteIds,
   onToggleFavorite,
+  onCommunitySortChange,
 }: LoadDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [activeKey, setActiveKey] = useState(defaultTabKey ?? tabs[0]?.key);
@@ -157,6 +165,9 @@ export function LoadDialog({
           (s.author ?? "").toLowerCase().includes(keyword),
       )
     : activeTab.scores;
+
+  // 社区列表当前排序：未显式指定时按「最新」处理（与后端默认一致）。
+  const currentSort = activeTab.sort ?? "recent";
 
   const showTabs = tabs.length > 1;
 
@@ -207,6 +218,28 @@ export function LoadDialog({
               placeholder="按曲名 / 署名搜索…"
               className="mb-2 w-full px-2 py-1.5 min-h-[36px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-stone-800 placeholder-stone-400 outline-none focus:border-amber-600/50 transition-colors"
             />
+          )}
+          {/* 社区列表排序：默认「最新」，可切「最热」（按收藏数）。只社区 tab 显示。 */}
+          {activeTab.key === "community" && onCommunitySortChange && (
+            <div className="mb-2 flex items-center gap-1">
+              <span className="text-[9px] tracking-wider text-stone-500">排序</span>
+              {(["recent", "popular"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onCommunitySortChange(value)}
+                  aria-pressed={currentSort === value}
+                  className={
+                    "px-2 py-0.5 text-[9px] tracking-wider rounded border transition-all " +
+                    (currentSort === value
+                      ? "border-vermillion/50 text-[var(--vermillion)] bg-vermillion/10"
+                      : "border-amber-700/20 text-stone-500 hover:text-stone-800 hover:border-amber-600/40")
+                  }
+                >
+                  {value === "recent" ? "最新" : "最热"}
+                </button>
+              ))}
+            </div>
           )}
           {activeTab.showMigrate && (
             <div className="mb-2 p-2 rounded border border-amber-700/20 bg-amber-900/10">
@@ -277,6 +310,15 @@ export function LoadDialog({
                 >
                   {getTuningById(s.tuning).name}
                 </span>
+                {/* 热度：被收藏次数。旧后端不返回该字段，这里用可选链安全跳过。 */}
+                {typeof s.favorites_count === "number" && s.favorites_count > 0 && (
+                  <span
+                    className="shrink-0 rounded border border-rose-700/20 px-1 text-[9px] text-rose-700/70"
+                    title={`已被收藏 ${s.favorites_count} 次`}
+                  >
+                    ♥{s.favorites_count}
+                  </span>
+                )}
                 <span className="text-[9px] text-stone-500 shrink-0">
                   {new Date(s.updated_at).toLocaleString("zh-CN")}
                 </span>

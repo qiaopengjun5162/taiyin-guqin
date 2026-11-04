@@ -501,3 +501,44 @@ describe("LoadDialog · 收藏星标", () => {
     expect(onToggleFavorite).toHaveBeenCalledWith("c1", true);
   });
 });
+
+describe("LoadDialog · 社区列表排序与热度", () => {
+  it("社区 tab 显示最新/最热切换，点击最热回调 sort=popular", () => {
+    const onCommunitySortChange = vi.fn();
+    renderDialog(tabs, { onCommunitySortChange });
+
+    const popular = screen.getByRole("button", { name: "最热" });
+    expect(screen.getByRole("button", { name: "最新" })).toBeTruthy();
+
+    fireEvent.click(popular);
+    expect(onCommunitySortChange).toHaveBeenCalledWith("popular");
+  });
+
+  it("非社区 tab 不显示排序切换", () => {
+    const onCommunitySortChange = vi.fn();
+    // 本机 tab 放最前 → 默认激活本机，不显示社区排序控件
+    renderDialog(
+      [
+        { key: "local", label: "本机", scores: LOCAL },
+        { key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true },
+      ],
+      { onCommunitySortChange },
+    );
+    expect(screen.queryByRole("button", { name: "最热" })).toBeNull();
+  });
+
+  it("列表项带收藏数时显示 ♥ 徽标", () => {
+    const hot: ScoreListItem[] = [
+      {
+        id: "h1",
+        title: "流水",
+        tuning: "zhengdiao",
+        created_at: "2026-09-01T00:00:00Z",
+        updated_at: "2026-09-01T00:00:00Z",
+        favorites_count: 7,
+      },
+    ];
+    renderDialog([{ key: "community", label: "社区曲谱", scores: hot, readOnly: true }]);
+    expect(screen.getByText("♥7")).toBeTruthy();
+  });
+});

@@ -81,11 +81,23 @@ pub async fn favorite_score(
         return Err(AppError::NotFound);
     }
 
-    sqlx::query("INSERT INTO favorites (user_id, score_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
-        .bind(user_id)
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    // 收 / 取消时在同一条语句里维护计数器：用 CTE 把「本次到底插没插进去」
+    // 记下来，再按这个实际增量去改 scores.favorites_count。
+    // ON CONFLICT DO NOTHING 命中时不插、计数 +0（已收过也是 +0），
+    // 幂等性天然成立，不会因重复点击把计数撑大。
+    sqlx::query(
+        "WITH ins AS (
+            INSERT INTO favorites (user_id, score_id) VALUES ($1, $2)
+            ON CONFLICT (user_id, score_id) DO NOTHING
+            RETURNING 1
+         )
+         UPDATE scores SET favorites_count = favorites_count + (SELECT count(*) FROM ins)
+         WHERE id = $2",
+    )
+    .bind(user_id)
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
 
     Ok(Json(FavoriteState { favorited: true }))
 }
@@ -98,11 +110,22 @@ pub async fn unfavorite_score(
 ) -> AppResult<Json<FavoriteState>> {
     let user_id = require_user(&headers, &state.pool).await?;
 
-    sqlx::query("DELETE FROM favorites WHERE user_id = $1 AND score_id = $2")
-        .bind(user_id)
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    // 与收藏对称：用 CTE 把「本次到底删没删掉」记下来，再按实际减量改计数器。
+    // GREATEST(0, ...) 兜底，防并发竞态下计数变负（理论上不会，但宁可保守）。
+    // 谱已不存在时 DELETE/UPDATE 都影响 0 行，.execute 不报错，仍返回成功——
+    // 取消一个没收藏过的谱本就该是幂等的。
+    sqlx::query(
+        "WITH del AS (
+            DELETE FROM favorites WHERE user_id = $1 AND score_id = $2
+            RETURNING 1
+         )
+         UPDATE scores SET favorites_count = GREATEST(0, favorites_count - (SELECT count(*) FROM del))
+         WHERE id = $2",
+    )
+    .bind(user_id)
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
 
     Ok(Json(FavoriteState { favorited: false }))
 }
@@ -122,7 +145,7 @@ pub async fn list_favorites(
     let offset = q.offset.unwrap_or(0).max(0);
 
     let scores = sqlx::query_as::<_, ScoreListItem>(
-        "SELECT s.id, s.title, s.tuning, s.author, s.owner_user_id, s.created_at, s.updated_at \
+        "SELECT s.id, s.title, s.tuning, s.author, s.owner_user_id, s.favorites_count, s.created_at, s.updated_at \
          FROM favorites f JOIN scores s ON s.id = f.score_id \
          WHERE f.user_id = $1 \
          ORDER BY f.created_at DESC, s.id \

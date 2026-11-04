@@ -501,7 +501,11 @@ export default function Home() {
       prev.map((t) => (t.key === "community" ? { ...t, loadingMore: true } : t)),
     );
     try {
-      const page = await api.listScoresPage({ limit: 50, offset: tab.scores.length });
+      const page = await api.listScoresPage({
+        limit: 50,
+        offset: tab.scores.length,
+        sort: tab.sort,
+      });
       setLoadTabs((prev) =>
         prev.map((t) => {
           if (t.key !== "community") return t;
@@ -524,6 +528,45 @@ export default function Home() {
         prev.map((t) => (t.key === "community" ? { ...t, loadingMore: false } : t)),
       );
       showError("加载更多失败，请稍后再试");
+    }
+  }
+
+  /**
+   * 切换社区列表排序（最新 / 最热）。
+   *
+   * 不是「在前端把现有几页重排」——那只能排已加载的几十首，藏在前几页之后的热门谱
+   * 永远排不出来。而是带上 sort 参数重新拉第一页，让服务端按收藏数重排；
+   * 翻页也跟着用同一个 sort（见 `handleLoadMoreCommunity`），保证整列顺序一致。
+   */
+  async function handleCommunitySortChange(sort: "recent" | "popular") {
+    const tab = loadTabsRef.current.find((t) => t.key === "community");
+    // 重入保护与翻页一致：正在加载时忽略再次点击
+    if (!tab || tab.loadingMore) return;
+
+    setLoadTabs((prev) =>
+      prev.map((t) => (t.key === "community" ? { ...t, loadingMore: true } : t)),
+    );
+    try {
+      const page = await api.listScoresPage({ limit: 50, sort });
+      setLoadTabs((prev) =>
+        prev.map((t) => {
+          if (t.key !== "community") return t;
+          return {
+            ...t,
+            sort,
+            scores: page.items,
+            total: page.total ?? t.total ?? null,
+            // 「我的谱」集合要跟着新的一页重建，否则第二页里自己发的谱没了删除按钮
+            myScoreIds: page.items.filter((x) => isMyScore(x.id)).map((x) => x.id),
+            loadingMore: false,
+          };
+        }),
+      );
+    } catch {
+      setLoadTabs((prev) =>
+        prev.map((t) => (t.key === "community" ? { ...t, loadingMore: false } : t)),
+      );
+      showError("切换排序失败，请稍后再试");
     }
   }
 
@@ -653,6 +696,8 @@ export default function Home() {
           myUserId: myId,
           // 总数与翻页：只有第一页时用户会以为社区就这么几首
           total: firstPage.total,
+          // 社区列表默认按更新时间；用户切到「最热」时由 onCommunitySortChange 重拉
+          sort: "recent",
           onLoadMore: handleLoadMoreCommunity,
         });
         if (localList.length > 0) {
@@ -1198,6 +1243,7 @@ export default function Home() {
         // 未登录不传回调 = 对话框不画星标。收藏接口要求登录态，
         // 画一个点了必然 401 的星星，比不画更让人怀疑功能坏了。
         onToggleFavorite={getCurrentUserId() ? handleToggleFavorite : undefined}
+        onCommunitySortChange={handleCommunitySortChange}
       />
 
       {/* ── 主卡片 —— 宣纸质感 ── */}

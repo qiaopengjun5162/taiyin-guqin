@@ -418,4 +418,24 @@ describe("api: 社区列表分页", () => {
 
     expect(page.total).toBeNull();
   });
+
+  it("sort=popular 会带进请求 URL", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(items));
+    const { listScoresPage } = await import("@/lib/api");
+
+    await listScoresPage({ limit: 50, sort: "popular" });
+
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("sort=popular");
+  });
+
+  it("sort 非 popular 时不污染 URL（交给后端默认倒序）", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(items));
+    const { listScoresPage } = await import("@/lib/api");
+
+    await listScoresPage({ limit: 50, sort: "recent" });
+
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).not.toContain("sort=");
+  });
 });

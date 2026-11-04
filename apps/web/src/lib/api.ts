@@ -157,6 +157,11 @@ export interface ScoreListItem {
    */
   author?: string;
   /**
+   * 收藏数（热度）。后端 0.29.0 起在列表项里返回；旧后端不返回，前端按 0 处理。
+   * 定为可选同理——降级到旧后端时列表仍然能正常渲染，只是不显示热度。
+   */
+  favorites_count?: number;
+  /**
    * 归属账号 id；`null` 表示还只是「某台设备用凭证发的」，没有账号归属。
    * 前端拿它与当前登录者比对，决定这首谱是不是「我的」。
    */
@@ -218,17 +223,28 @@ const MAX_PAGE_SIZE = 200;
  * 纯前端模式下本地存储没有分页概念，整份返回，语义与服务器分支保持一致。
  */
 export async function listScoresPage(
-  options: { limit?: number; offset?: number } = {},
+  options: { limit?: number; offset?: number; sort?: "recent" | "popular" } = {},
 ): Promise<ScorePage> {
   if (isBrowserOnlyMode()) {
     const items = await localListScores();
-    return { items: items.map(normalizeTuning), total: items.length };
+    // 纯前端模式无后端、本地存储不追踪收藏数，热度排序退化为按更新时间。
+    const sorted =
+      options.sort === "popular"
+        ? [...items].sort(
+            (a, b) =>
+              (b.favorites_count ?? 0) - (a.favorites_count ?? 0) ||
+              b.updated_at.localeCompare(a.updated_at),
+          )
+        : items;
+    return { items: sorted.map(normalizeTuning), total: items.length };
   }
   const limit = options.limit ?? MAX_PAGE_SIZE;
   const offset = options.offset ?? 0;
-  const res = await fetchWithTimeout(
-    `${resolveBase()}/api/v1/scores?limit=${limit}&offset=${offset}`,
-  );
+  const sort = options.sort === "popular" ? "popular" : undefined;
+  const url = sort
+    ? `${resolveBase()}/api/v1/scores?limit=${limit}&offset=${offset}&sort=${sort}`
+    : `${resolveBase()}/api/v1/scores?limit=${limit}&offset=${offset}`;
+  const res = await fetchWithTimeout(url);
   const items = await handleResponse<ScoreListItem[]>(res);
   // 注意先判 null 再转数字：`Number(null)` 是 0，会把「服务端没给总数」
   // 误当成「库里有 0 首」，界面上就会出现「0 / 50」这种自相矛盾的提示。
