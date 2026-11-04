@@ -142,11 +142,13 @@ curl -i http://127.0.0.1:13001/health     # 返回 200 即成功
 docker compose logs -f server
 ```
 
-> **镜像是公开的，不用登录就能拉**。已实测：用匿名 token 请求
-> `/v2/qiaopengjun5162/taiyin-server/manifests/latest` 回 **200**（私有包会回 401）。
-> 若哪天被改成私有、`pull` 报 `unauthorized`：到 GitHub → Packages → `taiyin-server` →
-> Package settings 改回 **Public**；或 `docker login ghcr.io -u <用户名>`，
-> 口令用一枚带 `read:packages` 的 PAT。
+> **镜像是私有的，直接 `pull` 会 `denied`**。两种解法：
+> ① GitHub → 你的头像 → **Packages** → `taiyin-server` → 右侧 **Package settings**
+> → 把可见性改成 **Public**。一次点击，之后永久免登录（推荐）；
+> ② 或先 `docker login ghcr.io -u <你的GitHub用户名>`，口令用一枚带 `read:packages` 的 PAT。
+>
+> ⚠️ **别看 CI 能拉就以为谁都行**：workflow 里的 `GITHUB_TOKEN` 对本仓库的包有读权限，
+> 所以 Deploy Smoke 一直是绿的，而服务器上照样 `denied`。这是踩过的坑，写在手册里防再踩。
 
 > **回滚**：把 `.env` 里的 `IMAGE_TAG` 改成上一个 `sha-xxxxxx`，再 `docker compose up -d`。
 > 不用重新编译，也不用整包重下。
