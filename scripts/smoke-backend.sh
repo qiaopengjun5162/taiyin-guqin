@@ -67,7 +67,7 @@ ok "Postgres 就绪"
 echo "▶ 起后端（手册第 3 步：迁移内置，启动自动建表）"
 docker run -d --name "$SVR" --network "$NET" \
   -e DATABASE_URL="postgres://taiyin:${PG_PW}@${PG}:5432/taiyin" \
-  -e ALLOWED_ORIGINS='https://paxonqiao.com,https://qiaopengjun5162.github.io' \
+  -e ALLOWED_ORIGINS='https://qiaopengjun5162.github.io' \
   -e RUST_LOG=info \
   -e ADMIN_TOKEN="${SMOKE_ADMIN:-smoke-admin-key}" \
   -p 127.0.0.1:"${HOST_PORT}":3001 "$IMG" >/dev/null || fail "后端容器起不来"
@@ -81,8 +81,8 @@ curl -fsS "$BASE/health" >/dev/null 2>&1 || { docker logs "$SVR" | tail -20; fai
 ok "后端就绪（/health 200，迁移已自动执行）"
 
 echo "▶ 验 CORS 白名单（陌生来源不该拿到 allow-origin）"
-curl -sS -D - -o /dev/null "$BASE/health" -H "Origin: https://paxonqiao.com" \
-  | grep -qi "access-control-allow-origin: https://paxonqiao.com" \
+curl -sS -D - -o /dev/null "$BASE/health" -H "Origin: https://qiaopengjun5162.github.io" \
+  | grep -qi "access-control-allow-origin: https://qiaopengjun5162.github.io" \
   && ok "合法来源：正确回显" || fail "合法来源没拿到 allow-origin"
 curl -sS -D - -o /dev/null "$BASE/health" -H "Origin: https://evil.example" \
   | grep -qi "access-control-allow-origin" \
