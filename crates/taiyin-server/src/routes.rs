@@ -566,6 +566,12 @@ struct ListScoresQuery {
     /// `recent`（默认）= 按更新时间倒序；`popular` = 按收藏数倒序（热度）。
     /// 只认这两个值，其它一律当 `recent`——不把任意字符串塞进 SQL（排序子句无法参数化）。
     sort: Option<String>,
+    /// 关键词：同时匹配标题与署名（ILIKE，大小写不敏感）。空 / 纯空白视为「不给」。
+    /// 拼进 SQL 的是**占位符 `$1`**，实际值走 bind——绝不把用户输入当 SQL 片段拼。
+    q: Option<String>,
+    /// 定弦过滤：只留等于该值的谱。非法值直接 400（而非静默忽略），
+    /// 否则「我以为筛了其实没筛」比不提供筛选更让人困惑。
+    tuning: Option<String>,
 }
 
 /// 社区曲谱列表（分页）。
@@ -588,10 +594,33 @@ async fn list_scores(
         Some("popular") => "ORDER BY favorites_count DESC, updated_at DESC",
         _ => "ORDER BY updated_at DESC",
     };
+
+    // 关键词：同时匹配标题与署名（ILIKE，大小写不敏感）。空 / 纯空白视为「不给」。
+    // 拼进 SQL 的是**占位符 `$1`**，实际值走 bind——绝不把用户输入当 SQL 片段拼。
+    let q_param: Option<String> =
+        q.q.as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("%{s}%"));
+    // 定弦过滤：只留等于该值的谱。非法值直接 400（而非静默忽略），
+    // 否则「我以为筛了其实没筛」比不提供筛选更让人困惑。
+    let tuning_param: Option<String> = match q.tuning.as_deref() {
+        None => None,
+        Some(t) => {
+            validate_tuning(t)?;
+            Some(t.to_string())
+        }
+    };
+
     let scores = sqlx::query_as::<_, ScoreListItem>(&format!(
         "SELECT id, title, tuning, author, owner_user_id, favorites_count, created_at, updated_at \
-         FROM scores {order_by} LIMIT $1 OFFSET $2"
+         FROM scores \
+         WHERE ($1::text IS NULL OR title ILIKE $1 OR author ILIKE $1) \
+           AND ($2::text IS NULL OR tuning = $2) \
+         {order_by} LIMIT $3 OFFSET $4"
     ))
+    .bind(q_param.clone())
+    .bind(tuning_param.clone())
     .bind(limit)
     .bind(offset)
     .fetch_all(&state.pool)
@@ -600,9 +629,16 @@ async fn list_scores(
     // 单独查一次总数，而不是在同一条 SQL 里用 `count(*) OVER ()`：
     // 后者在 offset 超出总数时**一行都不返回**，总数也跟着丢了——
     // 而「这里已经没有更多了」恰恰是前端最需要判断的事。
-    let total: i64 = sqlx::query_scalar("SELECT count(*) FROM scores")
-        .fetch_one(&state.pool)
-        .await?;
+    // 这里用**同样的过滤条件**，否则「已显示 N / 总数」会与列表内容对不上。
+    let total: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM scores \
+         WHERE ($1::text IS NULL OR title ILIKE $1 OR author ILIKE $1) \
+           AND ($2::text IS NULL OR tuning = $2)",
+    )
+    .bind(q_param.clone())
+    .bind(tuning_param.clone())
+    .fetch_one(&state.pool)
+    .await?;
 
     let mut headers = HeaderMap::new();
     if let Ok(value) = HeaderValue::from_str(&total.to_string()) {

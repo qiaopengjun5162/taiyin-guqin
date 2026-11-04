@@ -542,3 +542,53 @@ describe("LoadDialog · 社区列表排序与热度", () => {
     expect(screen.getByText("♥7")).toBeTruthy();
   });
 });
+
+/**
+ * 社区列表搜索 / 定弦过滤：这组控件只在「接入了服务端过滤」的社区 tab 出现，
+ * 而且不是每敲一个字就打一次服务端——防抖 300ms 后才回调一次。
+ * 没接入时（本机 tab / 没传回调）绝不能画控件，否则回调是空的、点了静默没反应。
+ */
+describe("LoadDialog · 社区列表搜索与定弦过滤", () => {
+  it("社区 tab 接入 onCommunityFilterChange 时显示定弦下拉，含三种定弦", () => {
+    renderDialog([{ key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true }], {
+      onCommunityFilterChange: vi.fn(),
+    });
+    const select = screen.getByLabelText("按定弦筛选") as HTMLSelectElement;
+    expect(select).toBeTruthy();
+    expect(select.querySelectorAll("option")).toHaveLength(4); // 全部 + 三种定弦
+    expect(select.options[0].textContent).toContain("全部");
+  });
+
+  it("未接入 onCommunityFilterChange 时不显示定弦下拉（避免空回调）", () => {
+    renderDialog([{ key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true }]);
+    expect(screen.queryByLabelText("按定弦筛选")).toBeNull();
+  });
+
+  it("切换定弦经防抖后回调 onCommunityFilterChange(query, tuning)", () => {
+    vi.useFakeTimers();
+    const onCommunityFilterChange = vi.fn();
+    renderDialog([{ key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true }], {
+      onCommunityFilterChange,
+    });
+    const select = screen.getByLabelText("按定弦筛选") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "ruibin" } });
+    // 防抖窗口内不应立即调用
+    expect(onCommunityFilterChange).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(300);
+    expect(onCommunityFilterChange).toHaveBeenCalledWith("", "ruibin");
+    vi.useRealTimers();
+  });
+
+  it("搜索框输入经防抖后回调 onCommunityFilterChange", () => {
+    vi.useFakeTimers();
+    const onCommunityFilterChange = vi.fn();
+    renderDialog([{ key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true }], {
+      onCommunityFilterChange,
+    });
+    fireEvent.change(screen.getByLabelText("按曲名搜索"), { target: { value: "广陵" } });
+    expect(onCommunityFilterChange).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(300);
+    expect(onCommunityFilterChange).toHaveBeenCalledWith("广陵", null);
+    vi.useRealTimers();
+  });
+});

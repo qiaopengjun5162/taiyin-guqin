@@ -439,3 +439,52 @@ describe("api: 社区列表分页", () => {
     expect(url).not.toContain("sort=");
   });
 });
+
+describe("api: 社区列表搜索与定弦过滤参数", () => {
+  const items = [
+    { id: "a", title: "流水", tuning: "zhengdiao", created_at: "t", updated_at: "t" },
+  ];
+
+  it("query 进 URL 的 q 参数（中文正确编码）", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(items));
+    const { listScoresPage } = await import("@/lib/api");
+
+    await listScoresPage({ limit: 50, query: "平沙落雁" });
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.get("q")).toBe("平沙落雁");
+  });
+
+  it("tuning 进 URL 的 tuning 参数", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(items));
+    const { listScoresPage } = await import("@/lib/api");
+
+    await listScoresPage({ limit: 50, tuning: "ruibin" });
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.get("tuning")).toBe("ruibin");
+  });
+
+  it("不传 query / tuning 时不污染 URL", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(items));
+    const { listScoresPage } = await import("@/lib/api");
+
+    await listScoresPage({ limit: 50 });
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.has("q")).toBe(false);
+    expect(url.searchParams.has("tuning")).toBe(false);
+  });
+
+  it("query + tuning + sort 三者可同时进 URL", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(items));
+    const { listScoresPage } = await import("@/lib/api");
+
+    await listScoresPage({ limit: 50, sort: "popular", query: "流水", tuning: "zhengdiao" });
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.get("q")).toBe("流水");
+    expect(url.searchParams.get("tuning")).toBe("zhengdiao");
+    expect(url.searchParams.get("sort")).toBe("popular");
+  });
+});

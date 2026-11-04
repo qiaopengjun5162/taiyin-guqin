@@ -505,6 +505,8 @@ export default function Home() {
         limit: 50,
         offset: tab.scores.length,
         sort: tab.sort,
+        query: tab.query,
+        tuning: tab.tuning ?? undefined,
       });
       setLoadTabs((prev) =>
         prev.map((t) => {
@@ -547,7 +549,12 @@ export default function Home() {
       prev.map((t) => (t.key === "community" ? { ...t, loadingMore: true } : t)),
     );
     try {
-      const page = await api.listScoresPage({ limit: 50, sort });
+      const page = await api.listScoresPage({
+        limit: 50,
+        sort,
+        query: tab.query,
+        tuning: tab.tuning ?? undefined,
+      });
       setLoadTabs((prev) =>
         prev.map((t) => {
           if (t.key !== "community") return t;
@@ -567,6 +574,50 @@ export default function Home() {
         prev.map((t) => (t.key === "community" ? { ...t, loadingMore: false } : t)),
       );
       showError("切换排序失败，请稍后再试");
+    }
+  }
+
+  /**
+   * 社区列表关键词 / 定弦过滤：带 query + tuning 重新拉第一页，替换整列。
+   *
+   * 与排序、翻页共三条纪律：①不可重入（loadingMore 保护，双击 / 回车不连发）；
+   * ②失败复位 loadingMore，否则按钮卡在禁用态；③把 query / tuning 写回 tab，
+   * 这样接下去的翻页、切排序都跟着同一组过滤——否则翻到第二页过滤悄悄失效，
+   * 用户会以为「搜索只在前面几十首里查」其实是整库都漏了后面的热门谱。
+   */
+  async function handleCommunityFilterChange(query: string, tuning: TuningId | null) {
+    const tab = loadTabsRef.current.find((t) => t.key === "community");
+    if (!tab || tab.loadingMore) return;
+
+    setLoadTabs((prev) =>
+      prev.map((t) => (t.key === "community" ? { ...t, loadingMore: true } : t)),
+    );
+    try {
+      const page = await api.listScoresPage({
+        limit: 50,
+        sort: tab.sort,
+        query,
+        tuning: tuning ?? undefined,
+      });
+      setLoadTabs((prev) =>
+        prev.map((t) => {
+          if (t.key !== "community") return t;
+          return {
+            ...t,
+            query,
+            tuning,
+            scores: page.items,
+            total: page.total ?? t.total ?? null,
+            myScoreIds: page.items.filter((x) => isMyScore(x.id)).map((x) => x.id),
+            loadingMore: false,
+          };
+        }),
+      );
+    } catch {
+      setLoadTabs((prev) =>
+        prev.map((t) => (t.key === "community" ? { ...t, loadingMore: false } : t)),
+      );
+      showError("筛选失败，请稍后再试");
     }
   }
 
@@ -698,6 +749,9 @@ export default function Home() {
           total: firstPage.total,
           // 社区列表默认按更新时间；用户切到「最热」时由 onCommunitySortChange 重拉
           sort: "recent",
+          // 关键词 / 定弦过滤的客户端回显，初始为空（不做过滤）
+          query: "",
+          tuning: null,
           onLoadMore: handleLoadMoreCommunity,
         });
         if (localList.length > 0) {
@@ -1244,6 +1298,7 @@ export default function Home() {
         // 画一个点了必然 401 的星星，比不画更让人怀疑功能坏了。
         onToggleFavorite={getCurrentUserId() ? handleToggleFavorite : undefined}
         onCommunitySortChange={handleCommunitySortChange}
+        onCommunityFilterChange={handleCommunityFilterChange}
       />
 
       {/* ── 主卡片 —— 宣纸质感 ── */}

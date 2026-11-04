@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScoreListItem } from "@/lib/api";
-import { getTuningById } from "@/lib/tuning";
+import { getTuningById, TUNINGS, type TuningId } from "@/lib/tuning";
 
 export interface LoadDialogTab {
   key: string;
@@ -45,6 +45,13 @@ export interface LoadDialogTab {
    * 只在社区 tab 有意义；翻页与重新拉取都靠它决定取哪一版顺序。
    */
   sort?: "recent" | "popular";
+  /**
+   * 社区列表的当前关键词 / 定弦过滤（服务端过滤的「客户端回显」）。
+   * 由 `onCommunityFilterChange` 写回，保证翻页、排序都跟着同一组过滤条件，
+   * 整列顺序一致——否则翻页会悄悄丢掉过滤。
+   */
+  query?: string;
+  tuning?: TuningId | null;
 }
 
 interface LoadDialogProps {
@@ -77,6 +84,8 @@ interface LoadDialogProps {
   onToggleFavorite?: (id: string, favorited: boolean) => void;
   /** 切换社区列表排序（最新 / 最热）。仅社区 tab 显示对应控件时调用。 */
   onCommunitySortChange?: (sort: "recent" | "popular") => void;
+  /** 切换社区列表的关键词 / 定弦过滤（重新拉第一页，整列一致）。仅社区 tab 显示对应控件时调用。 */
+  onCommunityFilterChange?: (query: string, tuning: TuningId | null) => void;
 }
 
 /**
@@ -87,7 +96,16 @@ interface LoadDialogProps {
  * ② 搜索只在**已加载的这些**里搜——分页之后本地过滤的范围变了，
  *    不说明的话「搜不到」会被理解成「社区没有这首」。
  */
-function PaginationHint({ tab, query }: { tab: LoadDialogTab; query: string }) {
+function PaginationHint({
+  tab,
+  query,
+  serverSearch,
+}: {
+  tab: LoadDialogTab;
+  query: string;
+  /** 社区 tab 且接入了服务端过滤时为 true：此时搜索命中全库，不再是「只查已加载」。 */
+  serverSearch?: boolean;
+}) {
   const loaded = tab.scores.length;
   const total = tab.total;
   const hasMore = total !== null && total !== undefined && loaded < total;
@@ -109,9 +127,15 @@ function PaginationHint({ tab, query }: { tab: LoadDialogTab; query: string }) {
           {tab.loadingMore ? "加载中…" : "加载更多"}
         </button>
       </div>
-      {query.trim() && (
+      {/* 本地过滤才需要这句提醒；社区接入服务端后搜索命中全库，再说「只查已加载」就是假话 */}
+      {query.trim() && !serverSearch && (
         <p className="text-[9px] tracking-wider text-amber-800/70">
           搜索只在已加载的 {loaded} 首里查，更早的谱还没取下来
+        </p>
+      )}
+      {query.trim() && serverSearch && (
+        <p className="text-[9px] tracking-wider text-amber-800/70">
+          正在社区全库搜索「{query.trim()}」，结果已按当前排序呈现
         </p>
       )}
     </div>
@@ -132,10 +156,12 @@ export function LoadDialog({
   favoriteIds,
   onToggleFavorite,
   onCommunitySortChange,
+  onCommunityFilterChange,
 }: LoadDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [activeKey, setActiveKey] = useState(defaultTabKey ?? tabs[0]?.key);
   const [query, setQuery] = useState("");
+  const [tuning, setTuning] = useState<TuningId | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -150,6 +176,25 @@ export function LoadDialog({
 
   // activeKey 可能因 tabs 变化而失效（如切到本机模式），回退到第一个。
   const activeTab = tabs.find((t) => t.key === activeKey) ?? tabs[0];
+
+  // 用 ref 持有最新回调，避免把它写进 effect 依赖导致
+  // 「服务端响应→重渲染→重新触发→死循环」：回调每次渲染身份都变，但只要 query/tuning 不变就不该再发请求。
+  const filterCbRef = useRef(onCommunityFilterChange);
+  useEffect(() => {
+    filterCbRef.current = onCommunityFilterChange;
+  }, [onCommunityFilterChange]);
+  // 跳过首帧：打开对话框时不应立即发一次「空过滤」请求（openLoadDialog 已经拉过第一页）。
+  const skipFirstFilter = useRef(true);
+  useEffect(() => {
+    if (skipFirstFilter.current) {
+      skipFirstFilter.current = false;
+      return;
+    }
+    if (activeKey !== "community" || !filterCbRef.current) return;
+    // 防抖：连续输入只发最后一次请求，避免每敲一个字打一次服务端。
+    const handle = setTimeout(() => filterCbRef.current?.(query, tuning), 300);
+    return () => clearTimeout(handle);
+  }, [query, tuning, activeKey]);
 
   // 搜索词不跨次保留：由调用方用 key 控制挂载（打开即全新实例），
   // 比在 effect 里 setState 干净——后者会触发级联渲染。
@@ -173,8 +218,10 @@ export function LoadDialog({
 
   function switchTab(key: string) {
     setActiveKey(key);
-    // 切 tab 时清空搜索，避免旧关键词跨分类串味（社区里搜「平沙」切到本机还留着）
+    // 切 tab 时清空搜索与定弦过滤，避免旧关键词 / 旧定弦跨分类串味
+    // （社区里搜「平沙」切到本机还留着；或本机选了蕤宾切到社区仍挂着）
     setQuery("");
+    setTuning(null);
   }
 
   return (
@@ -210,14 +257,35 @@ export function LoadDialog({
           )}
 
           {activeTab.scores.length > 0 && (
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label="按曲名搜索"
-              placeholder="按曲名 / 署名搜索…"
-              className="mb-2 w-full px-2 py-1.5 min-h-[36px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-stone-800 placeholder-stone-400 outline-none focus:border-amber-600/50 transition-colors"
-            />
+            <>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="按曲名搜索"
+                placeholder="按曲名 / 署名搜索…"
+                className="mb-2 w-full px-2 py-1.5 min-h-[36px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-stone-800 placeholder-stone-400 outline-none focus:border-amber-600/50 transition-colors"
+              />
+              {/* 定弦过滤：只有社区 tab 且接入了服务端过滤时才显示——
+               * 本机 tab 走本地存储、没有「全库按定弦筛」的概念，画了也没用。 */}
+              {activeTab.key === "community" && onCommunityFilterChange && (
+                <select
+                  value={tuning ?? ""}
+                  onChange={(e) =>
+                    setTuning((e.target.value || null) as TuningId | null)
+                  }
+                  aria-label="按定弦筛选"
+                  className="mb-2 w-full px-2 py-1.5 min-h-[36px] text-[11px] tracking-wider rounded border border-amber-700/20 bg-transparent text-stone-800 outline-none focus:border-amber-600/50 transition-colors"
+                >
+                  <option value="">全部定弦</option>
+                  {TUNINGS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}（{t.alias}）
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
           {/* 社区列表排序：默认「最新」，可切「最热」（按收藏数）。只社区 tab 显示。 */}
           {activeTab.key === "community" && onCommunitySortChange && (
@@ -365,7 +433,11 @@ export function LoadDialog({
               );
             })}
           </div>
-          <PaginationHint tab={activeTab} query={query} />
+          <PaginationHint
+            tab={activeTab}
+            query={query}
+            serverSearch={activeTab.key === "community" && !!onCommunityFilterChange}
+          />
           <button
             onClick={onClose}
             className="mt-3 w-full px-3 py-1.5 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-600 hover:text-stone-900 hover:border-amber-700/50 transition-all"

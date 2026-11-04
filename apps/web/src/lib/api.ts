@@ -223,10 +223,28 @@ const MAX_PAGE_SIZE = 200;
  * 纯前端模式下本地存储没有分页概念，整份返回，语义与服务器分支保持一致。
  */
 export async function listScoresPage(
-  options: { limit?: number; offset?: number; sort?: "recent" | "popular" } = {},
+  options: {
+    limit?: number;
+    offset?: number;
+    sort?: "recent" | "popular";
+    /** 关键词：同时匹配曲名与署名（服务端 ILIKE，大小写不敏感）。 */
+    query?: string;
+    /** 定弦过滤：只留该定弦的谱。 */
+    tuning?: TuningId;
+  } = {},
 ): Promise<ScorePage> {
   if (isBrowserOnlyMode()) {
-    const items = await localListScores();
+    let items = await localListScores();
+    // 纯前端模式无后端：在本地做同样的「关键词 + 定弦」过滤，与服务端语义一致。
+    // 注意：本地存储不记署名（StoredScore 无 author 字段），关键词只匹配曲名——
+    // 这是本地库的固有局限，服务端仍按「曲名 + 署名」双匹配。
+    const kw = options.query?.trim().toLowerCase();
+    if (kw) {
+      items = items.filter((s) => s.title.toLowerCase().includes(kw));
+    }
+    if (options.tuning && isTuningId(options.tuning)) {
+      items = items.filter((s) => s.tuning === options.tuning);
+    }
     // 纯前端模式无后端、本地存储不追踪收藏数，热度排序退化为按更新时间。
     const sorted =
       options.sort === "popular"
@@ -241,9 +259,15 @@ export async function listScoresPage(
   const limit = options.limit ?? MAX_PAGE_SIZE;
   const offset = options.offset ?? 0;
   const sort = options.sort === "popular" ? "popular" : undefined;
-  const url = sort
-    ? `${resolveBase()}/api/v1/scores?limit=${limit}&offset=${offset}&sort=${sort}`
-    : `${resolveBase()}/api/v1/scores?limit=${limit}&offset=${offset}`;
+  // 关键词 / 定弦走服务端过滤：拼进 URL 的是参数名与经过编码的值，
+  // 值由 URLSearchParams 负责编码，不存在拼接 SQL 的风险。
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  if (sort) params.set("sort", sort);
+  if (options.query?.trim()) params.set("q", options.query.trim());
+  if (options.tuning && isTuningId(options.tuning)) params.set("tuning", options.tuning);
+  const url = `${resolveBase()}/api/v1/scores?${params.toString()}`;
   const res = await fetchWithTimeout(url);
   const items = await handleResponse<ScoreListItem[]>(res);
   // 注意先判 null 再转数字：`Number(null)` 是 0，会把「服务端没给总数」
