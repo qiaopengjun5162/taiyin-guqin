@@ -1347,13 +1347,13 @@ describe("Home · 收藏翻页", () => {
     render(<Home />);
     fireEvent.click(screen.getByLabelText("加载曲谱"));
 
-    await screen.findByText("平沙落雁");
+    await screen.findByText("平沙落雁", {}, { timeout: 5000 });
     fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
 
     await waitFor(() =>
       expect(h.listFavoritesPage).toHaveBeenLastCalledWith({ limit: 50, offset: 1 }),
     );
-    expect(await screen.findByText("潇湘水云")).toBeTruthy();
+    expect(await screen.findByText("潇湘水云", {}, { timeout: 5000 })).toBeTruthy();
     // 第一页那条还在，没被整页替换掉
     expect(screen.getByText("平沙落雁")).toBeTruthy();
   });
@@ -1379,10 +1379,13 @@ describe("Home · 社区翻页（回归：按钮点了没反应）", () => {
     render(<Home />);
     fireEvent.click(screen.getByLabelText("加载曲谱"));
 
-    await screen.findByText("社区谱0");
+    // 显式 5 秒超时：`findByText` 默认只等 1 秒，CI 慢速 runner（2026-11-04 GitHub
+    // Actions 降级时踩过）下 mock 解析 + 重渲染一超就被误杀成「找不到元素」。
+    // 断言不变，只是把等待放宽。
+    await screen.findByText("社区谱0", {}, { timeout: 5000 });
     fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
 
-    expect(await screen.findByText("社区谱50")).toBeTruthy();
+    expect(await screen.findByText("社区谱50", {}, { timeout: 5000 })).toBeTruthy();
   });
 });
 
