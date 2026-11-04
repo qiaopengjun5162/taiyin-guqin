@@ -147,6 +147,7 @@ describe("taiyin-wasm · 全局指法编排", () => {
     finger_shifts: 0,
     technique_switches: 1,
     rushed_moves: 1,
+    longest_open_run: 0,
   };
 
   it("arrangeJianpuSequence 透传 notes/tuning 并还原字段", async () => {
@@ -162,6 +163,7 @@ describe("taiyin-wasm · 全局指法编排", () => {
           finger_shifts: 2,
           technique_switches: 3,
           rushed_moves: 4,
+          longest_open_run: 0,
         },
         identical_to_greedy: false,
       }),
@@ -208,6 +210,7 @@ describe("taiyin-wasm · 全局指法编排", () => {
       finger_shifts: 0,
       technique_switches: 0,
       rushed_moves: 0,
+      longest_open_run: 0,
     });
     expect(out.identical_to_greedy).toBe(false);
   });
@@ -230,12 +233,14 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
       finger_shifts: 0,
       technique_switches: 0,
       rushed_moves: 0,
+      longest_open_run: 0,
     },
     greedy_stats: {
       string_changes: 3,
       finger_shifts: 1,
       technique_switches: 2,
       rushed_moves: 0,
+      longest_open_run: 0,
     },
     identical_to_greedy: false,
   };
@@ -256,6 +261,7 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
         finger_shifts: 1,
         technique_switches: 0,
         rushed_moves: 0,
+        longest_open_run: 0,
       },
     });
     expect(text).toBe("已编排：少 2 次音色切换");
@@ -272,6 +278,7 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
           finger_shifts: 1,
           technique_switches: 2,
           rushed_moves: 0,
+          longest_open_run: 0,
         },
       }),
     ).toBe("已重排：落点换了，手的移动次数和逐音挑选一样");
@@ -299,12 +306,14 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
         finger_shifts: 1,
         technique_switches: 2,
         rushed_moves: 0,
+        longest_open_run: 0,
       },
       greedy_stats: {
         string_changes: 3,
         finger_shifts: 1,
         technique_switches: 2,
         rushed_moves: 4,
+        longest_open_run: 0,
       },
     });
     expect(text).toBe("已编排：快句里少 4 次换手");
@@ -325,17 +334,70 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
         finger_shifts: 1,
         technique_switches: 2,
         rushed_moves: 1,
+        longest_open_run: 0,
       },
       greedy_stats: {
         string_changes: 3,
         finger_shifts: 1,
         technique_switches: 2,
         rushed_moves: 3,
+        longest_open_run: 0,
       },
     });
     expect(text).toContain("快句里少 2 次换手");
     expect(text).toContain("换手总数多 1 次");
     expect(text).toContain("来得及");
+  });
+
+  /**
+   * 散音连缀是「听起来连不连」的事，和手好不好动是两回事。
+   *
+   * 一串空弦弹下来音高全对，但没有走手相连，每根弦音色还都不一样——
+   * 这正是「整句排成空弦」最容易被忽略的地方，所以必须单独说一句。
+   */
+  it("断开散音连缀时单独说明，并给出前后长度", async () => {
+    const w = await loadWasm();
+    const text = w.describeArrangement({
+      ...base,
+      stats: {
+        string_changes: 6,
+        finger_shifts: 0,
+        technique_switches: 2,
+        rushed_moves: 0,
+        longest_open_run: 4,
+      },
+      greedy_stats: {
+        string_changes: 6,
+        finger_shifts: 0,
+        technique_switches: 0,
+        rushed_moves: 0,
+        longest_open_run: 7,
+      },
+    });
+    expect(text).toBe("已编排：最长一串散音从 7 个缩到 4 个");
+  });
+
+  it("散音连缀没变时不提这一项", async () => {
+    const w = await loadWasm();
+    const text = w.describeArrangement({
+      ...base,
+      stats: {
+        string_changes: 2,
+        finger_shifts: 0,
+        technique_switches: 0,
+        rushed_moves: 0,
+        longest_open_run: 3,
+      },
+      greedy_stats: {
+        string_changes: 3,
+        finger_shifts: 0,
+        technique_switches: 0,
+        rushed_moves: 0,
+        longest_open_run: 3,
+      },
+    });
+    expect(text).toBe("已编排：少 1 次换弦");
+    expect(text).not.toContain("散音");
   });
 });
 

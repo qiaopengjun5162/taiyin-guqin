@@ -79,12 +79,14 @@ function makeArrangement(
       finger_shifts: 0,
       technique_switches: 0,
       rushed_moves: 0,
+      longest_open_run: 0,
     },
     greedy_stats: options.greedyStats ?? {
       string_changes: 2,
       finger_shifts: 0,
       technique_switches: 0,
       rushed_moves: 0,
+      longest_open_run: 0,
     },
     identical_to_greedy: options.identical ?? false,
   };

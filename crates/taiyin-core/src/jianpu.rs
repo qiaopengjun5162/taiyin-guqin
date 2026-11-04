@@ -570,6 +570,51 @@ const HARMONIC_PRESSED_SWITCH_COST: i64 = 36;
 /// 或者该换一处落点。轻轻罚一点，让 DP 在「有更顺的替代」时才挪。
 const REPEAT_SAME_SPOT_COST: i64 = 6;
 
+/// 连续散音到第三个以后，每多一个要付的「没走手」费。
+///
+/// 正调七根空弦恰好是 5 6 1 2 3 5 6——五声音阶的旋律写成简谱后，
+/// **每个音都能在空弦上找到**。只按单音舒适度算，`5 6 1 2 3 5 6` 会整句排成
+/// 一串散音：音高全对，听着却像在干敲七根弦，没有走手的连贯，也没有吟猱的余地。
+///
+/// 但散音本身不是错：三个四个散音连起来（琶音、句尾落音）非常常见，
+/// 一味躲散音反而把好弹的地方改难。所以前两个散音不罚，从第三个起每多一个
+/// 付一笔固定费——真正的门槛出现在**连续五个**：
+///
+/// 把串中间一个音换成泛音，实测多花约 67：单音舒适度差 31（散 10 → 泛 41），
+/// 两端转移各多一次技法切换（18 + 18），再加上一点跨弦。换成按音更贵，
+/// 所以 DP 自然优先选泛音。
+///
+/// 连续 5 个散音罚 3 × 26 = 78 > 67，够断开一处；连续 4 个只罚 52，动不了。
+/// 七个全散音的音阶断一次后剩下 4 + 2：再断一次只省 52 < 67，于是停手——
+/// 最终只把**一个**音改走泛音，其余六个仍是散音，不会把整句泛音化。
+///
+/// 实测罚值取 24~30 结果完全一样（都只断一次），这个平台区是**故意**选的：
+/// 参数稍有调整，编排不会在「断」与「不断」之间突然翻面。
+const SAN_YIN_RUN_COST: i64 = 26;
+
+/// 连续散音状态的封顶值：0 / 1 / 2（2 表示「已经是第二个或更多」）。
+///
+/// 只需区分到 2：惩罚从第三个散音起每音一笔，再细分状态只会让 DP 变宽，
+/// 惩罚值不会变。
+const SAN_RUN_CAP: u8 = 2;
+
+/// 走一个音之后，「连续散音」的状态与本次应付的惩罚。
+///
+/// 与 [`PathStats::longest_open_run`] 同一套判定（`NoteType::SanYin`），
+/// 否则界面说「散音连缀缩到 4 个」、算法却在按另一件事优化。
+fn san_run_step(is_san_yin: bool, prev_run: u8) -> (u8, i64) {
+    if !is_san_yin {
+        return (0, 0);
+    }
+    let next = (prev_run + 1).min(SAN_RUN_CAP);
+    let penalty = if prev_run >= SAN_RUN_CAP {
+        SAN_YIN_RUN_COST
+    } else {
+        0
+    };
+    (next, penalty)
+}
+
 /// 「半拍及更短」的时值上限（1/8 拍为单位）：八分 = 4、附点八分 = 6。
 const FAST_NOTE_UNITS: u32 = 6;
 
@@ -681,6 +726,13 @@ pub struct PathStats {
     /// 这个数比「换弦次数」更贴近琴人的抱怨。同一段谱里换三次弦，
     /// 落在二分音符之间叫从容，落在十六分连奏里叫弹不出来。
     pub rushed_moves: u32,
+    /// 最长的一串连续散音有几个音（没有散音时为 0）。
+    ///
+    /// 散音连着四五个以上，听着就是一路空弦「干敲」：每根弦音色不同、
+    /// 音与音之间没有走手相连。编排会把这串散音断开一处改走按音/泛音，
+    /// 这个数就是界面上「最长一串散音从 7 个缩到 3 个」的来源——
+    /// 只有它真的变小了，才该说编排改善了音色连贯。
+    pub longest_open_run: u32,
 }
 
 /// 这两个落点之间，手是不是真的要移动。
@@ -705,6 +757,19 @@ fn position_moved(prev: &GuqinNote, curr: &GuqinNote) -> bool {
 /// 会跟算法实际优化的目标对不上——界面说省了三次，实际是另一件事。
 fn path_stats(notes: &[(Option<u32>, GuqinNote)]) -> PathStats {
     let mut stats = PathStats::default();
+
+    // 连续散音要正着扫一遍：它不是「相邻两音」的属性，而是一段长度，
+    // 用 windows(2) 数不出来（三个散音只有两次转移，长度却是 3）。
+    let mut run = 0u32;
+    for (_, note) in notes {
+        if note.note_type == NoteType::SanYin {
+            run += 1;
+            stats.longest_open_run = stats.longest_open_run.max(run);
+        } else {
+            run = 0;
+        }
+    }
+
     for pair in notes.windows(2) {
         let (prev_units, prev) = (&pair[0].0, &pair[0].1);
         let curr = &pair[1].1;
@@ -734,6 +799,14 @@ fn path_stats(notes: &[(Option<u32>, GuqinNote)]) -> PathStats {
     }
     stats
 }
+
+/// 某个音的全部候选，在三种「连续散音状态」下各自的最小代价。
+///
+/// 外层按候选下标索引，内层按状态（0 / 1 / 2）索引，`None` 表示该状态无路可达。
+type RunCostRow = Vec<[Option<i64>; 3]>;
+
+/// 回溯表：对每个候选、每个状态，记下「从哪个状态、哪个候选走过来」。
+type RunBackRow = Vec<[Option<(u8, usize)>; 3]>;
 
 /// 全局编排结果。
 #[derive(Debug, Clone, serde::Serialize)]
@@ -775,12 +848,15 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
     let mut candidates_per_note: Vec<Vec<JianziCandidate>> =
         notes.iter().map(|n| translate_jianpu(*n, tuning)).collect();
 
-    let mut dp: Vec<Vec<i64>> = Vec::with_capacity(notes.len());
-    let mut prev_choice: Vec<Vec<Option<usize>>> = Vec::with_capacity(notes.len());
+    // 状态 = (某个候选, 连续散音进度)。多这一维是为了认出「散音串得太长」：
+    // 这件事不是相邻两音的性质，只看转移算不出来，必须把「已经连了几个」带在状态里。
+    let mut dp: Vec<RunCostRow> = Vec::with_capacity(notes.len());
+    let mut prev_choice: Vec<RunBackRow> = Vec::with_capacity(notes.len());
 
     // 上一个**非空**候选行。某个音在琴上无合法落点时，这个音不该切断整句的连贯性，
     // 而应被跳过——后面那个音仍然要跟「最近一个真的弹得出来的音」比较手位。
-    let mut last_row: Option<Vec<i64>> = None;
+    // 散音的连续计数同理：跳过的音不算「换了口气」，串长原样带过去。
+    let mut last_row: Option<RunCostRow> = None;
     let mut last_notes: Option<Vec<GuqinNote>> = None;
     // 上一个非空行的时值。同一个音的每个候选时值相同，所以只存一份，
     // 不必跟 `last_notes` 一一配对。
@@ -794,60 +870,98 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
         }
         let units = notes[note_idx].duration_units;
 
-        let mut row: Vec<i64> = Vec::with_capacity(candidates.len());
-        let mut back: Vec<Option<usize>> = Vec::with_capacity(candidates.len());
+        let mut rows: RunCostRow = Vec::with_capacity(candidates.len());
+        let mut backs: RunBackRow = Vec::with_capacity(candidates.len());
 
         for candidate in candidates {
             // 分数高于基准时（理论上不该发生）夹到 0，避免负代价
             let base = i64::from((COST_BASE - candidate.score).max(0));
+            let is_san = candidate.note.note_type == NoteType::SanYin;
 
-            match (&last_row, &last_notes) {
-                (Some(row_prev), Some(notes_prev)) => {
-                    let mut best: Option<(i64, usize)> = None;
-                    for (k, prev_note) in notes_prev.iter().enumerate() {
-                        let total =
-                            row_prev[k] + transition_cost(prev_note, last_units, &candidate.note);
-                        if best.is_none_or(|(b, _)| total < b) {
-                            best = Some((total, k));
+            let mut row = [None; 3];
+            let mut back = [None; 3];
+
+            // 这个候选能落到哪些「连续散音状态」上：非散音只会把计数归零；
+            // 散音则取决于上一个音已经连了几个（0 → 1，1 或 2 → 2）。
+            let reachable: &[u8] = if is_san { &[1, 2] } else { &[0] };
+            for &state in reachable {
+                match (&last_row, &last_notes) {
+                    (Some(row_prev), Some(notes_prev)) => {
+                        let mut best: Option<(i64, (u8, usize))> = None;
+                        for (k, prev_note) in notes_prev.iter().enumerate() {
+                            for (prev_state_idx, prev_cost) in row_prev[k].iter().enumerate() {
+                                let Some(prev_cost) = *prev_cost else {
+                                    continue;
+                                };
+                                let prev_state = prev_state_idx as u8;
+                                let (next_state, run_penalty) = san_run_step(is_san, prev_state);
+                                if next_state != state {
+                                    continue;
+                                }
+                                let total = prev_cost
+                                    + transition_cost(prev_note, last_units, &candidate.note)
+                                    + run_penalty;
+                                if best.is_none_or(|(b, _)| total < b) {
+                                    best = Some((total, (prev_state, k)));
+                                }
+                            }
+                        }
+                        // 某个状态可能**无路可达**：上一个音是散音时，「连了 0 个」这个状态
+                        // 根本不存在，那么当前散音就不可能落到「刚好第 1 个」。
+                        // 这不是错误，记 None 即可——每个候选至少有一个可达状态
+                        // （非散音恒可从任意状态回到 0，散音恒可续成 2）。
+                        if let Some((cost, from)) = best {
+                            row[state as usize] = Some(cost + base);
+                            back[state as usize] = Some(from);
                         }
                     }
-                    let (cost, k) = best.expect("非空行必然至少有一个候选");
-                    row.push(cost + base);
-                    back.push(Some(k));
-                }
-                _ => {
-                    row.push(base);
-                    back.push(None);
+                    _ => {
+                        // 首音没有来路；`san_run_step(_, 0)` 的罚恒为 0，这里只是照常走一遍。
+                        let (first_state, run_penalty) = san_run_step(is_san, 0);
+                        if first_state == state {
+                            row[state as usize] = Some(base + run_penalty);
+                            back[state as usize] = None;
+                        }
+                    }
                 }
             }
+
+            rows.push(row);
+            backs.push(back);
         }
 
-        last_row = Some(row.clone());
+        last_row = Some(rows.clone());
         last_notes = Some(candidates.iter().map(|c| c.note.clone()).collect());
         last_units = units;
-        dp.push(row);
-        prev_choice.push(back);
+        dp.push(rows);
+        prev_choice.push(backs);
     }
 
     let mut selections: Vec<Option<usize>> = vec![None; notes.len()];
     let mut total_cost: i64 = 0;
 
-    // 从最后一行为起点回溯：末音代价最小的那条，就是整句最优路径的终点。
+    // 从最后一行为起点回溯：末音代价最小的那条（连同它的散音串状态），
+    // 就是整句最优路径的终点。
     if let Some(last_i) = dp.iter().rposition(|row| !row.is_empty()) {
-        let row = &dp[last_i];
-        let mut best_j = 0usize;
-        for (j, &cost) in row.iter().enumerate() {
-            if cost < row[best_j] {
-                best_j = j;
+        let rows = &dp[last_i];
+        let mut best: Option<(i64, u8, usize)> = None;
+        for (j, row) in rows.iter().enumerate() {
+            for (state, cost) in row.iter().enumerate() {
+                let Some(cost) = *cost else { continue };
+                if best.is_none_or(|(b, _, _)| cost < b) {
+                    best = Some((cost, state as u8, j));
+                }
             }
         }
-        total_cost = row[best_j];
+        let (cost, mut cursor_state, mut cursor_j) = best.expect("非空行必然至少有一个可达状态");
+        total_cost = cost;
 
         let mut cursor_row = last_i;
-        let mut cursor_j = best_j;
         loop {
             selections[cursor_row] = Some(cursor_j);
-            let Some(prev_j) = prev_choice[cursor_row][cursor_j] else {
+            let Some((prev_state, prev_j)) =
+                prev_choice[cursor_row][cursor_j][cursor_state as usize]
+            else {
                 break;
             };
             // 跳过中间的空候选行，落到最近一个真的非空的行
@@ -863,6 +977,7 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
             }
             cursor_row = p;
             cursor_j = prev_j;
+            cursor_state = prev_state;
         }
     }
 
@@ -1210,11 +1325,18 @@ mod tests {
     fn greedy_path_cost(notes: &[JianpuNote], tuning: Tuning) -> i64 {
         let mut total = 0i64;
         let mut prev: Option<(Option<u32>, GuqinNote)> = None;
+        // 贪心基线必须与 DP 用**同一套目标函数**：散音串的惩罚也得算进去，
+        // 否则「编排不比贪心差」就成了拿两把尺子量同一件事。
+        let mut run = 0u8;
         for note in notes {
             let Some(best) = translate_jianpu(*note, tuning).into_iter().next() else {
                 continue;
             };
             total += i64::from((COST_BASE - best.score).max(0));
+            let (next_run, run_penalty) =
+                san_run_step(best.note.note_type == NoteType::SanYin, run);
+            run = next_run;
+            total += run_penalty;
             if let Some((units, ref p)) = prev {
                 total += transition_cost(p, units, &best.note);
             }
@@ -1406,6 +1528,107 @@ mod tests {
         );
     }
 
+    // ── 散音连缀（别把整句排成一串空弦） ──────────────
+
+    /// 正调下 5 6 1 2 3 5 6 恰好全是空弦音——这正是「整句排成空弦」最容易发生的形状。
+    ///
+    /// 逐音挑第一名会一个不落地选散音（散音单音分最高），编排则必须认出
+    /// 「这串太长了」，拿一个泛音把它断开——只断一次：把六个音全改成泛音
+    /// 是另一种极端，比一串空弦更像机器排的。
+    #[test]
+    fn test_arrange_breaks_long_open_string_run() {
+        let melody: Vec<JianpuNote> = [(5, 0), (6, 0), (1, 1), (2, 1), (3, 1), (5, 1), (6, 1)]
+            .into_iter()
+            .map(|(number, octave)| JianpuNote::new(number, octave))
+            .collect();
+
+        // 前提：这段谱逐音挑第一名确实是一串散音，否则这条测试测不到东西。
+        assert_eq!(
+            arrange_sequence(&melody, Tuning::ZhengDiao)
+                .greedy_stats
+                .longest_open_run,
+            7,
+            "测试前提不成立：这段音阶没有被逐音挑选排成 7 个散音"
+        );
+
+        let arranged = arrange_sequence(&melody, Tuning::ZhengDiao);
+        assert!(
+            arranged.stats.longest_open_run <= 4,
+            "7 个连续散音应该被断开，实际仍是最长 {} 个",
+            arranged.stats.longest_open_run
+        );
+        // 只改一个音：7 个音里恰好 1 个不是散音（断一次 = 两次技法切换）。
+        let non_open = arranged
+            .candidates_per_note
+            .iter()
+            .filter(|c| c[0].note.note_type != NoteType::SanYin)
+            .count();
+        assert_eq!(
+            non_open, 1,
+            "断一次就够了，不该把整句泛音化（实际改了 {} 个音）",
+            non_open
+        );
+    }
+
+    /// 四个连续散音仍在「像话」的范围里：琶音、句尾落音都长这样。
+    ///
+    /// 编排不该为了走手而硬换泛音——那会把本来好弹的地方改难。
+    /// 门槛在连续五个：5 个散音罚 3 × 26 = 78，超过插一个泛音的约 67；
+    /// 4 个只罚 52，够不着。
+    #[test]
+    fn test_arrange_keeps_short_open_string_run() {
+        let melody: Vec<JianpuNote> = [(5, 0), (6, 0), (5, 0), (6, 0)]
+            .into_iter()
+            .map(|(number, octave)| JianpuNote::new(number, octave))
+            .collect();
+        let arranged = arrange_sequence(&melody, Tuning::ZhengDiao);
+        assert_eq!(
+            arranged.stats.longest_open_run,
+            4,
+            "四个连续散音不该被拆：{:?}",
+            arranged
+                .candidates_per_note
+                .iter()
+                .map(|c| c[0].note.note_type)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// 统计口径：串长按音数算，不按转移数算。
+    #[test]
+    fn test_path_stats_reports_longest_open_run() {
+        let san = |string: u8| {
+            GuqinNote::open_string(
+                RightAction::Tiao,
+                StringNumber::new(string).expect("弦序 1..=7"),
+            )
+        };
+        let pressed = GuqinNote::pressed(
+            LeftFinger::Da,
+            HuiPosition {
+                hui: Hui::new(7).expect("七徽"),
+                fen: None,
+            },
+            RightAction::Tiao,
+            StringNumber::new(3).expect("三弦"),
+        );
+
+        // 散 散 散 按 散 散 → 最长一串 3（三个散音只有两次转移，按转移数会少算一个）
+        let path: Vec<(Option<u32>, GuqinNote)> = vec![
+            (None, san(1)),
+            (None, san(2)),
+            (None, san(3)),
+            (None, pressed.clone()),
+            (None, san(5)),
+            (None, san(6)),
+        ];
+        assert_eq!(path_stats(&path).longest_open_run, 3);
+
+        // 全按音没有散音串
+        let stopped: Vec<(Option<u32>, GuqinNote)> = vec![(None, pressed.clone()), (None, pressed)];
+        assert_eq!(path_stats(&stopped).longest_open_run, 0);
+    }
+
     // ── 活动量统计（界面上的「省了几次换弦」） ──────────
 
     #[test]
@@ -1424,9 +1647,15 @@ mod tests {
         // 没给时值时按四分音符算，不算「急处换手」
         assert_eq!(stats.rushed_moves, 0);
 
-        // 同一根弦连弹：什么都不算
+        // 同一根弦连弹：换弦 / 挪手 / 换手都不算——但仍是一串两个散音
         let same = path_stats(&[(None, note(2)), (None, note(2))]);
-        assert_eq!(same, PathStats::default());
+        assert_eq!(
+            same,
+            PathStats {
+                longest_open_run: 2,
+                ..PathStats::default()
+            }
+        );
     }
 
     /// 八分连八分里换弦 = 急处换手；同样的两个音挪到二分音符之间就不算。

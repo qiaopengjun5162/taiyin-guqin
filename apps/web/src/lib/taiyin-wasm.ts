@@ -149,6 +149,14 @@ export interface PathStats {
    * 落在十六分连奏里叫弹不出来。
    */
   rushed_moves: number;
+  /**
+   * 最长的一串连续散音有几个音（没有散音时为 0）。
+   *
+   * 连着四五个散音听着就是一路空弦「干敲」：每根弦音色不同，音与音之间
+   * 也没有走手相连。编排会把这串散音断开一处改走泛音，这个数就是
+   * 「最长一串散音从 7 个缩到 4 个」的来源。
+   */
+  longest_open_run: number;
 }
 
 /** 全局指法编排结果。候选与选中项出自同一次计算，索引天然对齐。 */
@@ -172,6 +180,7 @@ const EMPTY_STATS: PathStats = {
   finger_shifts: 0,
   technique_switches: 0,
   rushed_moves: 0,
+  longest_open_run: 0,
 };
 
 /**
@@ -218,7 +227,7 @@ export async function arrangeJianpuSequence(
 /**
  * 把编排结果说成一句人话。
  *
- * 只说琴人能直接感觉到的四件事（快句换手 / 换弦 / 音色切换 / 挪手），
+ * 只说琴人能直接感觉到的五件事（快句换手 / 散音连缀 / 换弦 / 音色切换 / 挪手），
  * 并且**只说真的减少了的**：编排换了落点但移动次数没变时，不该编一句「已优化」来邀功；
  * 本来就最顺的时候，更应该直说「这条已经是最顺的」——否则用户下次不信这个按钮。
  *
@@ -240,9 +249,16 @@ export function describeArrangement(result: JianpuArrangement): string {
     result.greedy_stats.technique_switches - result.stats.technique_switches;
   const shiftSaved =
     result.greedy_stats.finger_shifts - result.stats.finger_shifts;
+  const openRunBefore = result.greedy_stats.longest_open_run;
+  const openRunAfter = result.stats.longest_open_run;
 
   // 急处换手排最前：它是「弹得动 / 弹不动」的分界线，换弦次数只是它的粗略代理
   if (rushedSaved > 0) parts.push(`快句里少 ${rushedSaved} 次换手`);
+  // 散音连缀紧跟其后：它说的不是手好不好动，而是这一句听起来连不连。
+  // 一串空弦弹下来音高没错，但没有走手相连，这是排谱的人最容易被忽略的毛病。
+  if (openRunBefore > openRunAfter) {
+    parts.push(`最长一串散音从 ${openRunBefore} 个缩到 ${openRunAfter} 个`);
+  }
   if (stringSaved > 0) parts.push(`少 ${stringSaved} 次换弦`);
   if (toneSaved > 0) parts.push(`少 ${toneSaved} 次音色切换`);
   if (shiftSaved > 0) parts.push(`少 ${shiftSaved} 次挪手`);
