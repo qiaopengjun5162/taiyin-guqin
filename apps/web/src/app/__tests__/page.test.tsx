@@ -31,6 +31,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
   useWasmInit: () => ({ state: "ready", error: null }),
   translateJianpuToJianzi: vi.fn(),
   translateJianpuSequenceToJianzi: vi.fn(),
+  splitPhrases: vi.fn().mockResolvedValue([]),
 }));
 
 import Home from "@/app/page";

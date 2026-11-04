@@ -92,6 +92,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
   useWasmInit: () => ({ state: "ready", error: null }),
   translateJianpuToJianzi: h.translateJianpuToJianzi,
   translateJianpuSequenceToJianzi: vi.fn(),
+  splitPhrases: vi.fn().mockResolvedValue([]),
   encodeJianziBatch: h.encodeJianziBatch,
   decodeJianziBatch: h.decodeJianziBatch,
   getJianziDictionary: vi.fn().mockResolvedValue({ total: 0, entries: [] }),

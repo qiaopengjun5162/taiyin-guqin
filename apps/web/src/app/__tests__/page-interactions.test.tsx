@@ -30,6 +30,8 @@ const h = vi.hoisted(() => ({
   exportPng: vi.fn(),
   exportSvg: vi.fn(),
   translateJianpuToJianzi: vi.fn(),
+  // 分句：慢练按钮靠它决定「分几句、每句到哪」
+  splitPhrases: vi.fn(),
   // 收藏：登录后打开曲谱列表会拉这两个，点星会调那两个
   listFavoritesPage: vi.fn(),
   listFavoriteIds: vi.fn(),
@@ -51,8 +53,10 @@ vi.mock("@/lib/use-score-player", async () => {
       return {
         isPlaying,
         playingIndex: isPlaying ? 0 : null,
-        play: (index?: number) => {
-          h.play(index);
+        // 练习遍数：真的播起来就算在第一遍，页面据此高亮「正在练第几句」
+        practicePass: isPlaying ? 1 : null,
+        play: (index?: number, practice?: unknown) => {
+          h.play(index, practice);
           setPlaying(true);
           return Promise.resolve();
         },
@@ -160,6 +164,7 @@ vi.mock("@/lib/taiyin-wasm", () => ({
   useWasmInit: () => ({ state: "ready", error: null }),
   translateJianpuToJianzi: h.translateJianpuToJianzi,
   translateJianpuSequenceToJianzi: vi.fn(),
+  splitPhrases: h.splitPhrases,
 }));
 
 import Home from "@/app/page";
@@ -1422,5 +1427,61 @@ describe("Home · 举报（只记录，不当场下架）", () => {
     fireEvent.click(screen.getByRole("button", { name: /举报「广陵散」/ }));
 
     expect(await screen.findByText(/举报需要登录/)).toBeTruthy();
+  });
+});
+
+describe("Home · 逐句慢练", () => {
+  it("点某一句：只播这一句、连弹三遍、按当前倍速", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    fireEvent.click(await screen.findByLabelText("慢练第 2 句"));
+
+    // 先停再播：重叠播放会让两遍的余音搅在一起
+    expect(h.stopPlayback).toHaveBeenCalled();
+    expect(h.play).toHaveBeenCalledWith(4, {
+      endIndex: 7,
+      repeat: 3,
+      tempo: 0.6,
+    });
+  });
+
+  it("慢练先停节拍器——它按原速走，留着只会把人往原速上带", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    fireEvent.click(screen.getByLabelText("启动节拍器"));
+    fireEvent.click(await screen.findByLabelText("慢练第 1 句"));
+
+    expect(h.stopMetronome).toHaveBeenCalled();
+  });
+
+  it("只有一句的曲子不显示分句条——一排只有一个按钮会让人以为坏了", async () => {
+    h.splitPhrases.mockResolvedValue([{ start: 0, end: 999 }]);
+    await loadExample();
+
+    await waitFor(() => expect(h.splitPhrases).toHaveBeenCalled());
+    expect(screen.queryByText("分句")).toBeNull();
+  });
+
+  it("正在练的那一句再点一下就停", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    fireEvent.click(await screen.findByLabelText("慢练第 2 句"));
+    fireEvent.click(await screen.findByLabelText("停止慢练第 2 句"));
+
+    expect(h.stopPlayback).toHaveBeenCalledTimes(2);
+    // 第二次只是停止，不该再起一遍
+    expect(h.play).toHaveBeenCalledTimes(1);
   });
 });

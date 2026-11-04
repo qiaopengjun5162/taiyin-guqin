@@ -226,6 +226,51 @@ check(
   `identical=${repeated.identical_to_greedy}`,
 );
 
+// 8.5 分句：谱面画「第 N 句」、按句慢练都靠它，且必须与编排用同一组句界
+const unitsSeq = [8, 8, 8, 16, 8, 8, 24, 8];
+const split = JSON.parse(mod.split_phrases_to_json(JSON.stringify({ units: unitsSeq })));
+check(
+  "split: 二分/附点二分之后切句",
+  JSON.stringify(split.phrases?.map((p) => [p.start, p.end])) ===
+    JSON.stringify([[0, 3], [4, 6], [7, 7]]),
+  JSON.stringify(split.phrases),
+);
+check(
+  "split: 空输入给空句表，不造一条指向不存在音的分隔线",
+  JSON.parse(mod.split_phrases_to_json(JSON.stringify({ units: [] }))).phrases.length === 0,
+);
+check(
+  "split: 不给时值 = 不切（老调用方行为不变）",
+  JSON.parse(mod.split_phrases_to_json(JSON.stringify({ units: [null, null, null] }))).phrases
+    .length === 1,
+);
+// 附点四分（12）是句中伸展，两拍（16）才是气口——阈值就卡在这里
+check(
+  "split: 附点四分不算气口、二分算",
+  JSON.stringify(
+    JSON.parse(mod.split_phrases_to_json(JSON.stringify({ units: [12, 8] }))).phrases.map(
+      (p) => [p.start, p.end],
+    ),
+  ) === JSON.stringify([[0, 1]]) &&
+    JSON.parse(mod.split_phrases_to_json(JSON.stringify({ units: [16, 8] }))).phrases.length === 2,
+);
+const arrangedUnits = JSON.parse(
+  mod.arrange_jianpu_sequence_to_jianzi(
+    JSON.stringify({
+      notes: unitsSeq.map((u, i) => ({ number: (i % 5) + 1, octave: 0, duration_units: u })),
+      tuning: "zheng",
+    }),
+  ),
+);
+check(
+  "split: 与编排的分句完全一致（谱面与练习不能各切一套）",
+  JSON.stringify(arrangedUnits.phrases.map((p) => [p.start, p.end])) ===
+    JSON.stringify(split.phrases.map((p) => [p.start, p.end])),
+  `${JSON.stringify(arrangedUnits.phrases.map((p) => [p.start, p.end]))} vs ${JSON.stringify(
+    split.phrases.map((p) => [p.start, p.end]),
+  )}`,
+);
+
 // 3. 蕤宾调：4 应出现五弦散音候选；正调则没有
 const ruibin = JSON.parse(
   mod.translate_jianpu_to_jianzi(JSON.stringify({ number: 4, octave: 1, tuning: "ruibin" })),

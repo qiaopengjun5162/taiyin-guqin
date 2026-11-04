@@ -644,12 +644,40 @@ const PHRASE_BREATH_UNITS: u32 = 16;
 /// 这一处描述「手是不是已经离开了琴面」。两件事恰好都跟时值有关，
 /// 但阈值故意不同（12 / 16），合并成一个常量会让调一处时另一处跟着漂。
 fn starts_phrase(notes: &[JianpuNote], idx: usize) -> bool {
-    if idx == 0 {
-        return true;
+    idx == 0 || is_breath_after(notes[idx - 1].duration_units)
+}
+
+/// 这个音放足了没有——气口判据的**唯一**出处。
+///
+/// 编排要按句切，谱面上要画「第 N 句」，练习时要按句循环，三处问的是同一个问题。
+/// 与其让前端照着抄一份阈值（抄完两边各自漂：谱面分了 5 句、编排分了 4 句，
+/// 用户点「第 3 句」练到的却是别的地方），不如把「按时值切句」本身导出去，
+/// 前端只提供时值，规则留在 Rust 这一份。
+fn is_breath_after(units: Option<u32>) -> bool {
+    units.is_some_and(|units| units >= PHRASE_BREATH_UNITS)
+}
+
+/// 按时值把一串音切成乐句，返回每句的 `[start, end]`（闭区间，下标取自入参）。
+///
+/// 空输入给空结果，而不是「一个空句」：前端照着画分隔线会画在不存在的位置上。
+/// 只切分、不评价——哪一句最赶是 [`path_stats`] 的事，两件事分开算，
+/// 这样谱面上画线不需要先跑一遍编排。
+pub fn phrase_ranges(units: &[Option<u32>]) -> Vec<(usize, usize)> {
+    if units.is_empty() {
+        return Vec::new();
     }
-    notes[idx - 1]
-        .duration_units
-        .is_some_and(|units| units >= PHRASE_BREATH_UNITS)
+    // 与前一个音比：本音多长跟「上一句放足了没有」无关。
+    let starts: Vec<usize> = (0..units.len())
+        .filter(|&i| i == 0 || is_breath_after(units[i - 1]))
+        .collect();
+    starts
+        .iter()
+        .enumerate()
+        .map(|(k, &start)| {
+            let end = starts.get(k + 1).map_or(units.len() - 1, |&next| next - 1);
+            (start, end)
+        })
+        .collect()
 }
 
 /// 时间紧时的代价倍率：同样的动作，在八分连八分的句子里要贵一半。
@@ -797,11 +825,7 @@ fn path_stats(notes: &[(Option<u32>, GuqinNote)]) -> PathStats {
     // 否则界面报的串长和算法优化的不是一件事。
     let mut run = 0u32;
     for (idx, (_, note)) in notes.iter().enumerate() {
-        if idx > 0
-            && notes[idx - 1]
-                .0
-                .is_some_and(|units| units >= PHRASE_BREATH_UNITS)
-        {
+        if idx > 0 && is_breath_after(notes[idx - 1].0) {
             run = 0;
         }
         if note.note_type == NoteType::SanYin {
@@ -1121,16 +1145,14 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
     // 逐句报账。切片按**原始下标**切，句内只保留真的排得出落点的音——
     // 排不出落点的音在谱面上留空，不该被当成「这一句少了一个音」，
     // 但它两头也不构成转移（转移要两个真的能弹的音）。
-    let phrase_starts: Vec<usize> = (0..notes.len())
-        .filter(|&i| starts_phrase(notes, i))
-        .collect();
-    let phrases: Vec<PhraseSpan> = phrase_starts
-        .iter()
+    //
+    // 句界一律问 `phrase_ranges`：谱面上画的线、前端慢练的区间、
+    // 这里统计的区间必须是同一组数字，否则「点第 3 句练」练到的是别处。
+    let unit_seq: Vec<Option<u32>> = notes.iter().map(|n| n.duration_units).collect();
+    let phrases: Vec<PhraseSpan> = phrase_ranges(&unit_seq)
+        .into_iter()
         .enumerate()
-        .map(|(index, &start)| {
-            let end = phrase_starts
-                .get(index + 1)
-                .map_or(notes.len() - 1, |&next| next - 1);
+        .map(|(index, (start, end))| {
             let path: Vec<(Option<u32>, GuqinNote)> = (start..=end)
                 .filter_map(|i| {
                     selections[i].map(|j| {
@@ -2068,5 +2090,60 @@ mod tests {
 
         let empty = arrange_sequence(&[], Tuning::ZhengDiao);
         assert!(empty.phrases.is_empty());
+    }
+
+    /// 切句规则本身的边界：空输入、单音、曲首（第一个音前面没有音，算起点）、
+    /// 收尾那句必须封到最后一个音。
+    #[test]
+    fn test_phrase_ranges_basics() {
+        assert!(phrase_ranges(&[]).is_empty(), "空输入不该造出一个空句");
+        assert_eq!(phrase_ranges(&[Some(8)]), vec![(0, 0)], "单音自成一句");
+        assert_eq!(
+            phrase_ranges(&[None, None]),
+            vec![(0, 1)],
+            "不给时值 = 无气口"
+        );
+        assert_eq!(
+            phrase_ranges(&[Some(8), Some(8), Some(16), Some(8)]),
+            vec![(0, 2), (3, 3)],
+            "两拍之后起新句"
+        );
+    }
+
+    /// 阈值就卡在 16：附点四分（12）是句中伸展，二分（16）才是气口。
+    /// 这条与 `starts_phrase` 同源——改阈值只改一处，两边一起变。
+    #[test]
+    fn test_phrase_ranges_threshold_is_two_beats() {
+        assert_eq!(
+            phrase_ranges(&[Some(12), Some(8)]),
+            vec![(0, 1)],
+            "附点四分不该被当成气口"
+        );
+        assert_eq!(
+            phrase_ranges(&[Some(16), Some(8)]),
+            vec![(0, 0), (1, 1)],
+            "二分音符之后起新句"
+        );
+        // 气口落在最后一个音后面：没有下一个音，不该造出空句
+        assert_eq!(phrase_ranges(&[Some(8), Some(16)]), vec![(0, 1)]);
+    }
+
+    /// 切句与编排的分句必须是同一组数字：同一段时值，两边各自算出来的句界要一致。
+    /// 分开实现、两边各自漂，是最难被发现的错——谱面分 5 句，编排分 4 句，
+    /// 用户点「第 3 句」练到别处。
+    #[test]
+    fn test_phrase_ranges_agrees_with_arrangement() {
+        let durations = [8u32, 8, 8, 16, 8, 8, 24, 8, 8, 8];
+        let notes: Vec<JianpuNote> = durations
+            .iter()
+            .enumerate()
+            .map(|(i, &units)| JianpuNote::new((i % 5 + 1) as u8, 0).with_duration(units))
+            .collect();
+        let arranged = arrange_sequence(&notes, Tuning::ZhengDiao);
+        let expected = phrase_ranges(&durations.map(Some));
+        let actual: Vec<(usize, usize)> =
+            arranged.phrases.iter().map(|p| (p.start, p.end)).collect();
+        assert_eq!(actual, expected);
+        assert_eq!(actual, vec![(0, 3), (4, 6), (7, 9)]);
     }
 }

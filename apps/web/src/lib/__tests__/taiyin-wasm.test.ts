@@ -17,6 +17,7 @@ const glue = vi.hoisted(() => ({
   translate_jianpu_to_jianzi: vi.fn(),
   translate_jianpu_sequence_to_jianzi: vi.fn(),
   arrange_jianpu_sequence_to_jianzi: vi.fn(),
+  split_phrases_to_json: vi.fn(),
   get_jianzi_dictionary: vi.fn(),
   encode_jianzi_batch: vi.fn(),
   decode_jianzi_batch: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("@/wasm/taiyin_core", () => ({
   translate_jianpu_to_jianzi: glue.translate_jianpu_to_jianzi,
   translate_jianpu_sequence_to_jianzi: glue.translate_jianpu_sequence_to_jianzi,
   arrange_jianpu_sequence_to_jianzi: glue.arrange_jianpu_sequence_to_jianzi,
+  split_phrases_to_json: glue.split_phrases_to_json,
   get_jianzi_dictionary: glue.get_jianzi_dictionary,
   encode_jianzi_batch: glue.encode_jianzi_batch,
   decode_jianzi_batch: glue.decode_jianzi_batch,
@@ -49,6 +51,7 @@ beforeEach(() => {
   glue.translate_jianpu_to_jianzi.mockReset();
   glue.translate_jianpu_sequence_to_jianzi.mockReset();
   glue.arrange_jianpu_sequence_to_jianzi.mockReset();
+  glue.split_phrases_to_json.mockReset();
   glue.get_jianzi_dictionary.mockReset();
   glue.encode_jianzi_batch.mockReset();
   glue.decode_jianzi_batch.mockReset();
@@ -676,5 +679,36 @@ describe("taiyin-wasm · describePhrases 逐句报账", () => {
     expect(text).toBe(
       "已编排：少 2 次换弦。全曲 2 句，第 2 句最赶（快句里换手 2 次），先慢练这句",
     );
+  });
+});
+
+describe("taiyin-wasm · splitPhrases", () => {
+  it("把时值透传给 Rust，句界照单收下", async () => {
+    const w = await loadWasm();
+    glue.split_phrases_to_json.mockReturnValue(
+      JSON.stringify({ phrases: [{ start: 0, end: 2 }, { start: 3, end: 4 }] }),
+    );
+
+    await expect(w.splitPhrases([8, 8, 16, 8, null])).resolves.toEqual([
+      { start: 0, end: 2 },
+      { start: 3, end: 4 },
+    ]);
+    expect(glue.split_phrases_to_json).toHaveBeenCalledWith(
+      JSON.stringify({ units: [8, 8, 16, 8, null] }),
+    );
+  });
+
+  it("Rust 报错时抛出来，不要静默当成「没有分句」", async () => {
+    const w = await loadWasm();
+    glue.split_phrases_to_json.mockReturnValue(
+      JSON.stringify({ error: "expected ident" }),
+    );
+    await expect(w.splitPhrases([8])).rejects.toThrow("expected ident");
+  });
+
+  it("旧产物没有 phrases 字段时给空数组，而不是 undefined", async () => {
+    const w = await loadWasm();
+    glue.split_phrases_to_json.mockReturnValue(JSON.stringify({}));
+    await expect(w.splitPhrases([8, 8])).resolves.toEqual([]);
   });
 });

@@ -95,6 +95,34 @@ pub fn arrange_jianpu_sequence_to_jianzi(input_json: &str) -> String {
     .to_string()
 }
 
+/// 按时值切句 —— 谱面画「第 N 句」、按句循环慢练都要用同一组句界。
+///
+/// 输入 JSON: `{"units": [8, 8, 16, 8]}`，单位是 1/8 拍（四分 = 8、二分 = 16），
+/// `null` 表示这个音没给时值（按「没有气口」处理）。
+/// 输出 JSON: `{"phrases": [{"start": 0, "end": 2}, {"start": 3, "end": 3}]}`，
+/// 下标取自入参、两端都含。
+///
+/// 为什么单独导出一个函数，而不是让前端自己按 `时值 >= 两拍` 切：阈值在
+/// [`crate::jianpu::phrase_ranges`] 里，前端抄一份就会各自漂——谱面上分了 5 句、
+/// 编排按 4 句算，用户点「第 3 句」练到的却是别的地方，而且没有任何地方会报错。
+/// 这里只做切分，不跑编排：画一条分隔线不该先算一遍最优指法。
+#[wasm_bindgen]
+pub fn split_phrases_to_json(input_json: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct PhraseRequest {
+        units: Vec<Option<u32>>,
+    }
+    let req: PhraseRequest = match serde_json::from_str(input_json) {
+        Ok(r) => r,
+        Err(e) => return json_error(&e),
+    };
+    let phrases: Vec<serde_json::Value> = crate::jianpu::phrase_ranges(&req.units)
+        .into_iter()
+        .map(|(start, end)| serde_json::json!({ "start": start, "end": end }))
+        .collect();
+    serde_json::json!({ "phrases": phrases }).to_string()
+}
+
 /// 减字字典（字全表）—— 返回经筛选 / 搜索后的减字目录。
 ///
 /// 输入 JSON: `{"tone":"","left":"","action":"","string":"","query":""}`（各字段均可省略）。

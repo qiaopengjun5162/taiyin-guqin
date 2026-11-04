@@ -7,6 +7,7 @@ import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
 import { JianziRecognizer } from "@/components/jianzi-recognizer";
 import { JianziSheetRecognizer } from "@/components/jianzi-sheet-recognizer";
 import { PracticePlayer } from "@/components/practice-player";
+import { PhrasePractice } from "@/components/phrase-practice";
 import { RecorderPanel } from "@/components/recorder-panel";
 import { PracticeLogPanel } from "@/components/practice-log-panel";
 import { TunerPanel } from "@/components/tuner-panel";
@@ -35,6 +36,7 @@ import { forgetMyScore, isMyScore, rememberMyScore } from "@/lib/owner-token";
 import { getCurrentUserId } from "@/lib/auth";
 import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
+import { PRACTICE_REPEATS, useScorePhrases } from "@/lib/score-phrases";
 import { useMetronome } from "@/lib/use-metronome";
 import {
   CONCERT_PITCH_DEFAULT,
@@ -163,12 +165,17 @@ export default function Home() {
   const [recognizerTab, setRecognizerTab] = useState<"single" | "sheet">("single");
   // 录入区两种进法：点选简谱转减字，或把减字码整段粘回来。
   const [inputTab, setInputTab] = useState<"jianpu" | "code">("jianpu");
-  const { play, stop: stopPlayback, isPlaying, playingIndex } = useScorePlayer(
+  const { play, stop: stopPlayback, isPlaying, playingIndex, practicePass } = useScorePlayer(
     score,
     bpm,
     concertPitch,
     tuning,
   );
+  // 分句：句界由 Rust 切（与编排同一套判据），前端只提供时值。
+  // 只有两句以上才会在界面上出现「分句」那一条。
+  const scorePhrases = useScorePhrases(score);
+  const [practiceTempo, setPracticeTempo] = useState(0.6);
+  const [practiceIndex, setPracticeIndex] = useState<number | null>(null);
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -426,6 +433,38 @@ export default function Home() {
       void toggleMetronome();
     }
   }
+
+  /**
+   * 慢练某一句：先停再播，区间 / 倍率 / 遍数一次性交给播放器。
+   *
+   * 节拍器一并停掉：它按原速走，慢练时留着只会把人往原速上带。
+   * 慢练的全部意义就是「这一段手还跟不上原速」，让它跟着一个原速的
+   * 滴答声去弹，等于一边踩刹车一边踩油门。
+   */
+  const handlePracticePhrase = useCallback(
+    (index: number) => {
+      const phrase = scorePhrases[index];
+      if (!phrase) return;
+      stopPlayback();
+      if (metronomeRunning) stopMetronome();
+      setPracticeIndex(index);
+      void play(phrase.start, {
+        endIndex: phrase.end,
+        repeat: PRACTICE_REPEATS,
+        tempo: practiceTempo,
+      });
+    },
+    [scorePhrases, stopPlayback, metronomeRunning, stopMetronome, play, practiceTempo],
+  );
+
+  const handleStopPractice = useCallback(() => {
+    stopPlayback();
+    setPracticeIndex(null);
+  }, [stopPlayback]);
+
+  // 只有「正在慢练」才高亮那一句：整首播放时若也高亮，用户会以为在循环某一句
+  const activePracticeIndex =
+    isPlaying && practicePass != null ? practiceIndex : null;
 
   /** 保存曲谱到后端 */
   async function handleSave() {
@@ -1214,6 +1253,19 @@ export default function Home() {
           <option value={6}>6/8</option>
         </select>
       </div>
+
+      {/* ── 逐句慢练：按气口切出来的句，点一句就连弹三遍 ── */}
+      <PhrasePractice
+        phrases={scorePhrases}
+        bpm={bpm}
+        tempo={practiceTempo}
+        activeIndex={activePracticeIndex}
+        pass={practicePass}
+        repeat={PRACTICE_REPEATS}
+        onTempoChange={setPracticeTempo}
+        onStart={handlePracticePhrase}
+        onStop={handleStopPractice}
+      />
 
       {/* ── 拍点高亮（节拍器/联动播放时显示，重拍为朱砂色） ── */}
       {metronomeRunning && (

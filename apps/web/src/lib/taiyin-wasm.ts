@@ -17,6 +17,7 @@ interface WasmModule {
   translate_jianpu_to_jianzi(input_json: string): string;
   translate_jianpu_sequence_to_jianzi(input_json: string): string;
   arrange_jianpu_sequence_to_jianzi(input_json: string): string;
+  split_phrases_to_json(input_json: string): string;
   get_jianzi_dictionary(input_json: string): string;
   analyze_jianzi_frequency(input_json: string): string;
   get_jianzi_variant_groups(): string;
@@ -132,6 +133,28 @@ export async function translateJianpuSequenceToJianzi(
 ): Promise<string> {
   const wasm = await getWasm();
   return wasm.translate_jianpu_sequence_to_jianzi(input);
+}
+
+/**
+ * 按时值切句 —— 谱面上画「第 N 句」、按句循环慢练都问这一处。
+ *
+ * 入参是每个音的时值，单位 1/8 拍（四分 = 8、二分 = 16），`null` 表示这个音
+ * 没给时值。**阈值不在这里**：判据（两拍及以上算气口）只在 Rust 有一份，
+ * 前端抄一份就会各自漂——谱面分成 5 句、编排按 4 句算，用户点「第 3 句」
+ * 练到的却是别处，而且没有任何地方会报错。
+ *
+ * 返回闭区间，下标取自入参。
+ */
+export async function splitPhrases(
+  units: (number | null)[],
+): Promise<{ start: number; end: number }[]> {
+  const wasm = await getWasm();
+  const raw = JSON.parse(wasm.split_phrases_to_json(JSON.stringify({ units }))) as {
+    phrases?: { start: number; end: number }[];
+    error?: string;
+  };
+  if (raw.error) throw new Error(raw.error);
+  return raw.phrases ?? [];
 }
 
 /** 一条指法路径的活动量——界面用它把「编排省了什么」说成人话。 */
