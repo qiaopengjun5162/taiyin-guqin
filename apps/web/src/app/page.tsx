@@ -839,6 +839,31 @@ export default function Home() {
   }
 
   /**
+   * 举报别人的谱。
+   *
+   * 只提交线索，**不会当场下架**——下架必须由管理员看过后手动执行。
+   * 这是刻意的：注册不验邮箱，若「N 人举报即下架」，攻击者开三个小号
+   * 就能删掉任何一首好谱。所以这里的文案也不能承诺「已处理」。
+   */
+  async function handleReportScore(id: string, title: string) {
+    if (!getCurrentUserId()) {
+      showError("举报需要登录（这样才认得举报人、也才能去重）");
+      return;
+    }
+    if (!confirm(`举报「${title}」？\n\n举报只会把线索交给管理员，不会自动下架。`)) return;
+    try {
+      const result = await api.reportScore(id);
+      showInfo(
+        result.reported
+          ? `已收到举报，感谢（当前 ${result.reports_count} 人举报）`
+          : "你之前已经举报过这首，管理员会一并处理",
+      );
+    } catch (err) {
+      showError(err instanceof api.ApiError ? err.message : "举报失败");
+    }
+  }
+
+  /**
    * 加载选中的曲谱。
    * browser 模式下 api.getScore 内部已走本地存储，无需分流；
    * 仅 server 模式下的「本机」tab 才强制走本地——否则 api.getScore 会把本地 id 发到服务器而 404。
@@ -1290,6 +1315,8 @@ export default function Home() {
         onLoad={handleLoadScore}
         onDelete={handleDeleteScore}
         onClaim={handleClaimScore}
+        // 与星标同理：举报接口要求登录，未登录就别画一个点了必然 401 的按钮
+        onReport={getCurrentUserId() ? handleReportScore : undefined}
         onMigrate={handleMigrateLocalToCommunity}
         migrating={migrating}
         migrateMsg={migrateMsg}

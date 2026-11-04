@@ -69,6 +69,7 @@ docker run -d --name "$SVR" --network "$NET" \
   -e DATABASE_URL="postgres://taiyin:${PG_PW}@${PG}:5432/taiyin" \
   -e ALLOWED_ORIGINS='https://paxonqiao.com,https://qiaopengjun5162.github.io' \
   -e RUST_LOG=info \
+  -e ADMIN_TOKEN="${SMOKE_ADMIN:-smoke-admin-key}" \
   -p 127.0.0.1:"${HOST_PORT}":3001 "$IMG" >/dev/null || fail "后端容器起不来"
 
 BASE="http://127.0.0.1:${HOST_PORT}"
@@ -207,6 +208,57 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/v1/scores/$A
   -H "Authorization: Bearer $TOKEN")
 [[ "$code" == "200" ]] && ok "取消收藏 → 200（重复取消也不报错）" \
   || fail "取消收藏应 200，实际 $code"
+
+echo "▶ 验内容治理（举报只记录、下架必须管理员点头）"
+ADMIN_KEY="${SMOKE_ADMIN:-smoke-admin-key}"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/scores/$ID/report")
+[[ "$code" == "401" ]] && ok "未登录举报 → 401（举报按人去重，不认设备）" \
+  || fail "未登录举报应 401，实际 $code"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/scores/$AID/report" \
+  -H "Authorization: Bearer $TOKEN")
+[[ "$code" == "400" ]] && ok "举报自己的谱 → 400（想删用删除，别走举报）" \
+  || fail "举报自己的谱应 400，实际 $code"
+
+REP=$(curl -sS -X POST "$BASE/api/v1/scores/$ID/report" -H "Authorization: Bearer $TOKEN")
+printf '%s' "$REP" | grep -q '"reported":true' && ok "首次举报 → reported:true" \
+  || fail "首次举报响应不对：$REP"
+REP2=$(curl -sS -X POST "$BASE/api/v1/scores/$ID/report" -H "Authorization: Bearer $TOKEN")
+printf '%s' "$REP2" | grep -q '"reported":false' && ok "重复举报 → reported:false（不会把数字刷上去）" \
+  || fail "重复举报应 reported:false，实际：$REP2"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/v1/admin/reported")
+[[ "$code" == "401" ]] && ok "管理端不带口令 → 401" || fail "管理端无口令应 401，实际 $code"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/v1/admin/reported" \
+  -H "x-admin-token: wrong-admin")
+[[ "$code" == "401" ]] && ok "管理端口令错误 → 401" || fail "管理端口令错误应 401，实际 $code"
+
+curl -sS "$BASE/api/v1/admin/reported" -H "x-admin-token: $ADMIN_KEY" \
+  | grep -q "上线验收测试-已改" && ok "被举报列表里能看到这首（带举报人数）" \
+  || fail "管理端列表里没有刚被举报的谱"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/admin/scores/$ID/hide" \
+  -H "x-admin-token: $ADMIN_KEY")
+[[ "$code" == "200" ]] && ok "管理员下架 → 200" || fail "下架应 200，实际 $code"
+
+curl -sS "$BASE/api/v1/scores?limit=200" | grep -q "上线验收测试-已改" \
+  && fail "下架后仍出现在列表里：等于没下架" || ok "下架后从列表消失"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/v1/scores/$ID")
+[[ "$code" == "404" ]] && ok "外人凭 id 直接读 → 404（分享链接也打不开，才叫下架）" \
+  || fail "外人读已下架谱应 404，实际 $code"
+
+OWN=$(curl -sS "$BASE/api/v1/scores/$ID" -H 'x-owner-token: smoke-key-1')
+printf '%s' "$OWN" | grep -q '"hidden":true' && ok "谱主仍能读到，并看到 hidden:true（才知道发生了什么）" \
+  || fail "谱主应能读到已下架谱：$OWN"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/admin/scores/$ID/restore" \
+  -H "x-admin-token: $ADMIN_KEY")
+[[ "$code" == "200" ]] && ok "管理员恢复 → 200" || fail "恢复应 200，实际 $code"
+curl -sS "$BASE/api/v1/scores?limit=200" | grep -q "上线验收测试-已改" \
+  && ok "恢复后重新出现在列表里" || fail "恢复后列表里还是没有"
 
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/auth/logout" \
   -H "Authorization: Bearer $TOKEN")

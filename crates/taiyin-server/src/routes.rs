@@ -30,8 +30,8 @@ use crate::llm::{
     recognize_sheet_with_llm, select_with_llm,
 };
 use crate::models::{
-    CreateScoreRequest, LoginRequest, PublicUser, RegisterRequest, Score, ScoreListItem,
-    UpdateScoreRequest, User,
+    CreateScoreRequest, LoginRequest, PublicUser, RegisterRequest, ReportedScore, Score,
+    ScoreListItem, UpdateScoreRequest, User,
 };
 use crate::sheet_segment;
 use crate::template_match::{self, RecognizeMode};
@@ -43,6 +43,8 @@ const MAX_AUTHOR_LENGTH: usize = 40;
 const OWNER_TOKEN_HEADER: &str = "x-owner-token";
 /// 凭证长度上限：UUID 是 36，留足余量但不接受任意长串（避免把 header 当存储用）。
 const MAX_OWNER_TOKEN_LENGTH: usize = 128;
+/// 管理员口令的请求头。
+const ADMIN_TOKEN_HEADER: &str = "x-admin-token";
 /// 列表默认一页条数：一次能滚完、又不至于让首屏拉几百条。
 pub(crate) const DEFAULT_PAGE_SIZE: i64 = 50;
 /// 单页硬上限：没有它，`?limit=1000000` 就是一条把整库拖出来的捷径。
@@ -89,6 +91,9 @@ fn build_cors(allowed: &[String]) -> CorsLayer {
             // 所有权凭证：不加进白名单的话，浏览器跨域预检会直接拦掉，
             // 表现是「发布能成、改删必失败」，且只报 CORS 错误、看不出真正原因。
             axum::http::HeaderName::from_static(OWNER_TOKEN_HEADER),
+            // 管理员口令：目前管理端用 curl 调，但留一个浏览器直调的余地，
+            // 否则将来做管理页时会踩同一个「预检被拦」的坑。
+            axum::http::HeaderName::from_static(ADMIN_TOKEN_HEADER),
         ]))
         .expose_headers(expose)
 }
@@ -165,6 +170,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         per_account: config.publish_quota_per_account,
         per_device: config.publish_quota_per_device,
     };
+    let admin_auth = AdminAuth(config.admin_token.as_deref().map(Arc::from));
 
     let translate_routes = Router::new()
         .route("/api/v1/translate/select", post(select_candidates))
@@ -182,6 +188,12 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         )
         // 认领：把「本机凭证」发布的旧谱挂到账号下（必须出示原凭证）
         .route("/api/v1/scores/{id}/claim", post(claim_score))
+        // 举报（需登录）：只记录，不自动下架——理由见 migrations/008
+        .route("/api/v1/scores/{id}/report", post(report_score))
+        // 管理端：全部走 x-admin-token，未配置 ADMIN_TOKEN 时整体 503
+        .route("/api/v1/admin/reported", get(list_reported))
+        .route("/api/v1/admin/scores/{id}/hide", post(hide_score))
+        .route("/api/v1/admin/scores/{id}/restore", post(restore_score))
         // 收藏：跟账号走，故三条都要求登录态（见 `favorites.rs`）
         .route(
             "/api/v1/scores/{id}/favorite",
@@ -196,12 +208,14 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024)) // 5 MB
         .layer(cors)
         .layer(Extension(publish_quota))
+        .layer(Extension(admin_auth))
         .with_state(state)
 }
 
 async fn fetch_score(pool: &PgPool, id: Uuid) -> AppResult<Score> {
     sqlx::query_as::<_, Score>(
-        "SELECT id, title, notes, tuning, author, owner_token, owner_user_id, created_at, updated_at \
+        "SELECT id, title, notes, tuning, author, owner_token, owner_user_id, created_at, updated_at, \
+                (hidden_at IS NOT NULL) AS hidden \
          FROM scores WHERE id = $1",
     )
     .bind(id)
@@ -326,6 +340,167 @@ async fn reserve_publish_slot(
     }))
 }
 
+/// 管理员口令（从配置塞进请求扩展）。`None` = 管理端未启用。
+#[derive(Clone, Debug)]
+struct AdminAuth(Option<Arc<str>>);
+
+/// 常数时间比较，避免「按字节提前返回」泄露口令前缀。
+///
+/// 一次 HTTP 往返的抖动远大于单字节比较的差异，理论上这条攻击很难真跑通；
+/// 但常数时间比较只多几行代码，没有理由留一个「理论上」。
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// 这次请求是不是管理员。
+fn is_admin(headers: &HeaderMap, admin: &AdminAuth) -> bool {
+    let Some(expected) = admin.0.as_deref() else {
+        return false;
+    };
+    headers
+        .get(ADMIN_TOKEN_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|provided| constant_time_eq(provided.trim(), expected))
+}
+
+/// 管理端闸门。
+///
+/// 未配置口令时返回 503 而不是 404：这台机器就是**没有**管理入口，
+/// 与其让维护者以为「路径写错了」翻半天，不如直说没开。
+fn require_admin(headers: &HeaderMap, admin: &AdminAuth) -> AppResult<()> {
+    if admin.0.is_none() {
+        return Err(AppError::ServiceUnavailable(
+            "管理端未启用：请设置 ADMIN_TOKEN 环境变量后重启服务".into(),
+        ));
+    }
+    if !is_admin(headers, admin) {
+        return Err(AppError::Unauthorized("管理员口令不正确".into()));
+    }
+    Ok(())
+}
+
+/// 举报一首谱（需登录）。
+///
+/// 只记「谁举报了什么」，**不自动下架**——理由见迁移 008：注册不需要邮箱验证，
+/// 自动下架等于给攻击者一个「三个小号删任何谱」的开关。
+async fn report_score(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> AppResult<Json<serde_json::Value>> {
+    // 举报必须登录：本机凭证是设备钥匙，存进举报表等于把改删凭据多存一份（见迁移注释）。
+    let Some(user) = accounts::current_user(&headers, &state.pool).await? else {
+        return Err(AppError::Unauthorized(
+            "举报需要登录：匿名举报无法去重，也无法追溯".into(),
+        ));
+    };
+
+    let score = fetch_score(&state.pool, id).await?;
+    // 已下架的谱不再接受举报：已经处理过了，再报只是往表里灌重复数据。
+    if score.hidden {
+        return Err(AppError::NotFound);
+    }
+    if score.owner_user_id == Some(user.id) {
+        return Err(AppError::Validation(
+            "这是你自己的谱。想删除请用「删除」，不必举报".into(),
+        ));
+    }
+
+    // `ON CONFLICT DO NOTHING` + 检查 rows_affected 一次搞定「是否重复举报」：
+    // 不用先 SELECT 再 INSERT，也就没有「查的时候没有、插的时候有了」的竞态。
+    let inserted = sqlx::query(
+        "INSERT INTO score_reports (user_id, score_id) VALUES ($1, $2) \
+         ON CONFLICT (user_id, score_id) DO NOTHING",
+    )
+    .bind(user.id)
+    .bind(id)
+    .execute(&state.pool)
+    .await?
+    .rows_affected()
+        > 0;
+
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM score_reports WHERE score_id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    Ok(Json(json!({"reported": inserted, "reports_count": count})))
+}
+
+/// 管理端：按被举报数排序的曲谱列表。
+async fn list_reported(
+    State(state): State<AppState>,
+    Extension(admin): Extension<AdminAuth>,
+    headers: HeaderMap,
+) -> AppResult<Json<Vec<ReportedScore>>> {
+    require_admin(&headers, &admin)?;
+
+    let rows = sqlx::query_as::<_, ReportedScore>(
+        "SELECT s.id, s.title, s.author, count(r.user_id) AS reports_count, \
+                s.hidden_at, s.updated_at \
+         FROM scores s JOIN score_reports r ON r.score_id = s.id \
+         GROUP BY s.id \
+         ORDER BY reports_count DESC, s.updated_at DESC \
+         LIMIT 100",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+/// 管理端：下架 / 恢复。
+///
+/// 两个动作合成一个函数：它们只差 `hidden_at` 的取值，分开写会多出一份
+/// 「取行、判断存在、更新」的重复代码——而重复代码最怕的就是只改了一处。
+async fn set_hidden(pool: &PgPool, id: Uuid, hidden: bool) -> AppResult<Json<serde_json::Value>> {
+    // `hidden_at = CASE WHEN $2 THEN COALESCE(hidden_at, now()) ELSE NULL END`：
+    // 重复下架不刷新时间戳（保留「第一次下架」的时刻），恢复则清零。
+    let result = sqlx::query(
+        "UPDATE scores SET hidden_at = CASE WHEN $2 THEN COALESCE(hidden_at, now()) \
+                ELSE NULL END \
+         WHERE id = $1",
+    )
+    .bind(id)
+    .bind(hidden)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({"id": id, "hidden": hidden})))
+}
+
+async fn hide_score(
+    State(state): State<AppState>,
+    Extension(admin): Extension<AdminAuth>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> AppResult<Json<serde_json::Value>> {
+    require_admin(&headers, &admin)?;
+    set_hidden(&state.pool, id, true).await
+}
+
+async fn restore_score(
+    State(state): State<AppState>,
+    Extension(admin): Extension<AdminAuth>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> AppResult<Json<serde_json::Value>> {
+    require_admin(&headers, &admin)?;
+    set_hidden(&state.pool, id, false).await
+}
+
+///
 /// 校验「这个调用者能否改 / 删这首谱」。
 ///
 /// 满足**任意一条**即可：账号匹配，或出示了匹配的本机凭证。
@@ -642,7 +817,7 @@ async fn create_score(
         "INSERT INTO scores (title, notes, tuning, author, owner_token, owner_user_id) \
          VALUES ($1, $2, $3, $4, $5, $6) \
          RETURNING id, title, notes, tuning, author, owner_token, owner_user_id, \
-                   created_at, updated_at",
+                   created_at, updated_at, (hidden_at IS NOT NULL) AS hidden",
     )
     .bind(&title)
     .bind(&req.notes)
@@ -714,7 +889,8 @@ async fn list_scores(
     let scores = sqlx::query_as::<_, ScoreListItem>(&format!(
         "SELECT id, title, tuning, author, owner_user_id, favorites_count, created_at, updated_at \
          FROM scores \
-         WHERE ($1::text IS NULL OR title ILIKE $1 OR author ILIKE $1) \
+         WHERE hidden_at IS NULL \
+           AND ($1::text IS NULL OR title ILIKE $1 OR author ILIKE $1) \
            AND ($2::text IS NULL OR tuning = $2) \
          {order_by} LIMIT $3 OFFSET $4"
     ))
@@ -731,7 +907,8 @@ async fn list_scores(
     // 这里用**同样的过滤条件**，否则「已显示 N / 总数」会与列表内容对不上。
     let total: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM scores \
-         WHERE ($1::text IS NULL OR title ILIKE $1 OR author ILIKE $1) \
+         WHERE hidden_at IS NULL \
+           AND ($1::text IS NULL OR title ILIKE $1 OR author ILIKE $1) \
            AND ($2::text IS NULL OR tuning = $2)",
     )
     .bind(q_param.clone())
@@ -747,8 +924,27 @@ async fn list_scores(
     Ok((headers, Json(scores)))
 }
 
-async fn get_score(State(state): State<AppState>, Path(id): Path<Uuid>) -> AppResult<Json<Score>> {
+/// 读单首谱。
+///
+/// 已下架的谱对**外人一律 404**（否则下架只是从列表里消失，分享链接照样能打开，
+/// 等于没下架）；但对**谱主和管理员**仍然可见——谱主要知道自己的谱被下架了、
+/// 才有机会改好再申请恢复，管理员要能读内容才能判断该不该恢复。
+async fn get_score(
+    State(state): State<AppState>,
+    Extension(admin): Extension<AdminAuth>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> AppResult<Json<Score>> {
     let score = fetch_score(&state.pool, id).await?;
+    if score.hidden {
+        let caller = read_caller(&headers, &state.pool).await?;
+        let may_see = ensure_can_edit(&caller, &score).is_ok() || is_admin(&headers, &admin);
+        if !may_see {
+            // 用 404 而不是 403：403 等于告诉对方「这首确实存在，只是被下架了」，
+            // 与「不存在」区分开没有好处，只会让人反复试探。
+            return Err(AppError::NotFound);
+        }
+    }
     Ok(Json(score))
 }
 
@@ -778,7 +974,7 @@ async fn update_score(
         "UPDATE scores SET title = $1, notes = $2, tuning = $3, author = $4, updated_at = now() \
          WHERE id = $5 \
          RETURNING id, title, notes, tuning, author, owner_token, owner_user_id, \
-                   created_at, updated_at",
+                   created_at, updated_at, (hidden_at IS NOT NULL) AS hidden",
     )
     .bind(&title)
     .bind(&notes)
@@ -935,7 +1131,7 @@ async fn claim_score(
         "UPDATE scores SET owner_user_id = $1 \
          WHERE id = $2 \
          RETURNING id, title, notes, tuning, author, owner_token, owner_user_id, \
-                   created_at, updated_at",
+                   created_at, updated_at, (hidden_at IS NOT NULL) AS hidden",
     )
     .bind(caller.user_id)
     .bind(id)
@@ -984,6 +1180,7 @@ mod tests {
             owner_user_id,
             created_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
             updated_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            hidden: false,
         }
     }
 

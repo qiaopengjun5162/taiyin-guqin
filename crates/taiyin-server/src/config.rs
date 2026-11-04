@@ -51,6 +51,12 @@ pub struct ServerConfig {
     /// 给未登录用户和账号一样的额度，等于这个闸门对脚本完全无效。
     /// 但也不能太低——刚上手、还没决定注册的人，发十首二十首都很正常。
     pub publish_quota_per_device: i64,
+    /// 管理员口令（`x-admin-token`）。为 `None` 时管理端接口整体不可用。
+    ///
+    /// 只有一个人维护的服务，为它建一套角色表 / 权限系统不划算；
+    /// 一把高熵口令 + 只读的管理端接口就够用，且不引入「谁把我设成管理员了」这类问题。
+    /// **留空是安全的默认值**：没配就没有管理入口，不会因为忘记配置而敞开。
+    pub admin_token: Option<String>,
 }
 
 impl ServerConfig {
@@ -77,6 +83,11 @@ impl ServerConfig {
         // 立刻关掉发布入口，不用改代码、不用回滚，比「停服务」温和得多。
         let publish_quota_per_account = parse_i64("PUBLISH_QUOTA_PER_ACCOUNT", 100).max(0);
         let publish_quota_per_device = parse_i64("PUBLISH_QUOTA_PER_DEVICE", 30).max(0);
+        // 空串等同「没配」：`docker run -e ADMIN_TOKEN=` 是很容易发生的手滑，
+        // 若把它当成「口令就是空字符串」，任何人带一个空头就能进管理端。
+        let admin_token = env::var("ADMIN_TOKEN")
+            .ok()
+            .filter(|t| !t.trim().is_empty());
 
         Self {
             database_url,
@@ -92,6 +103,7 @@ impl ServerConfig {
             write_burst,
             publish_quota_per_account,
             publish_quota_per_device,
+            admin_token,
         }
     }
 
@@ -117,6 +129,7 @@ impl Default for ServerConfig {
             write_burst: 10,
             publish_quota_per_account: 100,
             publish_quota_per_device: 30,
+            admin_token: None,
         }
     }
 }

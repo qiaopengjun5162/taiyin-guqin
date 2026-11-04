@@ -632,3 +632,53 @@ describe("LoadDialog · 关闭与搜索提示", () => {
     expect(screen.queryByText(/搜索只在已加载/)).toBeNull();
   });
 });
+
+describe("LoadDialog · 举报别人的谱", () => {
+  it("给了 onReport 且不是我的谱，点旗标只举报、不加载", () => {
+    const onReport = vi.fn();
+    const { onLoad } = renderDialog(
+      [{ key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true }],
+      { onReport },
+    );
+
+    const flag = screen.getByRole("button", { name: /举报「广陵散」/ });
+    fireEvent.click(flag);
+
+    expect(onReport).toHaveBeenCalledWith("c1", "广陵散");
+    // stopPropagation 必须生效：否则点举报会顺带把这首谱载入编辑区、覆盖当前内容
+    expect(onLoad).not.toHaveBeenCalled();
+  });
+
+  it("自己的谱不显示举报按钮（想删用 ×，举报只会给管理端添噪音）", () => {
+    const mine: ScoreListItem[] = [
+      {
+        id: "c9",
+        title: "自己的谱",
+        tuning: "zhengdiao",
+        owner_user_id: "u-me",
+        created_at: "2026-09-01T00:00:00Z",
+        updated_at: "2026-09-01T00:00:00Z",
+      },
+    ];
+    renderDialog(
+      [
+        {
+          key: "community",
+          label: "社区曲谱",
+          scores: mine,
+          readOnly: true,
+          myScoreIds: ["c9"],
+          myUserId: "u-me",
+        },
+      ],
+      { onReport: vi.fn() },
+    );
+
+    expect(screen.queryByRole("button", { name: /举报「自己的谱」/ })).toBeNull();
+  });
+
+  it("没给 onReport 时社区列表也不显示旗标", () => {
+    renderDialog([{ key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true }]);
+    expect(screen.queryByRole("button", { name: /举报/ })).toBeNull();
+  });
+});

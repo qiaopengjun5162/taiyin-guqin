@@ -172,6 +172,11 @@ export interface ScoreListItem {
 
 export interface Score extends ScoreListItem {
   notes: NoteColumn[];
+  /**
+   * 已被管理员下架。只有谱主和管理员能读到这份数据（外人拿到 id 是 404），
+   * 所以这个字段唯独出现在「自己的谱被下架」这一种场景里——界面据此提示原因。
+   */
+  hidden?: boolean;
 }
 
 /**
@@ -504,6 +509,31 @@ export async function claimScore(id: string): Promise<ScoreListItem> {
     headers: { "Content-Type": "application/json", ...ownerHeaders() },
   });
   return normalizeTuning(await handleResponse<ScoreListItem>(res));
+}
+
+export interface ReportResult {
+  /** 这次是否真的记上了。`false` = 之前已经举报过同一首（服务端按人去重）。 */
+  reported: boolean;
+  /** 这首谱当前被多少**不同的人**举报过。 */
+  reports_count: number;
+}
+
+/**
+ * 举报一首谱。
+ *
+ * **必须登录**：本机凭证是设备钥匙，存进举报表等于把改删凭据多存一份；
+ * 而账号 id 本身不是秘密，既能去重也能追责。
+ *
+ * 服务端只记录、**不会自动下架**——注册不需要邮箱验证，自动下架等于给攻击者
+ * 一个「三个小号删任何谱」的开关。这里只负责把线索交上去。
+ */
+export async function reportScore(id: string): Promise<ReportResult> {
+  ensureBackend();
+  const res = await fetchWithTimeout(`${resolveBase()}/api/v1/scores/${id}/report`, {
+    method: "POST",
+    headers: ownerHeaders(),
+  });
+  return handleResponse<ReportResult>(res);
 }
 
 export interface CandidateSelection {

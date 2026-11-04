@@ -158,6 +158,7 @@ curl -i http://127.0.0.1:3001/health
 | `AUTH_RATE_PER_SECOND` / `AUTH_RATE_BURST` | 可选 | 注册 / 登录的**独立**限流：默认每秒 2 次、突发 8。比全局严，因为口令散列故意慢（Argon2id 每次数百毫秒），不限流等于给攻击者一个把单核 CPU 打满的开关。1 核小机器别调大 |
 | `WRITE_RATE_PER_SECOND` / `WRITE_RATE_BURST` | 可选 | 发布曲谱的**独立**限流（只锁 `POST /api/v1/scores`）：默认每秒 1 次、突发 10。它是全站唯一「一个请求换一行数据」的口子，不限就等于让人灌库；**列表读取不在这把锁里**，别把它挂到整条 `/scores` 上 |
 | `PUBLISH_QUOTA_PER_ACCOUNT` / `PUBLISH_QUOTA_PER_DEVICE` | 可选 | 发布**配额**（存量，不是速率）：每个账号默认最多 100 首、每台未登录设备默认最多 30 首，超了返回 409 并提示「删掉几首旧谱」。限流管「每秒几次」，管不住「一秒发一首、连发两天」；两个都要有。未登录额度故意更低，因为本机凭证清了缓存就能换一个。**设成 0 = 立刻关闭发布入口**（出事时的应急开关，不用回滚） |
+| `ADMIN_TOKEN` | 可选 | 管理端口令（请求头 `x-admin-token`）。**不设就没有管理入口**，治理接口一律 503——这是安全的默认值，不会因为忘记配置而敞开。做一次高熵随机串即可：`openssl rand -hex 24` |
 | `TRANSLATE_RATE_PER_SECOND` / `TRANSLATE_RATE_BURST` | 可选 | AI 翻译端点限流：默认每秒 1 次、突发 5，因为每次调用都在烧额度 |
 
 ---
@@ -218,6 +219,54 @@ curl -i https://api.你的域名/health
 
 > 为什么不写死在网页里？网页托管在 GitHub Pages，是纯静态文件，没法藏配置；
 > 运行时填写的好处是换后端地址不用重新构建发布网页。
+
+---
+
+## 5.5 内容治理：举报与下架（可选但建议配）
+
+**这步在干什么**：社区里如果有人发了不该在那儿的东西（灌水谱、乱码谱、抄错署名的谱），
+登录用户能点「举报」，但**举报不会自动下架**——下架得你点头。
+
+为什么不做「够 N 人举报就自动下架」：本项目的注册**不验证邮箱**，一个人三分钟能开三个号。
+自动下架等于给任何人一个「三个小号删掉任意一首好谱」的开关。误杀一首认真打的谱，
+比晚删一天垃圾谱严重得多。
+
+先设口令（没设就没有管理入口，接口返回 503）：
+
+```bash
+docker rm -f taiyin-server
+docker run -d --name taiyin-server --network taiyin-net \
+  -e DATABASE_URL="postgres://taiyin:你的密码@taiyin-pg:5432/taiyin" \
+  -e ALLOWED_ORIGINS='https://你的域名' \
+  -e RUST_LOG=info \
+  -e ADMIN_TOKEN="$(openssl rand -hex 24)" \
+  -p 127.0.0.1:3001:3001 taiyin-server:local
+```
+
+**把生成的口令存好**（密码管理器里），它是唯一的管理入口，丢了只能改环境变量重启。
+
+日常巡检：看被举报最多的谱（按举报人数倒序，最多 100 条）
+
+```bash
+curl -sS http://127.0.0.1:3001/api/v1/admin/reported \
+  -H "x-admin-token: 你的口令" | python3 -m json.tool
+```
+
+每条带 `reports_count`（**不同的人**举报了几次，同一人重复举报只算一次）和 `hidden_at`
+（`null` = 还没处理）。看到该处理的，先自己读一遍再决定：
+
+```bash
+# 下架（从列表消失，分享链接也变成 404）
+curl -sS -X POST http://127.0.0.1:3001/api/v1/admin/scores/<id>/hide \
+  -H "x-admin-token: 你的口令"
+
+# 恢复（误杀、或谱主改好了）
+curl -sS -X POST http://127.0.0.1:3001/api/v1/admin/scores/<id>/restore \
+  -H "x-admin-token: 你的口令"
+```
+
+下架后**谱主自己还能打开它**（会看到「已被下架」），这样他知道发生了什么、也有机会改好再来找你恢复；
+外人拿 id 直接访问是 404，列表里也搜不到。
 
 ---
 

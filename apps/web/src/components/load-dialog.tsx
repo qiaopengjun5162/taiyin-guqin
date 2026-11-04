@@ -67,6 +67,12 @@ interface LoadDialogProps {
    * 认领之后换设备、清缓存都不会再失去它。
    */
   onClaim?: (id: string, title: string) => void;
+  /**
+   * 举报别人的谱。不给就不显示按钮。
+   *
+   * 自己的谱不显示——想删自己的谱用 × 或「删除」，走举报只会让管理端多一条噪音。
+   */
+  onReport?: (id: string, title: string) => void;
   /** 一键把本机谱批量发布到社区共享池（仅本机 tab 显示） */
   onMigrate?: () => void;
   /** 迁移进行中，禁用按钮并显示「发布中…」 */
@@ -150,6 +156,7 @@ export function LoadDialog({
   onLoad,
   onDelete,
   onClaim,
+  onReport,
   onMigrate,
   migrating,
   migrateMsg,
@@ -406,6 +413,19 @@ export function LoadDialog({
                     }`}
                   >
                     {favorited ? "★" : "☆"}
+                  </button>
+                )}
+                {onReport && !mine && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReport(s.id, s.title);
+                    }}
+                    aria-label={`举报「${s.title}」`}
+                    title="举报这首谱（需登录；只记录线索，不会自动下架）"
+                    className="shrink-0 px-0.5 text-[11px] leading-none text-stone-300 hover:text-red-600 transition-colors"
+                  >
+                    ⚑
                   </button>
                 )}
                 {claimable && (

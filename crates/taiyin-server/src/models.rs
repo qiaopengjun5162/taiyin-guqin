@@ -24,6 +24,11 @@ pub struct Score {
     pub owner_user_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// 是否已被管理员下架（库里存的是 `hidden_at` 时间戳，这里只暴露布尔）。
+    ///
+    /// 下架的谱**不进公开列表**；单条读接口仍对「谱主」和「管理员」可见，
+    /// 否则谱主只会看到自己的谱凭空消失，既不知道为什么，也没法改好再申请恢复。
+    pub hidden: bool,
 }
 
 /// 列表项——不包含 notes 全文以节省带宽。
@@ -39,6 +44,22 @@ pub struct ScoreListItem {
     /// 收藏数（热度）。列表「按热度排序」直接读这一列，不实时 COUNT。
     pub favorites_count: i64,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// 管理端「被举报的谱」行。
+///
+/// 只给管理员看，所以带上 `reports_count` 与 `hidden_at`：
+/// 先看谁被举报得最多，再看是否已经处理过（已下架的仍在列表里，避免重复处理）。
+#[derive(Debug, Serialize, FromRow)]
+pub struct ReportedScore {
+    pub id: Uuid,
+    pub title: String,
+    pub author: String,
+    /// 不同举报者人数（主键去重后的行数，不是举报次数）。
+    pub reports_count: i64,
+    /// 已下架的时间；`null` 表示还没处理。
+    pub hidden_at: Option<DateTime<Utc>>,
     pub updated_at: DateTime<Utc>,
 }
 

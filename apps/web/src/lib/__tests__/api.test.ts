@@ -488,3 +488,27 @@ describe("api: 社区列表搜索与定弦过滤参数", () => {
     expect(url.searchParams.get("sort")).toBe("popular");
   });
 });
+
+describe("api: 举报", () => {
+  it("POST 到 /scores/{id}/report，回传是否首次与人数", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ reported: true, reports_count: 3 }));
+    const { reportScore } = await import("@/lib/api");
+
+    const result = await reportScore("c1");
+
+    expect(result).toEqual({ reported: true, reports_count: 3 });
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/scores/c1/report");
+    expect(options.method).toBe("POST");
+  });
+
+  it("举报要登录：服务端 401 的提示原样抛出（界面据它劝人去登录）", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: "举报需要登录：匿名举报无法去重，也无法追溯" }, { status: 401 }),
+    );
+    const { reportScore, ApiError } = await import("@/lib/api");
+
+    await expect(reportScore("c1")).rejects.toThrow(/举报需要登录/);
+    await expect(reportScore("c1")).rejects.toBeInstanceOf(ApiError);
+  });
+});
