@@ -90,6 +90,23 @@ fn fill_random(buf: &mut [u8]) {
     rand::thread_rng().fill_bytes(buf);
 }
 
+/// 一次性口令的长度：≥ `MIN_PASSWORD_LENGTH`（8），又短不到「随手就能猜」。
+const TEMP_PASSWORD_LENGTH: usize = 12;
+
+/// 生成一次性口令（管理员重置时用）。
+///
+/// 字母表刻意去掉 `0/O/1/l/I` 这类「念出来分不清」的字符——
+/// 这串要由管理员在聊天工具里转告本人，念错一位就得多来一轮。
+/// 随机源是 `thread_rng`（密码学安全），12 位 ≈ 69 位熵，够挡在线猜测。
+pub fn generate_temporary_password() -> String {
+    const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..TEMP_PASSWORD_LENGTH)
+        .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+        .collect()
+}
+
 /// 从 `Authorization: Bearer <token>` 取出当前登录用户。
 ///
 /// 查库而非自证：会话要能吊销（登出即失效），也要能被管理员单条清理。
@@ -248,6 +265,20 @@ mod tests {
         assert!(validate_password("1234567").is_err());
         assert!(validate_password("12345678").is_ok());
         assert!(validate_password(&"x".repeat(201)).is_err());
+    }
+
+    #[test]
+    fn temporary_password_is_long_random_and_unambiguous() {
+        let a = generate_temporary_password();
+        let b = generate_temporary_password();
+        assert_ne!(a, b, "两次生成必须不同，否则随机源没接上");
+        assert_eq!(a.chars().count(), TEMP_PASSWORD_LENGTH);
+        // 必须过登录那关的长度规则，否则「生成的口令登不进去」
+        assert!(validate_password(&a).is_ok());
+        // 去掉易混字符：念给对方听不能出现 0/O/1/l/I
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() && !"0O1lI".contains(c)));
     }
 
     #[test]

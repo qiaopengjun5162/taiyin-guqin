@@ -60,11 +60,12 @@ afterEach(() => {
 });
 
 describe("AccountPanel 社区账号", () => {
-  it("未登录时展示登录表单，并如实说明边界（不做邮箱验证 / 不能找回口令）", () => {
+  it("未登录时展示登录表单，并如实说明边界（不做邮箱验证 / 找回要走管理员）", () => {
     render(<AccountPanel />);
     expect(screen.getByLabelText("邮箱")).toBeInTheDocument();
     expect(screen.getByLabelText("口令")).toBeInTheDocument();
     expect(screen.getByText(/不做邮箱验证/)).toBeInTheDocument();
+    expect(screen.getByText(/联系管理员重置/)).toBeInTheDocument();
   });
 
   it("登录成功：显示昵称与登出入口，并记住会话", async () => {

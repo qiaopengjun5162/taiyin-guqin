@@ -30,8 +30,8 @@ use crate::llm::{
     recognize_sheet_with_llm, select_with_llm,
 };
 use crate::models::{
-    CreateScoreRequest, LoginRequest, PublicUser, RegisterRequest, ReportedScore, Score,
-    ScoreListItem, UpdateScoreRequest, User,
+    AdminResetPasswordRequest, CreateScoreRequest, LoginRequest, PublicUser, RegisterRequest,
+    ReportedScore, Score, ScoreListItem, UpdateScoreRequest, User,
 };
 use crate::sheet_segment;
 use crate::template_match::{self, RecognizeMode};
@@ -194,6 +194,8 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .route("/api/v1/admin/reported", get(list_reported))
         .route("/api/v1/admin/scores/{id}/hide", post(hide_score))
         .route("/api/v1/admin/scores/{id}/restore", post(restore_score))
+        // 过渡版「找回口令」：管理员给指定邮箱设新口令，并踢掉其全部会话
+        .route("/api/v1/admin/users/reset-password", post(admin_reset_password))
         // 收藏：跟账号走，故三条都要求登录态（见 `favorites.rs`）
         .route(
             "/api/v1/scores/{id}/favorite",
@@ -498,6 +500,63 @@ async fn restore_score(
 ) -> AppResult<Json<serde_json::Value>> {
     require_admin(&headers, &admin)?;
     set_hidden(&state.pool, id, false).await
+}
+
+/// 管理端：重置指定邮箱的口令（过渡版「找回」）。
+///
+/// 自助找回要等邮件通道；在那之前「忘口令 = 废号」是不可接受的，
+/// 所以先给管理员一条正路：一条请求换新口令，不用手进数据库算 Argon2 散列。
+///
+/// **改密即吊销该用户全部会话**：重置的语义就是「从现在起只有新口令算数」。
+/// 不踢会话的话，偷到旧会话 token 的人照样能进——改密改了个寂寞。
+async fn admin_reset_password(
+    State(state): State<AppState>,
+    Extension(admin): Extension<AdminAuth>,
+    headers: HeaderMap,
+    Json(req): Json<AdminResetPasswordRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    require_admin(&headers, &admin)?;
+
+    let email = accounts::normalize_email(&req.email)?;
+    // 服务端生成的口令回显**一次**（只存散列，过了这村没这店）；
+    // 管理员自己指定的不回显——回显等于把明文又抄一份到聊天记录里。
+    let (password, temporary) = match req.new_password {
+        Some(p) => {
+            accounts::validate_password(&p)?;
+            (p, false)
+        }
+        None => (accounts::generate_temporary_password(), true),
+    };
+    let password_hash = accounts::hash_password(&password)?;
+
+    // 改密与踢会话放一个事务：分开做的话，中间崩一下会留下
+    // 「口令已是新的、旧会话还活着」的窗口——那正是重置要堵的洞。
+    let mut tx = state.pool.begin().await?;
+    let user_id: Uuid = match sqlx::query_scalar::<_, Uuid>(
+        "UPDATE users SET password_hash = $1 WHERE email = $2 RETURNING id",
+    )
+    .bind(&password_hash)
+    .bind(&email)
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(id) => id,
+        // 查无此人给 404：这是管理端，管理员需要知道是不是邮箱写错了
+        //（不是登录接口，不必防账号枚举）。
+        Err(sqlx::Error::RowNotFound) => return Err(AppError::NotFound),
+        Err(e) => return Err(e.into()),
+    };
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+
+    let mut body = json!({"email": email, "user_id": user_id, "temporary": temporary});
+    if temporary {
+        body["temporary_password"] = json!(password);
+    }
+    Ok(Json(body))
 }
 
 ///

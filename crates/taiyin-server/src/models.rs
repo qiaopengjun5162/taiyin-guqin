@@ -119,3 +119,12 @@ pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }
+
+/// 管理端：给指定邮箱重置口令（过渡版「找回」——自助找回要等邮件通道）。
+#[derive(Debug, Deserialize)]
+pub struct AdminResetPasswordRequest {
+    pub email: String,
+    /// 省略则服务端生成一次性口令并在响应里回显**一次**，由管理员转告本人。
+    /// 回显一次是刻意的：服务端只存 Argon2 散列，明文口令过了这村没这店。
+    pub new_password: Option<String>,
+}

@@ -14,6 +14,11 @@
 # 会写数据：创建一首测试谱，验完删掉；注册一个带时间戳的测试账号（后端没有删号接口，
 # 留着不影响使用）。别对着生产库反复跑成百上千次——每次会留一个测试账号。
 #
+# 可选环境变量：
+#   FRONTEND_ORIGIN  前端来源（默认 GitHub Pages），验 CORS 白名单用
+#   ADMIN_TOKEN      管理口令。给了才会跑「重置口令」完整链路（会改掉测试账号的口令）；
+#                    不给只验「管理端闸门是关着的」，同样有用。
+#
 # 退出码：0 = 全过；1 = 有失败项（逐条已打印）。
 
 # 刻意不用 pipefail：本脚本每条判定都是「输出里有没有这段字符串」，
@@ -166,7 +171,46 @@ else
   bad "注册失败：$REG"
 fi
 
-# ── 9. 收尾：删掉测试谱，别把验收垃圾留在社区里 ────────────
+# ── 9. 管理端重置口令（过渡版找回） ───────────────────────
+# 无管理凭证打这个接口：必须被拒（401 或「没开」的 503），绝不能是 200。
+code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST \
+  "$BASE/api/v1/admin/users/reset-password" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"nobody@example.com","new_password":"whatever-1234"}' 2>/dev/null)
+if [[ "$code" == "401" || "$code" == "503" ]]; then
+  ok "重置口令无管理凭证 → $code（不是谁都能改别人口令）"
+else
+  bad "重置口令无管理凭证应 401/503，实际 $code —— 管理端闸门没接上"
+fi
+
+# 完整链路要真改口令，只有拿到 ADMIN_TOKEN 才跑；没给就跳过（不猜口令）。
+if [[ -n "${ADMIN_TOKEN:-}" && -n "$TOKEN" ]]; then
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -X POST \
+    "$BASE/api/v1/admin/users/reset-password" \
+    -H 'Content-Type: application/json' -H "x-admin-token: $ADMIN_TOKEN" \
+    -d "{\"email\":\"$EMAIL\",\"new_password\":\"verify-pass-5678\"}" 2>/dev/null)
+  [[ "$code" == "200" ]] && ok "管理员重置口令 → 200" || bad "管理员重置应 200，实际 $code"
+
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST "$BASE/api/v1/auth/login" \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$EMAIL\",\"password\":\"verify-pass-1234\"}" 2>/dev/null)
+  [[ "$code" == "401" ]] && ok "重置后旧口令登不进（→ 401）" || bad "重置后旧口令应 401，实际 $code —— 口令没真的换掉"
+
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST "$BASE/api/v1/auth/login" \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$EMAIL\",\"password\":\"verify-pass-5678\"}" 2>/dev/null)
+  [[ "$code" == "200" ]] && ok "新口令能登录（→ 200）" || bad "新口令应能登录，实际 $code —— 生成的口令登不进去比没这功能更糟"
+
+  # 改密即踢下线：重置前拿到的会话必须失效，否则偷到旧 token 的人照样能进
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/api/v1/auth/me" \
+    -H "Authorization: Bearer $TOKEN" 2>/dev/null)
+  [[ "$code" == "401" ]] && ok "重置后旧会话失效（→ 401，改密即踢下线）" \
+    || bad "重置后旧会话应 401，实际 $code —— 旧登录态还活着，重置只改了一半"
+else
+  echo "⏭  跳过重置口令完整链路（未提供 ADMIN_TOKEN 环境变量，或第 8 步注册失败）"
+fi
+
+# ── 10. 收尾：删掉测试谱，别把验收垃圾留在社区里 ──────────
 if [[ -n "$ID" ]]; then
   code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X DELETE "$BASE/api/v1/scores/$ID" \
     -H "x-owner-token: $KEY" 2>/dev/null)
@@ -180,4 +224,4 @@ if [[ "$FAIL" -gt 0 ]]; then
   echo "结论：**还不能给用户用**，先修上面标 ❌ 的项。"
   exit 1
 fi
-echo "结论：这台后端对公网可用，账号 / 发布 / 收藏 / 检索链路都通。"
+echo "结论：这台后端对公网可用，账号 / 发布 / 收藏 / 检索 / 管理端闸门都通。"

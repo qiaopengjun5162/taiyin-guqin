@@ -31,7 +31,8 @@ type Mode = "login" | "register";
  *
  * ## 如实写清的边界
  *
- * 不做邮箱验证（没有邮件通道），也不提供找回口令。这两件事写在界面上，
+ * 不做邮箱验证（没有邮件通道），也没有自助找回（同样卡在邮件通道上）——
+ * 忘了口令走管理员重置。这两件事写在界面上，
  * 而不是等用户丢了口令才发现——把「注册过」当成「安全托管」是最容易吃亏的误会。
  */
 export function AccountPanel() {
@@ -175,7 +176,7 @@ export function AccountPanel() {
             </button>
           </div>
           <p className="text-[9px] leading-relaxed text-stone-400">
-            不做邮箱验证，也暂不支持找回口令——口令请自己记牢。
+            不做邮箱验证，也没有自助找回——口令请自己记牢；真忘了请联系管理员重置。
           </p>
           {error && (
             <p className="text-[10px] tracking-wider text-red-500/90" role="alert">
