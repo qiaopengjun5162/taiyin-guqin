@@ -120,12 +120,23 @@ export function SaveLoadToolbar({
                 : "保存"}
       </button>
       {storageMode === "server" ? (
-        <span
-          title="已保存即公开发布到社区共享池，任何人都看得到、也都能打开。后端是无鉴权共享，先确认这首谱可以公开再发布。"
-          className="px-1.5 py-1 rounded text-[9px] tracking-wider text-vermillion border border-vermillion/30 whitespace-nowrap"
-        >
-          已发布（公开）
-        </span>
+        canShare ? (
+          <span
+            title="这首谱已经在社区共享池里，任何人都看得到、也都能打开。再改再保存会直接改社区那一份。"
+            className="px-1.5 py-1 rounded text-[9px] tracking-wider text-vermillion border border-vermillion/30 whitespace-nowrap"
+          >
+            已发布（公开）
+          </span>
+        ) : (
+          // 还没发过就不能说「已发布」：连上后端只是「会发到社区」，
+          // 说成已发布等于替用户宣布了一件没发生的事。
+          <span
+            title="保存即发布到社区共享池（公开），任何人都看得到。后端是无鉴权共享，先确认这首谱可以公开再保存。"
+            className="px-1.5 py-1 rounded text-[9px] tracking-wider text-amber-700/70 border border-amber-700/25 whitespace-nowrap"
+          >
+            存即公开
+          </span>
+        )
       ) : (
         <span
           title="当前是纯前端版本（未连接后端），曲谱保存在本机浏览器，换设备或清缓存会丢失；可用「导出文本」备份。"

@@ -181,7 +181,9 @@ describe("SaveLoadToolbar", () => {
     expect(queryByText(/已发布/)).toBeNull();
   });
 
-  it("server 模式显示「已发布（公开）」标签而非「存本机」", () => {
+  it("server 模式、还没发布过：说「存即公开」，不说「已发布」", () => {
+    // 连上后端只代表「保存会发到社区」，不代表这首已经发出去了。
+    // 这里曾经直接写「已发布（公开）」，等于替用户宣布了一件没发生的事。
     const { getByText, queryByText } = render(
       <SaveLoadToolbar
         title=""
@@ -193,8 +195,26 @@ describe("SaveLoadToolbar", () => {
         storageMode="server"
       />,
     );
-    expect(getByText("已发布（公开）")).toBeTruthy();
+    expect(getByText("存即公开")).toBeTruthy();
+    expect(queryByText("已发布（公开）")).toBeNull();
     expect(queryByText("存本机")).toBeNull();
+  });
+
+  it("server 模式、已在社区里：才显示「已发布（公开）」", () => {
+    const { getByText, queryByText } = render(
+      <SaveLoadToolbar
+        title=""
+        onTitleChange={vi.fn()}
+        onSave={vi.fn()}
+        onLoad={vi.fn()}
+        hasNotes
+        saveStatus="idle"
+        storageMode="server"
+        canShare
+      />,
+    );
+    expect(getByText("已发布（公开）")).toBeTruthy();
+    expect(queryByText("存即公开")).toBeNull();
   });
 
   it("shows PNG export button when hasNotes and onExportPng provided", () => {

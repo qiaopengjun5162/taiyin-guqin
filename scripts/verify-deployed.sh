@@ -46,21 +46,25 @@ if [[ "$BASE" == https://* ]]; then
   hostport="${BASE#https://}"
   hostport="${hostport%%/*}"
   hostname_only="${hostport%%:*}"
-  # openssl 不读 http_proxy，得显式 -proxy；否则在代理环境下这条会假红，
-  # 把「证书没问题」误判成「证书有问题」——比不检查更糟。
-  proxy_args=()
-  p="${HTTPS_PROXY:-${https_proxy:-}}"
-  if [[ -n "$p" ]]; then
-    p="${p#http://}"; p="${p#https://}"; p="${p%/}"
-    proxy_args=(-proxy "$p")
-  fi
-  # 注意是 2>&1 不是 2>/dev/null：openssl 把 "Verify return code" 打在 stderr 上，
-  # 吞掉 stderr 会让这条检查永远失败（假红，比不检查更坏）。
-  if echo | openssl s_client -servername "$hostname_only" -connect "$hostport" "${proxy_args[@]}" 2>&1 \
-      | grep -q "Verify return code: 0 (ok)"; then
+  # 用 curl 自己的 `%{ssl_verify_result}` 判证书，不用 openssl s_client：
+  # - s_client 不读 http_proxy，还得手动拼 -proxy；脚本里 stdin 是管道时它还会挂住
+  #   （实测在非交互脚本里 echo | openssl 会一直等，直到被外部杀掉）；
+  # - curl 的 `Verify return code` 打在 stderr，还要靠 grep 字符串，脆弱；
+  # - ssl_verify_result 是 0 就是「链路验过了」，非 0 是具体错误码，能直接报给人看。
+  # 退出码顺带区分「证书不对」和「根本连不上」——这两件事的修法完全不同。
+  tls_code=$(curl -s -o /dev/null -w "%{ssl_verify_result}" --max-time 20 "$BASE/health" 2>/dev/null)
+  tls_rc=$?
+  if [[ $tls_rc -eq 0 && "$tls_code" == "0" ]]; then
     ok "TLS 证书有效（$hostname_only）"
   else
     bad "TLS 证书校验失败——手机上会直接白屏（点开浏览器看是否提示不安全）"
+    case "$tls_rc" in
+      60) echo "     curl：证书不被信任（ssl_verify_result=$tls_code），多半是过期或域名不匹配" ;;
+      6)  echo "     curl：域名解析不了（DNS 没生效）" ;;
+      7)  echo "     curl：连不上 $hostport:443（端口没开或防火墙拦了）" ;;
+      28) echo "     curl：20 秒超时，443 没回应" ;;
+      *)  echo "     curl：退出码 $tls_rc，ssl_verify_result=$tls_code" ;;
+    esac
   fi
 else
   echo "⏭  跳过 TLS 检查（目标是 http）"

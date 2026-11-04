@@ -312,6 +312,30 @@ curl -sS -X POST http://127.0.0.1:3001/api/v1/admin/scores/<id>/restore \
 
 ---
 
+## 5.6 两条命令把「能不能用」验掉
+
+下面第 6 节是给人看的清单；实际上有两条命令能替你走完，出错会直接指出是哪一项。
+
+```bash
+# ① 只发请求，验接口：TLS / CORS / 鉴权 / 分页 / 落库（17 项，约 20 秒）
+bash scripts/verify-deployed.sh https://api.你的域名
+
+# ② 开真浏览器，验界面：设置面板在不在、能不能注册、发布后社区里看不看得到、
+#    收藏刷新后还在不在、375px 会不会横向溢出（9 项，需本机装了 playwright）
+node scripts/e2e-community.mjs https://qiaopengjun5162.github.io/taiyin-guqin/ https://api.你的域名
+```
+
+两者不要合并：① 测的是「服务器对不对」，可以塞进 CI；② 测的是「界面这层对不对」，
+混合内容被拦、按钮点不动、发布完列表不刷新，这些 curl 一条都测不出来，却恰好是
+「用户说用不了」的常见原因。两条都绿，才算可以交给琴友。
+
+> **临时拿自己电脑演示**（还没上服务器时）：`docker compose up -d` 起后端，
+> 再 `cloudflared tunnel --url http://127.0.0.1:13001 --no-autoupdate --protocol http2`。
+> **必须带 `--protocol http2`**：默认走 QUIC（UDP 7844），UDP 一被限速就会反复
+> `no recent network activity`、外网访问回 530，看着像后端挂了，其实只是隧道在抖。
+> 这种 `https://xxx.trycloudflare.com` 地址每次重启都会变，电脑睡眠就断，**只适合自查，
+> 不适合发给琴友**——长期地址仍要走第 4 节的自有域名。
+
 ## 6. 上线验收清单
 
 逐条打勾，全过才算上线成功：
