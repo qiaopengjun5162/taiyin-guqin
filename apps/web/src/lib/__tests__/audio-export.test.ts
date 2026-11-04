@@ -114,6 +114,34 @@ describe("renderScoreToBuffer", () => {
     expect(toneType).toBe("散");
   });
 
+  it("走手音（绰/注）随排程转发给合成层——丢了 slide，导出就成了直音", async () => {
+    const withSlide = (slide: "绰" | "注" | "急"): NoteColumn =>
+      note({
+        jianzi: {
+          toneType: "按",
+          rhythmMode: null,
+          leftFinger: "大",
+          hui: "九",
+          fen: null,
+          slide,
+          rightAction: "勹",
+          stringNumber: "四",
+        },
+      });
+
+    await renderScoreToBuffer([withSlide("绰")], 60);
+    expect(pluck.mock.calls[0][5]).toBe("绰");
+
+    pluck.mockClear();
+    await renderScoreToBuffer([withSlide("注")], 60);
+    expect(pluck.mock.calls[0][5]).toBe("注");
+
+    // 急是弹法记号、不改音高走向：排程里不该带进滑音分支
+    pluck.mockClear();
+    await renderScoreToBuffer([withSlide("急")], 60);
+    expect(pluck.mock.calls[0][5]).toBeNull();
+  });
+
   it("渲染长度 = 末音结束 + 音色尾长 + 0.3s 余量", async () => {
     // 第一个散音：0–1s + tail 2.0；休止符：1–2s + 默认按音 tail 0.5
     await renderScoreToBuffer([note(), REST], 60);
