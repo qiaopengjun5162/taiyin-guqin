@@ -89,3 +89,38 @@ describe("owner-token · 我发布的谱", () => {
     expect(isMyScore("b")).toBe(true);
   });
 });
+
+/**
+ * 随机源降级：老浏览器 / 非安全上下文可能没有 `crypto.randomUUID`。
+ * 任何一层缺失都必须还能生成「非空且稳定」的凭证——否则发布直接 401/403。
+ */
+describe("owner-token · 随机源降级", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    resetOwnerTokenCache();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("无 randomUUID 时用 getRandomValues 生成十六进制串", () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(0xab);
+        return bytes;
+      },
+    });
+
+    expect(getOwnerToken()).toBe("ab".repeat(16));
+  });
+
+  it("连 getRandomValues 都没有时仍生成非空凭证", () => {
+    vi.stubGlobal("crypto", {});
+
+    const token = getOwnerToken();
+
+    expect(token).not.toBe("");
+    expect(token).toMatch(/^[0-9a-z]+-[0-9a-z]+$/);
+  });
+});

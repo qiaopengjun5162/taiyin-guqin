@@ -7,6 +7,8 @@ import {
   getStoredAuthor,
   setStoredAuthor,
   subscribeSettings,
+  getServerApiBaseSnapshot,
+  getServerAuthorSnapshot,
   MAX_AUTHOR_LENGTH,
 } from "@/lib/settings";
 
@@ -105,5 +107,14 @@ describe("settings: 打谱人署名", () => {
     unsub();
     setStoredAuthor("李四");
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("settings: 服务端 / 水合快照", () => {
+  // SSR 与首帧客户端必须拿到同一个值，否则 React 会报 hydration mismatch，
+  // 表现为整块设置面板重渲染、用户刚填的地址「闪一下又变回去」。
+  it("恒为初始值：后端地址 null、署名空串", () => {
+    expect(getServerApiBaseSnapshot()).toBeNull();
+    expect(getServerAuthorSnapshot()).toBe("");
   });
 });

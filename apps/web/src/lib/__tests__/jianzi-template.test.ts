@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -123,5 +123,71 @@ describe("matchPixels / recognizeLuma", () => {
 
   it("空索引返回 null", () => {
     expect(matchPixels({ size: 64, entries: [] }, new Uint8Array(64 * 64))).toBeNull();
+  });
+});
+
+/**
+ * 懒加载模板索引：识别功能第一次点击才下载。
+ *
+ * 三条边界都会让「识别」整体不可用，但平时很难察觉：
+ * ① 缓存失效 → 每识别一次重下几百 KB；
+ * ② 并发去重失效 → 连点两下下两遍；
+ * ③ 失败后 pending 没清 → 之后永远拿到同一个失败结果，重试也没用。
+ */
+describe("loadTemplateIndex · 懒加载与缓存", () => {
+  const INDEX_JSON = JSON.stringify({
+    size: 64,
+    entries: [{ name: "sm_x", pixels: "AA==" }],
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("首次加载后缓存：第二次不再发请求", async () => {
+    vi.resetModules();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => INDEX_JSON });
+    vi.stubGlobal("fetch", fetchMock);
+    const { loadTemplateIndex } = await import("../jianzi-template");
+
+    const first = await loadTemplateIndex("data/index.json");
+    const second = await loadTemplateIndex("data/index.json");
+
+    expect(first).toBe(second);
+    expect(first.size).toBe(64);
+    // 缺省 truths 补成空数组，而不是 undefined（下游会直接 .length）
+    expect(first.entries[0].truths).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("并发调用共享同一次请求，不会下两遍", async () => {
+    vi.resetModules();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => INDEX_JSON });
+    vi.stubGlobal("fetch", fetchMock);
+    const { loadTemplateIndex } = await import("../jianzi-template");
+
+    const [a, b] = await Promise.all([
+      loadTemplateIndex("data/index.json"),
+      loadTemplateIndex("data/index.json"),
+    ]);
+
+    expect(a).toBe(b);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("HTTP 非 2xx 抛错，失败后清掉 pending 可重试", async () => {
+    vi.resetModules();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 404, text: async () => "" })
+      .mockResolvedValueOnce({ ok: true, text: async () => INDEX_JSON });
+    vi.stubGlobal("fetch", fetchMock);
+    const { loadTemplateIndex } = await import("../jianzi-template");
+
+    await expect(loadTemplateIndex("data/index.json")).rejects.toThrow("HTTP 404");
+    // finally 已清空 pendingFetch：再来一次会真的重试，而不是永远拿到失败结果
+    const ok = await loadTemplateIndex("data/index.json");
+    expect(ok.entries).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
