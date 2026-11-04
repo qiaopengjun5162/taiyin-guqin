@@ -57,15 +57,19 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   window.localStorage.clear();
+  // 重置用例会往 URL 上写 ?reset_token=，不清的话会漏进后面的用例
+  //（挂载时读 URL 直接跳重置表单）。
+  window.history.pushState({}, "", "/");
 });
 
 describe("AccountPanel 社区账号", () => {
-  it("未登录时展示登录表单，并如实说明边界（不做邮箱验证 / 找回要走管理员）", () => {
+  it("未登录时展示登录表单，并如实说明边界（不做邮箱验证 / 可自助找回）", () => {
     render(<AccountPanel />);
     expect(screen.getByLabelText("邮箱")).toBeInTheDocument();
     expect(screen.getByLabelText("口令")).toBeInTheDocument();
     expect(screen.getByText(/不做邮箱验证/)).toBeInTheDocument();
-    expect(screen.getByText(/联系管理员重置/)).toBeInTheDocument();
+    expect(screen.getByText(/自助找回/)).toBeInTheDocument();
+    expect(screen.getByText(/管理员重置/)).toBeInTheDocument();
   });
 
   it("登录成功：显示昵称与登出入口，并记住会话", async () => {
@@ -170,5 +174,71 @@ describe("AccountPanel 社区账号", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(screen.getByText(/已登录：张琴友/)).toBeInTheDocument();
+  });
+
+  it("忘了口令：填邮箱寄链接，提示统一话术（不泄露是否注册过）", async () => {
+    fetchMock = routeFetch({ "/auth/forgot-password": { body: { ok: true } } });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AccountPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "忘了口令？" }));
+    fireEvent.change(screen.getByLabelText("邮箱"), {
+      target: { value: "qin@you.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "寄重置链接" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/auth/forgot-password");
+    expect(JSON.parse(String(init.body))).toEqual({ email: "qin@you.com" });
+    // 后端不区分注册与否，提示也必须是同一句话——「该邮箱未注册」就是枚举漏洞
+    expect(
+      await screen.findByText(/如果这个邮箱注册过/),
+    ).toBeInTheDocument();
+  });
+
+  it("邮件链接 (?reset_token=) 直达重置表单，设完新口令回登录", async () => {
+    window.history.pushState({}, "", "/?reset_token=tok-abc");
+    fetchMock = routeFetch({ "/auth/reset-password": { body: { ok: true } } });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AccountPanel />);
+
+    // 直接就是重置表单，令牌已自动带上，不逼用户抄令牌
+    fireEvent.change(await screen.findByLabelText("新口令"), {
+      target: { value: "brand-new-5678" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "设为新口令" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/auth/reset-password");
+    expect(JSON.parse(String(init.body))).toEqual({
+      token: "tok-abc",
+      new_password: "brand-new-5678",
+    });
+    expect(await screen.findByText(/口令已改/)).toBeInTheDocument();
+    // 回到登录表单
+    expect(screen.getByLabelText("口令")).toBeInTheDocument();
+  });
+
+  it("重置失败（链接无效）：原样展示后端文案", async () => {
+    window.history.pushState({}, "", "/?reset_token=expired-token");
+    fetchMock = routeFetch({
+      "/auth/reset-password": {
+        body: { error: "链接无效或已过期，请重新申请找回" },
+        status: 400,
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AccountPanel />);
+
+    fireEvent.change(await screen.findByLabelText("新口令"), {
+      target: { value: "brand-new-5678" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "设为新口令" }));
+
+    expect(
+      await screen.findByText(/链接无效或已过期/),
+    ).toBeInTheDocument();
   });
 });

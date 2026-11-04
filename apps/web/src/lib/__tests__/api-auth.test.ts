@@ -264,3 +264,69 @@ describe("api: 收藏跟账号走", () => {
     expect(page.total).toBe(7);
   });
 });
+
+describe("api: 找回口令", () => {
+  it("申请找回：POST /auth/forgot-password，不留下登录态", async () => {
+    const api = await import("@/lib/api");
+    const auth = await import("@/lib/auth");
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+    await api.requestPasswordReset("qin@you.com");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/auth/forgot-password");
+    expect(JSON.parse(options.body)).toEqual({ email: "qin@you.com" });
+    // 找回 ≠ 登录：接口只寄信，不产生会话
+    expect(auth.getSessionToken()).toBe("");
+  });
+
+  it("凭令牌重置：POST /auth/reset-password，成功后也不自动登录", async () => {
+    const api = await import("@/lib/api");
+    const auth = await import("@/lib/auth");
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+    await api.resetPasswordWithToken("tok-abc", "brand-new-5678");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/auth/reset-password");
+    expect(JSON.parse(options.body)).toEqual({
+      token: "tok-abc",
+      new_password: "brand-new-5678",
+    });
+    // 改密后旧会话都被踢，服务端也不发新会话——用户用新口令正常登录
+    expect(auth.getSessionToken()).toBe("");
+  });
+});
+
+describe("api: 找回口令", () => {
+  it("申请找回：POST /auth/forgot-password，不留下登录态", async () => {
+    const api = await import("@/lib/api");
+    const auth = await import("@/lib/auth");
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+    await api.requestPasswordReset("qin@you.com");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/auth/forgot-password");
+    expect(JSON.parse(options.body)).toEqual({ email: "qin@you.com" });
+    // 找回 ≠ 登录：接口只寄信，不产生会话
+    expect(auth.getSessionToken()).toBe("");
+  });
+
+  it("凭令牌重置：POST /auth/reset-password，成功后也不自动登录", async () => {
+    const api = await import("@/lib/api");
+    const auth = await import("@/lib/auth");
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+    await api.resetPasswordWithToken("tok-abc", "brand-new-5678");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/auth/reset-password");
+    expect(JSON.parse(options.body)).toEqual({
+      token: "tok-abc",
+      new_password: "brand-new-5678",
+    });
+    // 改密后旧会话都被踢，服务端也不发新会话——用户用新口令正常登录
+    expect(auth.getSessionToken()).toBe("");
+  });
+});

@@ -120,11 +120,27 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-/// 管理端：给指定邮箱重置口令（过渡版「找回」——自助找回要等邮件通道）。
+/// 管理端：给指定邮箱重置口令（自助找回的运维兜底——用户没邮箱可用 / SMTP 故障时）。
 #[derive(Debug, Deserialize)]
 pub struct AdminResetPasswordRequest {
     pub email: String,
     /// 省略则服务端生成一次性口令并在响应里回显**一次**，由管理员转告本人。
     /// 回显一次是刻意的：服务端只存 Argon2 散列，明文口令过了这村没这店。
     pub new_password: Option<String>,
+}
+
+/// 自助找回口令第一步：提交邮箱，服务端把重置链接寄到该邮箱。
+///
+/// 响应对「注册过 / 没注册」必须一模一样——区分了就是账号枚举接口。
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+}
+
+/// 自助找回口令第二步：拿邮件里的一次性令牌设新口令。
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordWithTokenRequest {
+    /// 邮件链接里的令牌（`?reset_token=`）。
+    pub token: String,
+    pub new_password: String,
 }

@@ -16,8 +16,19 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # 会话 token / 盐的随机源
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# 找回口令的邮件通道。用 rustls 而不是 native-tls：镜像运行阶段是 distroless，
+# 没有系统 OpenSSL 可链；纯 Rust TLS 才能静态编进去。
+lettre = { version = "0.11", default-features = false, features = [
+    "builder",
+    "smtp-transport",
+    "tokio1",
+    "tokio1-rustls-tls",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 找回口令令牌的存库散列（sha256）。令牌本身 256 位熵，不需要慢散列；
+# 慢散列是给低熵口令用的，套在高熵令牌上纯属浪费每次请求几百毫秒。
+sha2 = "0.10"
 sqlx = { version = "0.8", features = [
     "runtime-tokio",
     "tls-rustls",

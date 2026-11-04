@@ -68,6 +68,15 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       # 识别分流：auto（默认，模板优先）/ template / llm（强制走视觉模型，评测用）
       RECOGNIZE_MODE: ${RECOGNIZE_MODE:-auto}
+      # 找回口令的邮件通道。不配 SMTP_HOST 则重置邮件只进日志、不真发出——
+      # 生产必须配，否则「自助找回」等于没通。
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      # 重置链接的站点前缀（默认 GitHub Pages）；换前端部署时改这里。
+      APP_BASE_URL: ${APP_BASE_URL:-https://qiaopengjun5162.github.io/taiyin-guqin}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       # 只绑本机：外网访问必须走反向代理。绑 0.0.0.0 等于把无 TLS 的接口直接挂公网。

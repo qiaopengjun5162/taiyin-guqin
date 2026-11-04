@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
     extract::{Extension, Path, Query, State},
-    http::{HeaderMap, HeaderValue, Method},
+    http::{HeaderMap, HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
     response::IntoResponse,
     routing::{get, post, put},
@@ -29,9 +29,11 @@ use crate::llm::{
     SelectRequest, SelectResponse, heuristic_selections, recognize_jianzi_with_llm,
     recognize_sheet_with_llm, select_with_llm,
 };
+use crate::mailer::{Mailer, OutgoingMail};
 use crate::models::{
-    AdminResetPasswordRequest, CreateScoreRequest, LoginRequest, PublicUser, RegisterRequest,
-    ReportedScore, Score, ScoreListItem, UpdateScoreRequest, User,
+    AdminResetPasswordRequest, CreateScoreRequest, ForgotPasswordRequest, LoginRequest, PublicUser,
+    RegisterRequest, ReportedScore, ResetPasswordWithTokenRequest, Score, ScoreListItem,
+    UpdateScoreRequest, User,
 };
 use crate::sheet_segment;
 use crate::template_match::{self, RecognizeMode};
@@ -138,6 +140,13 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .route("/api/v1/auth/register", post(register))
         .route("/api/v1/auth/login", post(login))
         .route("/api/v1/auth/logout", post(logout))
+        // 找回口令两步：申请（寄信）与凭令牌重置。都走认证限流——
+        // 重置要算一次 Argon2（故意慢），不设限就是单核 CPU 开关。
+        .route("/api/v1/auth/forgot-password", post(forgot_password))
+        .route(
+            "/api/v1/auth/reset-password",
+            post(reset_password_with_token),
+        )
         .route_layer(GovernorLayer::new(auth_limiter));
 
     // `/auth/me` 刻意**不进**认证限流组：它是只读的，没有口令散列开销，
@@ -171,6 +180,11 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         per_device: config.publish_quota_per_device,
     };
     let admin_auth = AdminAuth(config.admin_token.as_deref().map(Arc::from));
+    // 找回口令的发信件：发信后端 + 链接站点前缀，整包走 Extension（同配额先例）。
+    let reset_mailer = ResetMailer {
+        mailer: config.mailer.clone(),
+        app_base_url: config.app_base_url.clone(),
+    };
 
     let translate_routes = Router::new()
         .route("/api/v1/translate/select", post(select_candidates))
@@ -214,6 +228,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .layer(cors)
         .layer(Extension(publish_quota))
         .layer(Extension(admin_auth))
+        .layer(Extension(reset_mailer))
         .with_state(state)
 }
 
@@ -348,6 +363,16 @@ async fn reserve_publish_slot(
 /// 管理员口令（从配置塞进请求扩展）。`None` = 管理端未启用。
 #[derive(Clone, Debug)]
 struct AdminAuth(Option<Arc<str>>);
+
+/// 找回口令的发信件（发信后端 + 重置链接的站点前缀）。
+///
+/// 用 `Extension` 而不是塞进 `AppState`：和 [`AdminAuth`] / [`PublishQuota`] 一样，
+/// 这是启动时装好的**策略件**，不是连接池那类基础资源。
+#[derive(Clone)]
+struct ResetMailer {
+    mailer: Mailer,
+    app_base_url: String,
+}
 
 /// 常数时间比较，避免「按字节提前返回」泄露口令前缀。
 ///
@@ -532,27 +557,20 @@ async fn admin_reset_password(
     };
     let password_hash = accounts::hash_password(&password)?;
 
+    // 查无此人给 404：这是管理端，管理员需要知道是不是邮箱写错了
+    //（不是登录接口，不必防账号枚举）。
+    let user_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_optional(&state.pool)
+        .await?;
+    let Some(user_id) = user_id else {
+        return Err(AppError::NotFound);
+    };
+
     // 改密与踢会话放一个事务：分开做的话，中间崩一下会留下
     // 「口令已是新的、旧会话还活着」的窗口——那正是重置要堵的洞。
     let mut tx = state.pool.begin().await?;
-    let user_id: Uuid = match sqlx::query_scalar::<_, Uuid>(
-        "UPDATE users SET password_hash = $1 WHERE email = $2 RETURNING id",
-    )
-    .bind(&password_hash)
-    .bind(&email)
-    .fetch_one(&mut *tx)
-    .await
-    {
-        Ok(id) => id,
-        // 查无此人给 404：这是管理端，管理员需要知道是不是邮箱写错了
-        //（不是登录接口，不必防账号枚举）。
-        Err(sqlx::Error::RowNotFound) => return Err(AppError::NotFound),
-        Err(e) => return Err(e.into()),
-    };
-    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
+    set_password_and_revoke_tx(&mut tx, user_id, &password_hash).await?;
     tx.commit().await?;
 
     let mut body = json!({"email": email, "user_id": user_id, "temporary": temporary});
@@ -560,6 +578,139 @@ async fn admin_reset_password(
         body["temporary_password"] = json!(password);
     }
     Ok(Json(body))
+}
+
+/// 改密 + 吊销该用户全部会话，在**调用方的事务**里执行。
+///
+/// 必须与改密同事务：分开做会留下「口令已是新的、旧会话还活着」的窗口，
+/// 那正是重置要堵的洞（偷到旧登录态的人照样能进）。
+/// 两个调用方（管理端重置 / 自助找回）各自还有别的写库要放同一个事务。
+async fn set_password_and_revoke_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+        .bind(password_hash)
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// 自助找回口令第一步：把一次性重置链接寄到注册邮箱。
+///
+/// **防账号枚举**：注册过与没注册过，响应一模一样（都是 202）。
+/// 区分了的话，这个接口就成了「批量探测哪些邮箱在本站注册过」的工具。
+/// 发信失败同样不影响响应——报错等于告诉旁人「这个邮箱注册过」；失败记日志。
+async fn forgot_password(
+    State(state): State<AppState>,
+    Extension(mailer): Extension<ResetMailer>,
+    Json(req): Json<ForgotPasswordRequest>,
+) -> AppResult<(StatusCode, Json<serde_json::Value>)> {
+    // 形状校验照常报错（注册接口对同样的坏输入也报错），不泄露「是否注册」。
+    let email = accounts::normalize_email(&req.email)?;
+
+    let user_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_optional(&state.pool)
+        .await?;
+
+    if let Some(user_id) = user_id {
+        let (token, token_hash) = accounts::generate_reset_token();
+        // 连点几次「发链接」时旧链接一起作废：不然「到底哪封算数」是笔糊涂账，
+        // 旧信躺在信箱里也多一分被误用的敞口。
+        sqlx::query("DELETE FROM password_reset_tokens WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&state.pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)",
+        )
+        .bind(user_id)
+        .bind(&token_hash)
+        .bind(accounts::reset_token_expires_at())
+        .execute(&state.pool)
+        .await?;
+
+        let link = format!(
+            "{}/?reset_token={}",
+            mailer.app_base_url.trim_end_matches('/'),
+            token
+        );
+        let mail = OutgoingMail {
+            to: email.clone(),
+            subject: "太音古琴 · 重置口令".into(),
+            body: format!(
+                "你申请了重置太音古琴的口令。\n\n\
+                 点开下面的链接设新口令（{ttl} 分钟内有效，仅本次申请有效）：\n\n\
+                 {link}\n\n\
+                 如果这不是你本人操作，忽略这封信即可——口令不会有任何变化。\n",
+                ttl = accounts::RESET_TOKEN_TTL_MINUTES,
+            ),
+        };
+        if let Err(e) = mailer.mailer.send(mail).await {
+            tracing::error!(error = %e, to = %email, "找回口令邮件发送失败");
+        }
+    }
+
+    // 注册过 / 没注册过，响应一模一样。202：信是异步寄出的，「已受理」而不是「已送达」。
+    Ok((StatusCode::ACCEPTED, Json(json!({"ok": true}))))
+}
+
+/// 自助找回口令第二步：凭邮件里的一次性令牌设新口令。
+///
+/// 令牌**一次有效**（用过即废）、有过期时间、只存 sha256 散列。
+/// 无效 / 过期 / 已用都回同一句话——区分了就是个「令牌是否猜对」的预言机。
+/// 改密与踢会话、废令牌在**同一事务**里（理由见 [`set_password_and_revoke_tx`]）。
+async fn reset_password_with_token(
+    State(state): State<AppState>,
+    Json(req): Json<ResetPasswordWithTokenRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 先验口令再消费令牌：口令太短就报错且令牌保持有效——
+    // 用户改个口令重来即可，不该逼他重新收一遍信。
+    accounts::validate_password(&req.new_password)?;
+    let password_hash = accounts::hash_password(&req.new_password)?;
+    let token_hash = accounts::hash_reset_token(req.token.trim());
+    // 无效令牌的统一话术（查不到 / 过期 / 已用都用它，不给预言机）。
+    const INVALID: &str = "链接无效或已过期，请重新申请找回";
+
+    let mut tx = state.pool.begin().await?;
+    // FOR UPDATE 锁定令牌行：两个请求拿同一令牌并发进来时，
+    // 后一个会等前一个提交后重判，看到 used_at 已置而拿不到行——单次有效才成立。
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT user_id FROM password_reset_tokens \
+         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now() \
+         FOR UPDATE",
+    )
+    .bind(&token_hash)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((user_id,)) = row else {
+        return Err(AppError::Validation(INVALID.into()));
+    };
+
+    set_password_and_revoke_tx(&mut tx, user_id, &password_hash).await?;
+    // 标记本令牌已用（单次有效），其余未用令牌一并作废（旧申请不再算数）。
+    sqlx::query("UPDATE password_reset_tokens SET used_at = now() WHERE token_hash = $1")
+        .bind(&token_hash)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "DELETE FROM password_reset_tokens \
+         WHERE user_id = $1 AND token_hash <> $2 AND used_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(&token_hash)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(Json(json!({"ok": true})))
 }
 
 ///

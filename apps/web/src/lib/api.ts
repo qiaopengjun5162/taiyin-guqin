@@ -461,6 +461,32 @@ export async function loginAccount(email: string, password: string): Promise<Aut
 }
 
 /**
+ * 申请找回口令：把一次性重置链接寄到注册邮箱。
+ *
+ * 后端对「注册过 / 没注册过」返回一模一样的响应（防账号枚举），
+ * 所以前端也不判别、更不能提示「该邮箱未注册」——提示了等于把枚举搬到界面上。
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await authRequest<{ ok: true }>("/api/v1/auth/forgot-password", { email });
+}
+
+/**
+ * 凭邮件里的一次性令牌设新口令（令牌用过即废）。
+ *
+ * 成功后旧会话会被服务端全部吊销，所以这里**不**顺手写登录态——
+ * 让用户用新口令走一次正常登录，语义最清楚。
+ */
+export async function resetPasswordWithToken(
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  await authRequest<{ ok: true }>("/api/v1/auth/reset-password", {
+    token,
+    new_password: newPassword,
+  });
+}
+
+/**
  * 登出：让服务端删掉会话行，再清本地。
  *
  * 即使请求失败也要清本地——「登出」这个动作本身不该依赖网络，

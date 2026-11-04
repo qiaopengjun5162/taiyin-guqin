@@ -9,6 +9,7 @@ pub mod db;
 mod error;
 pub mod favorites;
 pub mod llm;
+pub mod mailer;
 mod models;
 mod routes;
 pub mod sheet_segment;

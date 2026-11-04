@@ -4,6 +4,8 @@
 
 use std::env;
 
+use crate::mailer::Mailer;
+
 /// 服务端运行配置。
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -57,6 +59,15 @@ pub struct ServerConfig {
     /// 一把高熵口令 + 只读的管理端接口就够用，且不引入「谁把我设成管理员了」这类问题。
     /// **留空是安全的默认值**：没配就没有管理入口，不会因为忘记配置而敞开。
     pub admin_token: Option<String>,
+    /// 寄信后端（找回口令的重置链接从这里发出）。
+    ///
+    /// 放在配置里而不是 `AppState`：和 `admin_token` 一样是「启动时装好的策略件」，
+    /// 测试用 `..ServerConfig::default()` 就不用改一行（默认 `Log`，不真发信）。
+    pub mailer: Mailer,
+    /// 找回口令链接的站点前缀（重置链接 = `{app_base_url}/?reset_token=...`）。
+    ///
+    /// 生产是 GitHub Pages 的静态前端地址（含 basePath），开发填本机前端地址。
+    pub app_base_url: String,
 }
 
 impl ServerConfig {
@@ -89,6 +100,12 @@ impl ServerConfig {
             .ok()
             .filter(|t| !t.trim().is_empty());
 
+        // 发信后端自取所需环境变量（SMTP_HOST 等，见 mailer.rs）；没配则降级为日志模式。
+        let mailer = Mailer::from_env();
+        // 默认指向 GitHub Pages 的静态前端（含 basePath），换前端部署时用 APP_BASE_URL 覆盖。
+        let app_base_url = env::var("APP_BASE_URL")
+            .unwrap_or_else(|_| "https://qiaopengjun5162.github.io/taiyin-guqin".into());
+
         Self {
             database_url,
             allowed_origins,
@@ -104,6 +121,8 @@ impl ServerConfig {
             publish_quota_per_account,
             publish_quota_per_device,
             admin_token,
+            mailer,
+            app_base_url,
         }
     }
 
@@ -130,6 +149,9 @@ impl Default for ServerConfig {
             publish_quota_per_account: 100,
             publish_quota_per_device: 30,
             admin_token: None,
+            // 默认 Log（不真发信）——测试/开发没配 SMTP，绝不能默认往外发信
+            mailer: Mailer::default(),
+            app_base_url: "https://qiaopengjun5162.github.io/taiyin-guqin".into(),
         }
     }
 }

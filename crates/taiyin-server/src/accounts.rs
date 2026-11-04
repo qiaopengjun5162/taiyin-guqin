@@ -8,9 +8,8 @@
 //!
 //! ## 这一版刻意不做什么
 //!
-//! - **不做邮箱验证**：没有邮件通道，验证了也是假的。
-//! - **不做找回口令**：口令真丢了只能由管理员介入。这两条要在界面上如实说明，
-//!   不能让人以为「注册了就等于安全托管」。
+//! - **不做邮箱验证**：注册时不发验证邮件，假装验证了更糟。
+//!   （找回口令的令牌只发到注册邮箱本身，等于一种「控制该邮箱」的事后证明。）
 //! - **不用自证式 JWT**：会话 token 是随机 32 字节、存库、30 天过期，
 //!   登出即删行——因为「能吊销」比「无需查库」重要得多（泄露时可立刻止损）。
 //!
@@ -88,6 +87,39 @@ pub fn generate_session_token() -> String {
 fn fill_random(buf: &mut [u8]) {
     use rand::RngCore;
     rand::thread_rng().fill_bytes(buf);
+}
+
+/// 找回口令令牌的随机字节数（32 字节 = 256 位熵，穷举不可行）。
+const RESET_TOKEN_BYTES: usize = 32;
+/// 找回令牌有效期（分钟）。短到「邮件里的链接过一夜就作废」，
+/// 但够「收到信当场点开重置」。这是「邮件可能被别人看到」和「本人来得及操作」的折中。
+pub const RESET_TOKEN_TTL_MINUTES: i64 = 30;
+
+/// 生成找回口令的一次性令牌：返回 `(明文令牌, 存库的 sha256 散列)`。
+///
+/// 明文只进邮件、**不落库**；库里只存散列——和口令同理，拖库也拿不到能用的令牌。
+/// 散列用 sha256 而不是 Argon2：令牌本身是 256 位高熵随机串，没有字典攻击面，
+/// 慢散列在这里纯属每次请求白烧几百毫秒（那是给低熵口令准备的）。
+pub fn generate_reset_token() -> (String, String) {
+    let mut bytes = [0u8; RESET_TOKEN_BYTES];
+    fill_random(&mut bytes);
+    let token = URL_SAFE_NO_PAD.encode(bytes);
+    let hash = hash_reset_token(&token);
+    (token, hash)
+}
+
+/// 计算令牌的存库散列。找回时拿邮件里的明文算一遍散列去查库，
+/// 查不到就等于没这个令牌——不必回头比对明文。
+pub fn hash_reset_token(token: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    URL_SAFE_NO_PAD.encode(hasher.finalize())
+}
+
+/// 令牌过期时间点。
+pub fn reset_token_expires_at() -> DateTime<Utc> {
+    Utc::now() + Duration::minutes(RESET_TOKEN_TTL_MINUTES)
 }
 
 /// 一次性口令的长度：≥ `MIN_PASSWORD_LENGTH`（8），又短不到「随手就能猜」。
@@ -280,6 +312,21 @@ mod tests {
             a.chars()
                 .all(|c| c.is_ascii_alphanumeric() && !"0O1lI".contains(c))
         );
+    }
+
+    #[test]
+    fn reset_token_is_random_and_stored_as_hash() {
+        let (a, ha) = generate_reset_token();
+        let (b, hb) = generate_reset_token();
+        assert_ne!(a, b, "两次生成必须不同，否则随机源没接上");
+        assert_ne!(ha, hb);
+        // 存库的必须是散列而不是明文（明文只进邮件）
+        assert_ne!(ha, a);
+        assert_ne!(hb, b);
+        // 散列可复算：找回时拿明文算一遍散列查库即可
+        assert_eq!(hash_reset_token(&a), ha);
+        // 令牌 URL 安全、解得开 32 字节（可直接拼进链接）
+        assert_eq!(URL_SAFE_NO_PAD.decode(&a).unwrap().len(), RESET_TOKEN_BYTES);
     }
 
     #[test]

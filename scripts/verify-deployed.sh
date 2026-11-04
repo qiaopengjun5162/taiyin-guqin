@@ -214,7 +214,39 @@ else
   echo "⏭  跳过重置口令完整链路（未提供 ADMIN_TOKEN 环境变量，或第 8 步注册失败）"
 fi
 
-# ── 10. 收尾：删掉测试谱，别把验收垃圾留在社区里 ──────────
+# ── 10. 自助找回口令（邮件令牌） ────────────────────────────
+# 没注册过的邮箱申请找回：必须 202 且与注册过的响应一模一样（防枚举）。
+# 这里只验「接口通 + 不泄露」；信真的发没发要看服务器日志 / SMTP 配置，
+# 不在 curl 能验的范围里。
+code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST \
+  "$BASE/api/v1/auth/forgot-password" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"no-such-$RANDOM@example.com\"}" 2>/dev/null)
+if [[ "$code" == "202" ]]; then
+  ok "找回口令（未注册邮箱）→ 202"
+elif [[ "$code" == "404" ]]; then
+  bad "找回口令接口不存在（404）—— 后端是旧版镜像，先升级再验收"
+else
+  bad "找回口令应 202（不管邮箱是否注册过），实际 $code —— 有成为账号枚举接口的嫌疑"
+fi
+
+# 注册过的邮箱申请找回：同样必须 202（两次一致才算真防住枚举）
+code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST \
+  "$BASE/api/v1/auth/forgot-password" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\"}" 2>/dev/null)
+[[ "$code" == "202" ]] && ok "找回口令（注册过邮箱）→ 202（与未注册一致，不泄露）" \
+  || bad "找回口令应 202，实际 $code"
+
+# 乱令牌重置：必须 400（无效 / 过期 / 已用都一样拒，不给「猜对没有」的预言机）
+code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST \
+  "$BASE/api/v1/auth/reset-password" \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"not-a-real-token","new_password":"verify-pass-9999"}' 2>/dev/null)
+[[ "$code" == "400" ]] && ok "乱令牌重置 → 400（无效链接一律拒绝）" \
+  || bad "乱令牌应 400，实际 $code"
+
+# ── 11. 收尾：删掉测试谱，别把验收垃圾留在社区里 ──────────
 if [[ -n "$ID" ]]; then
   code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X DELETE "$BASE/api/v1/scores/$ID" \
     -H "x-owner-token: $KEY" 2>/dev/null)
@@ -228,4 +260,4 @@ if [[ "$FAIL" -gt 0 ]]; then
   echo "结论：**还不能给用户用**，先修上面标 ❌ 的项。"
   exit 1
 fi
-echo "结论：这台后端对公网可用，账号 / 发布 / 收藏 / 检索 / 管理端闸门都通。"
+echo "结论：这台后端对公网可用，账号 / 发布 / 收藏 / 检索 / 管理端闸门 / 自助找回都通。"

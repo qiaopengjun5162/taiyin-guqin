@@ -19,10 +19,10 @@ function useSession(): Session | null {
   return useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
 }
 
-type Mode = "login" | "register";
+type Mode = "login" | "register" | "forgot" | "reset";
 
 /**
- * 社区账号：登录 / 注册 / 登出。
+ * 社区账号：登录 / 注册 / 登出 / 找回口令。
  *
  * ## 为什么要有它
  *
@@ -31,9 +31,9 @@ type Mode = "login" | "register";
  *
  * ## 如实写清的边界
  *
- * 不做邮箱验证（没有邮件通道），也没有自助找回（同样卡在邮件通道上）——
- * 忘了口令走管理员重置。这两件事写在界面上，
- * 而不是等用户丢了口令才发现——把「注册过」当成「安全托管」是最容易吃亏的误会。
+ * 不做邮箱验证（注册时不验，找回口令的链接只发到注册邮箱本身，
+ * 等于事后证明「控制该邮箱」）。找回口令走邮件链接（30 分钟内有效、一次有效），
+ * 真收不到信再找管理员重置。
  */
 export function AccountPanel() {
   const session = useSession();
@@ -43,6 +43,10 @@ export function AccountPanel() {
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 提示（非错误）：如「重置链接已寄出」。 */
+  const [info, setInfo] = useState<string | null>(null);
+  /** 邮件链接带回来的一次性重置令牌（`?reset_token=`）。 */
+  const [resetToken, setResetToken] = useState<string | null>(null);
 
   /**
    * 挂载时校验会话是否还有效。
@@ -60,9 +64,61 @@ export function AccountPanel() {
     });
   }, [session]);
 
+  /**
+   * 邮件里的重置链接带 `?reset_token=`，点开就直接进重置表单——
+   * 让用户自己把令牌抄进表单是纯折磨。链接由后端生成（见 forgot-password），
+   * 这里只负责读出来；读不到就照常显示登录。
+   */
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("reset_token");
+    if (token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载后读 URL 参数（预渲染时没有 window，只能在 effect 里读）
+      setResetToken(token);
+      setMode("reset");
+    }
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setInfo(null);
+    if (mode === "forgot") {
+      // 不校验「邮箱是否注册过」——后端都不说，界面更不能说（防枚举）
+      setBusy(true);
+      try {
+        await api.requestPasswordReset(email);
+        // 统一话术：注册过 / 没注册过都一样，用户也不该从提示里看出差别
+        setInfo("如果这个邮箱注册过，重置链接已经寄出（30 分钟内有效）。没收到就检查一下邮箱写没写对。");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "发送失败");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (mode === "reset") {
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        setError(`口令至少 ${MIN_PASSWORD_LENGTH} 位`);
+        return;
+      }
+      if (!resetToken) {
+        setError("链接不对——请从邮件里的链接重新进入");
+        return;
+      }
+      setBusy(true);
+      try {
+        await api.resetPasswordWithToken(resetToken, password);
+        setPassword("");
+        setResetToken(null);
+        setMode("login");
+        setInfo("口令已改，请用新口令登录。旧的登录状态都已退出。");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "重置失败");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`口令至少 ${MIN_PASSWORD_LENGTH} 位`);
       return;
@@ -121,63 +177,159 @@ export function AccountPanel() {
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-2">
-          <p className="text-[10px] leading-relaxed text-stone-500">
-            登录后可跨设备管理自己发布的谱。不登录也能发布——只是那首谱只认这台设备。
-          </p>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            placeholder="邮箱"
-            aria-label="邮箱"
-            className={inputClass}
-          />
-          {mode === "register" && (
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              maxLength={40}
-              placeholder="昵称（可选，留空则用邮箱显示）"
-              aria-label="昵称"
-              className={inputClass}
-            />
+          {mode === "reset" ? (
+            <>
+              <p className="text-[10px] leading-relaxed text-stone-500">
+                设一个新口令（至少 {MIN_PASSWORD_LENGTH} 位）。改完后旧的登录状态都会退出。
+              </p>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={MIN_PASSWORD_LENGTH}
+                autoComplete="new-password"
+                placeholder={`新口令（至少 ${MIN_PASSWORD_LENGTH} 位）`}
+                aria-label="新口令"
+                className={inputClass}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-600 hover:text-stone-900 hover:border-amber-700/50 disabled:opacity-40 transition-all"
+                >
+                  {busy ? "处理中…" : "设为新口令"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setError(null);
+                    setInfo(null);
+                  }}
+                  className="px-2 py-1 text-[10px] tracking-wider text-stone-500 hover:text-stone-800 transition-all"
+                >
+                  返回登录
+                </button>
+              </div>
+            </>
+          ) : mode === "forgot" ? (
+            <>
+              <p className="text-[10px] leading-relaxed text-stone-500">
+                填注册时用的邮箱，寄一条重置链接过去（30 分钟内有效、只能用一次）。
+              </p>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                placeholder="邮箱"
+                aria-label="邮箱"
+                className={inputClass}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-600 hover:text-stone-900 hover:border-amber-700/50 disabled:opacity-40 transition-all"
+                >
+                  {busy ? "寄出中…" : "寄重置链接"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setError(null);
+                    setInfo(null);
+                  }}
+                  className="px-2 py-1 text-[10px] tracking-wider text-stone-500 hover:text-stone-800 transition-all"
+                >
+                  返回登录
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[10px] leading-relaxed text-stone-500">
+                登录后可跨设备管理自己发布的谱。不登录也能发布——只是那首谱只认这台设备。
+              </p>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                placeholder="邮箱"
+                aria-label="邮箱"
+                className={inputClass}
+              />
+              {mode === "register" && (
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  maxLength={40}
+                  placeholder="昵称（可选，留空则用邮箱显示）"
+                  aria-label="昵称"
+                  className={inputClass}
+                />
+              )}
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={MIN_PASSWORD_LENGTH}
+                autoComplete={mode === "register" ? "new-password" : "current-password"}
+                placeholder={`口令（至少 ${MIN_PASSWORD_LENGTH} 位）`}
+                aria-label="口令"
+                className={inputClass}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-600 hover:text-stone-900 hover:border-amber-700/50 disabled:opacity-40 transition-all"
+                >
+                  {busy ? "处理中…" : mode === "register" ? "注册" : "登录"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode(mode === "login" ? "register" : "login");
+                    setError(null);
+                    setInfo(null);
+                  }}
+                  className="px-2 py-1 text-[10px] tracking-wider text-stone-500 hover:text-stone-800 transition-all"
+                >
+                  {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
+                </button>
+                {mode === "login" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("forgot");
+                      setError(null);
+                      setInfo(null);
+                    }}
+                    className="px-2 py-1 text-[10px] tracking-wider text-stone-500 hover:text-stone-800 transition-all"
+                  >
+                    忘了口令？
+                  </button>
+                )}
+              </div>
+              <p className="text-[9px] leading-relaxed text-stone-400">
+                不做邮箱验证。口令忘了点「忘了口令？」自助找回；收不到信再找管理员重置。
+              </p>
+            </>
           )}
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={MIN_PASSWORD_LENGTH}
-            autoComplete={mode === "register" ? "new-password" : "current-password"}
-            placeholder={`口令（至少 ${MIN_PASSWORD_LENGTH} 位）`}
-            aria-label="口令"
-            className={inputClass}
-          />
-          <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="px-3 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-600 hover:text-stone-900 hover:border-amber-700/50 disabled:opacity-40 transition-all"
-            >
-              {busy ? "处理中…" : mode === "register" ? "注册" : "登录"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode(mode === "login" ? "register" : "login");
-                setError(null);
-              }}
-              className="px-2 py-1 text-[10px] tracking-wider text-stone-500 hover:text-stone-800 transition-all"
-            >
-              {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
-            </button>
-          </div>
-          <p className="text-[9px] leading-relaxed text-stone-400">
-            不做邮箱验证，也没有自助找回——口令请自己记牢；真忘了请联系管理员重置。
-          </p>
+          {info && (
+            <p className="text-[10px] tracking-wider text-emerald-700/80" role="status">
+              {info}
+            </p>
+          )}
           {error && (
             <p className="text-[10px] tracking-wider text-red-500/90" role="alert">
               {error}
