@@ -4,17 +4,17 @@ name: Deploy Smoke
 # 不是代码，而是变量没接上、探针顺序不对、端口撞了、库还没 ready 后端就去跑迁移——
 # 这些用 `docker compose config` 一个都看不出来，只有真起一遍才暴露。
 #
-# 它跑的正是「3A 拉成品镜像」那条路：日志里 ghcr 404 / unauthorized 都会在这里先红，
-# 而不是等上线当天才发现镜像是私有的。
+# 它跑的就是「3A 拉成品镜像」那条路，等于把上线当天要敲的命令提前跑一遍。
 #
-# 断言刻意只留 5 条（编排能否起来 + 关键语义没退化）。API 的完整语义由
-# runbook-smoke.yml 里的 scripts/smoke-backend.sh 覆盖，两者不重复。
+# 验收本身不写在这里，而是调 `scripts/verify-deployed.sh`——同一条命令既能对
+# 127.0.0.1 跑，也能对 https://taiyin.你的域名 跑。脚本能被 CI 每天跑，才不会烂。
 
 on:
   workflow_dispatch:
   push:
     paths:
       - deploy/**
+      - scripts/verify-deployed.sh
       - .github/workflows/deploy-smoke.yml
 
 permissions:
@@ -36,7 +36,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 起编排并验收
+      - name: 起编排（手册 3A 的三条命令）
         working-directory: deploy
         run: |
           set -euo pipefail
@@ -47,53 +47,26 @@ jobs:
             -e 's#^ALLOWED_ORIGINS=.*#ALLOWED_ORIGINS=https://qiaopengjun5162.github.io#' \
             -e 's#^ADMIN_TOKEN=.*#ADMIN_TOKEN=smoke_admin_9f3a#' \
             .env
-
-          echo "▶ 拉镜像并起服务（这就是手册 3A 的三条命令）"
           docker compose up -d
           docker compose ps
 
-          BASE=http://127.0.0.1:13001
-          ready=0
           for i in $(seq 1 60); do
-            if curl -fsS "$BASE/health" >/dev/null 2>&1; then ready=1; break; fi
+            if curl -fsS http://127.0.0.1:13001/health >/dev/null 2>&1; then
+              echo "✅ 编排起得来，/health 200（第 $i 次探测；迁移在启动时自动跑完）"
+              exit 0
+            fi
             sleep 2
           done
-          if [[ "$ready" != "1" ]]; then
-            echo "❌ 后端一直没起来，日志如下"
-            docker compose logs --tail 60 server || true
-            docker compose logs --tail 30 pg || true
-            exit 1
-          fi
-          echo "✅ 编排起得来，/health 200（迁移在启动时自动跑完）"
 
-          echo "▶ 白名单内的来源拿到 allow-origin"
-          curl -sS -D - -o /dev/null "$BASE/health" \
-            -H "Origin: https://qiaopengjun5162.github.io" \
-            | grep -qi "access-control-allow-origin: https://qiaopengjun5162.github.io" \
-            || { echo "❌ 合法来源没拿到 allow-origin"; exit 1; }
-          echo "✅ 合法来源正确回显"
+          echo "❌ 后端一直没起来，日志如下"
+          docker compose logs --tail 60 server || true
+          docker compose logs --tail 30 pg || true
+          exit 1
 
-          echo "▶ 陌生来源拿不到 allow-origin"
-          if curl -sS -D - -o /dev/null "$BASE/health" -H "Origin: https://evil.example" \
-            | grep -qi "access-control-allow-origin"; then
-            echo "❌ 陌生来源也拿到了 allow-origin（ALLOWED_ORIGINS 没生效）"; exit 1
-          fi
-          echo "✅ 陌生来源被拒"
-
-          echo "▶ 发布 → 列表可见（数据库真的落盘，不是内存里跑）"
-          NEW=$(curl -sS -X POST "$BASE/api/v1/scores" \
-            -H 'Content-Type: application/json' -H 'x-owner-token: deploy-smoke-key' \
-            -d '{"title":"编排冒烟","notes":[],"tuning":"zhengdiao","author":"deploy-smoke"}')
-          echo "$NEW" | grep -q '"id"' || { echo "❌ 发布失败：$NEW"; exit 1; }
-          curl -sS "$BASE/api/v1/scores" | grep -q "编排冒烟" \
-            || { echo "❌ 列表里找不到刚发布的谱"; exit 1; }
-          echo "✅ 发布与列表贯通"
-
-          echo "▶ 无身份发布仍是 401"
-          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/scores" \
-            -H 'Content-Type: application/json' -d '{"title":"无主谱","notes":[]}')
-          [[ "$code" == "401" ]] || { echo "❌ 无身份发布应 401，实际 $code"; exit 1; }
-          echo "✅ 401"
+      - name: 验收（同一条脚本，线上也是它）
+        run: |
+          FRONTEND_ORIGIN=https://qiaopengjun5162.github.io \
+            bash scripts/verify-deployed.sh http://127.0.0.1:13001
 
       - name: 收尾（无论如何都清掉，避免残留容器占着 runner）
         if: always()
