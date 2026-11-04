@@ -195,7 +195,10 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .route("/api/v1/admin/scores/{id}/hide", post(hide_score))
         .route("/api/v1/admin/scores/{id}/restore", post(restore_score))
         // 过渡版「找回口令」：管理员给指定邮箱设新口令，并踢掉其全部会话
-        .route("/api/v1/admin/users/reset-password", post(admin_reset_password))
+        .route(
+            "/api/v1/admin/users/reset-password",
+            post(admin_reset_password),
+        )
         // 收藏：跟账号走，故三条都要求登录态（见 `favorites.rs`）
         .route(
             "/api/v1/scores/{id}/favorite",

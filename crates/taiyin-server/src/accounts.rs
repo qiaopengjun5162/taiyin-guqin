@@ -276,9 +276,10 @@ mod tests {
         // 必须过登录那关的长度规则，否则「生成的口令登不进去」
         assert!(validate_password(&a).is_ok());
         // 去掉易混字符：念给对方听不能出现 0/O/1/l/I
-        assert!(a
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() && !"0O1lI".contains(c)));
+        assert!(
+            a.chars()
+                .all(|c| c.is_ascii_alphanumeric() && !"0O1lI".contains(c))
+        );
     }
 
     #[test]

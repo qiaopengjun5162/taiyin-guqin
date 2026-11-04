@@ -36,6 +36,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 用当前提交编镜像（防「拉到旧 latest」的竞态）
+        # Deploy Smoke 和 Backend Image 是并行跑的：直接 compose up 会去 ghcr 拉
+        # latest，而 latest 此刻常常还是**上一个提交**的镜像——新加的接口会被验成
+        # 404，看着像代码坏了，其实只是镜像没跟上。这里用当前提交本地编一份、打成
+        # 同一个标签；compose 的 pull_policy 默认 missing，本地有就不会再拉。
+        run: docker build -t ghcr.io/qiaopengjun5162/taiyin-server:latest .
+
       - name: 起编排（手册 3A 的三条命令）
         working-directory: deploy
         run: |

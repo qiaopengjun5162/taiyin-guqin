@@ -103,16 +103,14 @@ async fn register(router: &Router, email: &str, password: &str) -> String {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "注册应成功：{body}");
-    body["token"].as_str().expect("注册响应带 token").to_string()
+    body["token"]
+        .as_str()
+        .expect("注册响应带 token")
+        .to_string()
 }
 
 /// 登录并断言状态码，返回 token（仅成功时有值）。
-async fn login(
-    router: &Router,
-    email: &str,
-    password: &str,
-    expect: StatusCode,
-) -> Option<String> {
+async fn login(router: &Router, email: &str, password: &str, expect: StatusCode) -> Option<String> {
     let (status, body) = send(
         router,
         "POST",
@@ -122,7 +120,10 @@ async fn login(
         None,
     )
     .await;
-    assert_eq!(status, expect, "登录 {email} 期望 {expect}，实际 {status}：{body}");
+    assert_eq!(
+        status, expect,
+        "登录 {email} 期望 {expect}，实际 {status}：{body}"
+    );
     body["token"].as_str().map(String::from)
 }
 
@@ -143,7 +144,10 @@ async fn admin_endpoint_closed_when_token_not_configured() {
     .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
     assert!(
-        body["error"].as_str().unwrap_or_default().contains("ADMIN_TOKEN"),
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("ADMIN_TOKEN"),
         "未配置时要直说缺什么，而不是含糊的 Not found：{body}"
     );
 }
@@ -195,9 +199,11 @@ async fn reset_with_new_password_kills_old_password_and_sessions() {
     );
 
     // 旧口令登不进
-    assert!(login(&r, &email, "old-pass-1234", StatusCode::UNAUTHORIZED)
-        .await
-        .is_none());
+    assert!(
+        login(&r, &email, "old-pass-1234", StatusCode::UNAUTHORIZED)
+            .await
+            .is_none()
+    );
     // 新口令能进
     assert!(
         login(&r, &email, "brand-new-5678", StatusCode::OK)
@@ -246,9 +252,11 @@ async fn generated_temporary_password_is_usable_and_revokes_sessions() {
     );
 
     // 旧口令作废
-    assert!(login(&r, &email, "old-pass-1234", StatusCode::UNAUTHORIZED)
-        .await
-        .is_none());
+    assert!(
+        login(&r, &email, "old-pass-1234", StatusCode::UNAUTHORIZED)
+            .await
+            .is_none()
+    );
     // 一次性口令真的能登——这是「生成出来登不进去」的防线
     assert!(login(&r, &email, &temp, StatusCode::OK).await.is_some());
     // 旧会话同样被踢

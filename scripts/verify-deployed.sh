@@ -179,6 +179,10 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST \
   -d '{"email":"nobody@example.com","new_password":"whatever-1234"}' 2>/dev/null)
 if [[ "$code" == "401" || "$code" == "503" ]]; then
   ok "重置口令无管理凭证 → $code（不是谁都能改别人口令）"
+elif [[ "$code" == "404" ]]; then
+  # 404 = 路由根本不存在：这台机器跑的是**旧版镜像**（还没有这个接口），
+  # 不是闸门问题。升级镜像后再验收，别去翻 nginx / 防火墙。
+  bad "重置口令接口不存在（404）—— 后端是旧版镜像，还没这个路由，先升级再验收"
 else
   bad "重置口令无管理凭证应 401/503，实际 $code —— 管理端闸门没接上"
 fi
