@@ -61,6 +61,13 @@ services:
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       TRANSLATE_API_KEY: ${TRANSLATE_API_KEY:-}
+      # OpenAI 兼容渠道（DeepSeek 等）：LLM_API_STYLE=openai 时识别/候选择优走这套。
+      LLM_API_STYLE: ${LLM_API_STYLE:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      # 识别分流：auto（默认，模板优先）/ template / llm（强制走视觉模型，评测用）
+      RECOGNIZE_MODE: ${RECOGNIZE_MODE:-auto}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       # 只绑本机：外网访问必须走反向代理。绑 0.0.0.0 等于把无 TLS 的接口直接挂公网。

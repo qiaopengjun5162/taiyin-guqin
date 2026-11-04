@@ -195,6 +195,18 @@ python3 gen_font_cases.py --prefix md   # 只渲弦序类
 
 > 复现：`python3 gen_font_cases.py && ./run.sh --annotations annotations/font_cases.json --backend http://127.0.0.1:3001`
 
+### 复测（2026-11-04，结论不变）
+
+换用当时唯一可用的视觉渠道（DeepSeek `deepseek-flash`，走 `LLM_API_STYLE=openai`）
+对同一批 42 条再跑一遍：`exact_match` **0.0%**、`detection_rate` 100%、`mean_cer` 1.167、
+`component F1` 12.9%，坍缩模式与上文完全一致（不同图给同一个 `散挑一`）。
+同期排查了其余三条渠道，都不可用：chshapi（TLS 被掐）、livecool（账号停用）、
+token-plan（key 失效）。**「通用视觉模型不能当准确率来源」这个结论现在有了渠道对照**：
+不是某一家模型差，是这批渠道里没有一家认得减字谱。
+
+另：本轮暴露了 harness 自身的一个坑——模板匹配毫秒级返回，整批评测会以远超产品默认
+限流（每 IP 每秒 2 次）的速率打后端，`_post_json` 现在对 429 退避重试（8 次）。
+
 ### 模板匹配：电子谱面 100% 的第二条路（2026-10-30，`template_match.py`）
 
 上面的结论②已落地：对**电子谱面**（本项目字体渲染的干净减字图）不再问视觉模型，

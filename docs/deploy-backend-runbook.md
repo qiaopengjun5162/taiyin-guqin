@@ -194,7 +194,9 @@ curl -i http://127.0.0.1:3001/health
 | `HOST` / `PORT` | 可选 | 默认 `0.0.0.0:3001`，一般不用改 |
 | `ANTHROPIC_API_KEY` | 可选 | 不配则「AI 优选」不可用，社区存谱不受影响 |
 | `ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` | 可选 | 默认官方 Claude 接口 |
-| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | 可选 | AI 减字图识别用（默认 DeepSeek 视觉）；不配则识别功能不可用 |
+| `LLM_API_STYLE` | 可选 | `anthropic`（默认）或 `openai`。**两套 key 二选一**：没有 Anthropic key、想用 DeepSeek 之类 OpenAI 兼容渠道时设成 `openai` |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | 可选 | AI 减字图识别用（默认 DeepSeek 视觉）；不配则识别功能不可用。**模型必须支持看图**：DeepSeek 用 `deepseek-flash`，`deepseek-v4-pro` 只看文本——选错不报错，只会得到空识别 |
+| `RECOGNIZE_MODE` | 可选 | 识别分流：`auto`（默认，电子谱面先走本地模板、模糊图才走 AI）/ `llm`（强制走视觉模型，跑准确率评测用） |
 | `TRANSLATE_API_KEY` | 可选 | 给 `/translate/select` 加一道口令闸门（纵深防护） |
 | `GLOBAL_RATE_PER_SECOND` / `GLOBAL_RATE_BURST` | 可选 | 全局限流：默认每 IP 每秒 2 次、突发 60。**这两个是真在跑的**，所有请求都过这道闸 |
 | `AUTH_RATE_PER_SECOND` / `AUTH_RATE_BURST` | 可选 | 注册 / 登录的**独立**限流：默认每秒 2 次、突发 8。比全局严，因为口令散列故意慢（Argon2id 每次数百毫秒），不限流等于给攻击者一个把单核 CPU 打满的开关。1 核小机器别调大 |

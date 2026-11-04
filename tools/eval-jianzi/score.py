@@ -40,6 +40,8 @@ import base64
 import datetime as _dt
 import json
 import os
+import re
+import time
 import sys
 import urllib.error
 import urllib.request
@@ -115,30 +117,38 @@ def fmt_pct(x: float) -> str:
 
 def _post_json(url: str, payload: dict, timeout: int) -> dict:
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
-    )
     # 本地 eval 不应经过公司/沙箱 HTTP 代理：显式用「无代理」opener。
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    try:
-        with opener.open(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:  # 503 无 key / 422 字段错 / 5xx 等
-        body = e.read().decode("utf-8", "replace")
-        if e.code == 503:
-            # 后端路由在未配置密钥时返回 503 + {"error": "..."}（见 routes.rs）。
-            # 透出服务端消息，便于快速定位是「环境/配置」而非「模型」问题。
-            msg = ""
-            try:
-                msg = json.loads(body).get("error", "")
-            except Exception:
-                msg = body[:200]
-            raise BackendUnavailable(msg or f"HTTP 503 from {url}", status=503)
-        raise BackendError(f"HTTP {e.code} from {url}: {body[:300]}", status=e.code)
-    except urllib.error.URLError as e:
-        raise BackendConnectionError(
-            f"无法连接后端 {url}：{e.reason}（后端是否已启动？）"
+    # 429 退避重试：模板匹配是毫秒级返回，整批评测会以远超产品默认限流
+    # （每 IP 每秒 2 次）的速率打后端，不重试就会在半路整批死掉。
+    for attempt in range(8):
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json"}, method="POST"
         )
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:  # 429 限流 / 503 无 key / 422 字段错 / 5xx
+            body = e.read().decode("utf-8", "replace")
+            if e.code == 429 and attempt < 7:
+                m = re.search(r"Wait for (\d+)s", body)
+                time.sleep(int(m.group(1)) + 1 if m else 2 + attempt)
+                continue
+            if e.code == 503:
+                # 后端路由在未配置密钥时返回 503 + {"error": "..."}（见 routes.rs）。
+                # 透出服务端消息，便于快速定位是「环境/配置」而非「模型」问题。
+                msg = ""
+                try:
+                    msg = json.loads(body).get("error", "")
+                except Exception:
+                    msg = body[:200]
+                raise BackendUnavailable(msg or f"HTTP 503 from {url}", status=503)
+            raise BackendError(f"HTTP {e.code} from {url}: {body[:300]}", status=e.code)
+        except urllib.error.URLError as e:
+            raise BackendConnectionError(
+                f"无法连接后端 {url}：{e.reason}（后端是否已启动？）"
+            )
+    raise BackendError(f"HTTP 429 from {url}: 重试 8 次仍被限流", status=429)
 
 
 def b64_or_inline(item: dict, base_dir: str) -> tuple[str, str]:
