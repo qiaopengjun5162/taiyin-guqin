@@ -52,6 +52,17 @@ jobs:
           cp -r crates/taiyin-core/pkg apps/web/public/wasm
 
       - name: Build frontend
+        # 后端地址在**构建期**注入，而不是让每个访客自己去设置面板里填。
+        #
+        # 前端读 `process.env.NEXT_PUBLIC_API_URL`（见 lib/api.ts 的 getApiBase），
+        # NEXT_PUBLIC_ 前缀会被 Next 内联进客户端 bundle。留空时它是空串，
+        # `getApiBase()` 走 `|| null` → 退回「纯前端模式」（曲谱只存本机），
+        # 所以变量没设也不会把站点搞坏。
+        #
+        # 用仓库变量而不是写死：换域名时只改 Settings → Variables，重跑本工作流即可，
+        # 不用改代码、不用重新 review 一个只改了字符串的提交。
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.TAIYIN_API_URL }}
         run: pnpm --filter web build
 
       - name: Upload artifact
