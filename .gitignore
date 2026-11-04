@@ -29,3 +29,6 @@ tools/eval-jianzi/annotations/sheet_cases.json
 # moonpub 发布产物（.md 源文件才是要提交的）
 docs/articles/drafts/*.draft.json
 docs/articles/drafts/*.html
+
+# 生产部署的数据库数据卷（备份对象，不进版本库）
+deploy/pgdata/

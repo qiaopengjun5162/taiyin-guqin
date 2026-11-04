@@ -1,0 +1,26 @@
+# 太音后端 · Caddy 站点配置
+#
+# 若那台机器用的是 Caddy（/etc/caddy/Caddyfile），把下面这段追加进去，
+# `caddy reload` 即可 —— Caddy 会自己申请并续期 Let's Encrypt 证书，不用 certbot。
+#
+# 与 nginx 版的差别：Caddy 默认没有上传体积与超时限制，所以这里不用特意写
+# client_max_body_size；但 AI 识别仍需给足读超时。
+
+taiyin.qintopia.cn {
+    encode gzip
+
+    reverse_proxy 127.0.0.1:13001 {
+        # 整页减字谱识别可能跑几十秒
+        transport http {
+            read_timeout 180s
+            write_timeout 180s
+        }
+    }
+
+    log {
+        output file /var/log/caddy/taiyin.log {
+            roll_size 10mb
+            roll_keep 3
+        }
+    }
+}

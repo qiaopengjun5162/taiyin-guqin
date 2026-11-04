@@ -119,7 +119,7 @@ just ci            # 提交前全量检查
 DATABASE_URL=postgres://taiyin:taiyin_dev@localhost:5432/taiyin
 HOST=0.0.0.0
 PORT=3001
-ALLOWED_ORIGINS=https://qiaopengjun5162.github.io,https://paxonqiao.com  # 生产必设
+ALLOWED_ORIGINS=https://qiaopengjun5162.github.io  # 生产必设：只填网页的 Origin
 ANTHROPIC_API_KEY=sk-...        # 可选，未配置时 LLM 择优回退启发式
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 TRANSLATE_API_KEY=...           # 可选，设置后翻译端点需带 x-api-key
@@ -146,7 +146,7 @@ docker build -t taiyin-server .
 # 运行（需 PostgreSQL 可达）
 docker run -d \
   -e DATABASE_URL=postgres://taiyin:taiyin_dev@host.docker.internal:5432/taiyin \
-  -e ALLOWED_ORIGINS=https://qiaopengjun5162.github.io,https://paxonqiao.com \
+  -e ALLOWED_ORIGINS=https://qiaopengjun5162.github.io \
   -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   -p 3001:3001 \
   taiyin-server
@@ -220,12 +220,12 @@ pnpm --filter web build   # 输出到 apps/web/dist
 
 ### GitHub Pages 自动部署
 
-仓库已配置 `.github/workflows/pages.yml`：每次 push 到 `main` 自动构建 WASM + 前端并发布到 GitHub Pages（自定义域名 `paxonqiao.com/taiyin-guqin/`）。部署时需保证：
+仓库已配置 `.github/workflows/pages.yml`：每次 push 到 `main` 自动构建 WASM + 前端并发布到 GitHub Pages（地址 `https://qiaopengjun5162.github.io/taiyin-guqin/`）。部署时需保证：
 
 - `NEXT_PUBLIC_API_URL` 指向可访问的 `taiyin-server` 后端（AI 识别功能依赖它）；
 - 后端 `ANTHROPIC_API_KEY` 已配置。
 
-> 部署状态以 GitHub Actions 的 **Deploy to GitHub Pages** 工作流结论为准；自定义域名的 HTTPS 证书需在仓库 **Settings → Pages** 中确认有效。
+> 部署状态以 GitHub Actions 的 **Deploy to GitHub Pages** 工作流结论为准；HTTPS 由 GitHub 托管，无需自管证书。
 
 ## 📄 许可
 

@@ -1,0 +1,74 @@
+# 太音后端 · 生产部署编排
+#
+# 与开发用的根目录 docker-compose.yml 是两回事：
+#   - 这个文件跑的是**从 ghcr 拉下来的成品镜像**，服务器上不编译（1 核机器编 Rust 会拖死同机业务）
+#   - 数据库数据落在 ./pgdata，备份就是备份这个目录
+#   - 端口只绑 127.0.0.1，公网进不来，必须过反向代理（HTTPS 由反代负责）
+#
+# 用法（在本文件所在目录）：
+#   cp .env.example .env && vi .env     # 填密码和 CORS 白名单
+#   docker compose pull && docker compose up -d
+#   docker compose logs -f server
+#
+# 回滚：把 .env 里的 IMAGE_TAG 改成上一个 sha-xxxxxx，再 up -d。
+#       不需要重新编译，也不需要重新下载整个 latest。
+
+name: taiyin
+
+services:
+  pg:
+    image: postgres:16
+    container_name: taiyin-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-taiyin}
+      # 不给默认值：密码写死等于没有密码。没填时 compose 直接报错，不会静默起一个空口令库。
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?请在 .env 里设置 PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB:-taiyin}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    # 刻意不写 ports：数据库不需要被宿主机看到，同一 compose 网络内的 server 用服务名 pg 连它。
+    healthcheck:
+      # 后端启动就会跑迁移，库没 ready 就起后端只会得到一串连接失败。
+      # 所以让 compose 等这个探针，而不是靠 sleep 猜时间。
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-taiyin} -d ${PG_DB:-taiyin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  server:
+    image: ghcr.io/qiaopengjun5162/taiyin-server:${IMAGE_TAG:-latest}
+    container_name: taiyin-server
+    restart: unless-stopped
+    depends_on:
+      pg:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${PG_USER:-taiyin}:${PG_PASSWORD}@pg:5432/${PG_DB:-taiyin}
+      # 白名单：网页的 Origin 必须在这里面，否则浏览器会拦掉跨域请求。
+      # GitHub Pages 的 Origin 只有 https://qiaopengjun5162.github.io（不带仓库路径）。
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?请填 CORS 白名单，例如 https://qiaopengjun5162.github.io}
+      # 留空 = 没有管理入口（安全默认）。要下架违规谱时才需要填。
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      # AI 识别 / 候选择优。不填对应功能会回退或报错，不影响拼谱、播放、社区。
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      TRANSLATE_API_KEY: ${TRANSLATE_API_KEY:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      # 只绑本机：外网访问必须走反向代理。绑 0.0.0.0 等于把无 TLS 的接口直接挂公网。
+      # 宿主端口用 13001 而不是 3001，避开这台机器上可能已被占用的端口。
+      - "127.0.0.1:${HOST_PORT:-13001}:3001"
+    # distroless 镜像里没有 shell 也没有 curl，所以这里写不了 HTTP 健康检查。
+    # 靠 restart 策略 + 反代侧探测，不用假探针自我安慰。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

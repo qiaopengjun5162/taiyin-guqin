@@ -28,7 +28,7 @@
 弹琴的人的浏览器
     │  打开 GitHub Pages 上的静态网页
     ▼
-https://paxonqiao.com/taiyin-guqin/     ← 网页本体（已上线，不用动）
+https://qiaopengjun5162.github.io/taiyin-guqin/   ← 网页本体（已上线，不用动）
     │  网页里的「社区后端」填的是下面这个地址
     ▼
 https://api.你的域名                      ← 反向代理（Nginx / Caddy，管 HTTPS）
@@ -109,18 +109,57 @@ docker logs taiyin-pg 2>&1 | tail -5
 
 ---
 
-## 3. 构建并启动后端
+## 3. 启动后端
 
-**这步在干什么**：把后端程序编译成一个「镜像」（可以理解成一个打包好的软件），
-然后用这个镜像跑起来。建表、升级表结构（数据库迁移）**已经内置在程序里**，
+**这步在干什么**：把后端跑起来。建表、升级表结构（数据库迁移）**已经内置在程序里**，
 程序一启动会自动完成，不需要手动执行任何 SQL。
+
+两条路，**默认走 3A**。
+
+### 3A. 拉成品镜像（推荐）
+
+**为什么默认走这条**：目标机器往往只有 1 核，还在跑别的业务。Rust release 全量编译
+会长时间吃满 CPU，把同机服务拖慢甚至拖挂。镜像已经在 GitHub Actions 上编好
+（`.github/workflows/backend-image.yml`），服务器只负责拉下来跑——不需要编译器，
+也不需要 1G 以上的内存峰值。
+
+```bash
+# 1) 建目录，放进两个文件：docker-compose.yml、.env.example（仓库 deploy/ 目录里）
+sudo mkdir -p /opt/taiyin && cd /opt/taiyin
+
+# 2) 配环境变量
+cp .env.example .env
+vi .env          # 至少改 PG_PASSWORD；ALLOWED_ORIGINS 保持 github.io 那条
+
+# 3) 拉镜像并起服务（数据库第一次初始化会自动建库建表）
+docker compose pull
+docker compose up -d
+
+# 4) 确认活着
+curl -i http://127.0.0.1:13001/health     # 返回 200 即成功
+
+# 5) 看日志（首次启动会打印迁移与「CORS 未配置」之类的告警）
+docker compose logs -f server
+```
+
+> **拉取报 `unauthorized` 怎么办**：ghcr 上的镜像是私有的，服务器需要凭据。两种解法：
+> ① 到 GitHub → 你的头像 → Packages → `taiyin-server` → 右侧 Package settings →
+> 把可见性改成 **Public**。一次点击，之后永久免登录（推荐）；
+> ② 或先 `docker login ghcr.io -u <你的GitHub用户名>`，口令用一枚带 `read:packages` 的 PAT。
+
+> **回滚**：把 `.env` 里的 `IMAGE_TAG` 改成上一个 `sha-xxxxxx`，再 `docker compose up -d`。
+> 不用重新编译，也不用整包重下。
+
+### 3B. 在服务器上编译（只在需要改后端代码时）
+
+日常部署不要走这条——它会在这台机器上编 Rust。
 
 ```bash
 # 1) 把代码弄到服务器上
-git clone https://github.com/qiaopengjun/taiyin-guqin.git
+git clone https://github.com/qiaopengjun5162/taiyin-guqin.git
 cd taiyin-guqin
 
-# 2) 构建镜像（第一次约 5-10 分钟，之后有缓存会快很多）
+# 2) 构建镜像（1 核机器约 10-20 分钟，且会占满 CPU）
 docker build -t taiyin-server .
 
 # 3) 启动后端
@@ -132,7 +171,7 @@ docker run -d \
   --restart unless-stopped \
   -p 127.0.0.1:3001:3001 \
   -e DATABASE_URL='postgres://taiyin:改成你自己的强密码@taiyin-pg:5432/taiyin' \
-  -e ALLOWED_ORIGINS='https://paxonqiao.com,https://qiaopengjun5162.github.io' \
+  -e ALLOWED_ORIGINS='https://qiaopengjun5162.github.io' \
   -e RUST_LOG=info \
   taiyin-server
 
@@ -213,7 +252,7 @@ curl -i https://api.你的域名/health
 
 ## 5. 把网页接上后端（在浏览器里操作，1 分钟）
 
-1. 打开 <https://paxonqiao.com/taiyin-guqin/>
+1. 打开 <https://qiaopengjun5162.github.io/taiyin-guqin/>
 2. 找到「社区后端」设置面板，填 `https://api.你的域名`，顺手填上「我的署名」，保存
 3. 这个地址存在浏览器本地（`taiyin.apiBaseUrl`），**换浏览器 / 换设备要各填一次**
 
