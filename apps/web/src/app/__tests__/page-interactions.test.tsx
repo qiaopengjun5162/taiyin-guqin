@@ -35,6 +35,8 @@ const h = vi.hoisted(() => ({
   listFavoriteIds: vi.fn(),
   favoriteScore: vi.fn(),
   unfavoriteScore: vi.fn(),
+  // 举报：社区列表里别人的谱点旗标
+  reportScore: vi.fn(),
 }));
 
 /** 可切换的存储模式：默认 browser（与既有用例一致），迁移用例里临时切 server。 */
@@ -126,6 +128,7 @@ vi.mock("@/lib/api", () => {
     listFavoriteIds: h.listFavoriteIds,
     favoriteScore: h.favoriteScore,
     unfavoriteScore: h.unfavoriteScore,
+    reportScore: h.reportScore,
     // 登录态存在时「社区后端」面板会打开即校验会话；本文件只测收藏接线，
     // 这个校验给个恒成功的替身，别让一条无关的请求把用例带崩
     fetchCurrentUser: async () => ({ id: "u-1", email: "qin@you.com", display_name: "我" }),
@@ -1352,5 +1355,72 @@ describe("Home · 社区翻页（回归：按钮点了没反应）", () => {
     fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
 
     expect(await screen.findByText("社区谱50")).toBeTruthy();
+  });
+});
+
+describe("Home · 举报（只记录，不当场下架）", () => {
+  const SESSION = { token: "tok-rep", user: { id: "u-1", email: "qin@you.com", display_name: "我" } };
+
+  /** 登录 + 社区里有一首别人的谱，打开列表等它就位。 */
+  async function openCommunity() {
+    const auth = await import("@/lib/auth");
+    auth.setStoredSession(SESSION);
+    storeState.storageMode = "server";
+    h.listScores.mockResolvedValue([
+      {
+        id: "c1",
+        title: "广陵散",
+        tuning: "zhengdiao",
+        created_at: "2026-10-01T00:00:00Z",
+        updated_at: "2026-10-01T00:00:00Z",
+      },
+    ]);
+    h.listFavoritesPage.mockResolvedValue({ items: [], total: 0 });
+    h.listFavoriteIds.mockResolvedValue([]);
+
+    render(<Home />);
+    fireEvent.click(screen.getByLabelText("加载曲谱"));
+    await screen.findByText("广陵散");
+  }
+
+  it("点旗标 → 确认后提交，并如实说「当前 N 人举报」", async () => {
+    h.reportScore.mockResolvedValue({ reported: true, reports_count: 2 });
+    await openCommunity();
+
+    fireEvent.click(screen.getByRole("button", { name: /举报「广陵散」/ }));
+
+    await waitFor(() => expect(h.reportScore).toHaveBeenCalledWith("c1"));
+    // 文案不能承诺「已处理」：下架要管理员看过后手动做
+    expect(await screen.findByText(/已收到举报/)).toBeTruthy();
+    expect(screen.getByText(/2 人举报/)).toBeTruthy();
+  });
+
+  it("重复举报：说清楚「之前已经报过」，而不是假装又记了一次", async () => {
+    h.reportScore.mockResolvedValue({ reported: false, reports_count: 2 });
+    await openCommunity();
+
+    fireEvent.click(screen.getByRole("button", { name: /举报「广陵散」/ }));
+
+    expect(await screen.findByText(/之前已经举报过/)).toBeTruthy();
+  });
+
+  it("确认框里点取消就不发请求（举报是公开动作，别误触）", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await openCommunity();
+
+    fireEvent.click(screen.getByRole("button", { name: /举报「广陵散」/ }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(h.reportScore).not.toHaveBeenCalled();
+  });
+
+  it("接口失败时把服务端原话显示出来，不吞成「举报失败」", async () => {
+    const api = await import("@/lib/api");
+    h.reportScore.mockRejectedValue(new api.ApiError("举报需要登录：匿名举报无法去重", 401));
+    await openCommunity();
+
+    fireEvent.click(screen.getByRole("button", { name: /举报「广陵散」/ }));
+
+    expect(await screen.findByText(/举报需要登录/)).toBeTruthy();
   });
 });
