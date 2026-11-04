@@ -592,3 +592,43 @@ describe("LoadDialog · 社区列表搜索与定弦过滤", () => {
     vi.useRealTimers();
   });
 });
+
+/**
+ * 点击外部关闭 / 服务端搜索提示。
+ *
+ * 点外部关闭靠 document 的 mousedown 监听实现，是对话框的「隐形」行为——
+ * 用户点背景关不掉会以为界面卡死，但没人会专门为此写 bug 单。
+ */
+describe("LoadDialog · 关闭与搜索提示", () => {
+  it("点击对话框外部触发 onClose", () => {
+    const { onClose } = renderDialog([{ key: "local", label: "已保存的曲谱", scores: LOCAL }]);
+    fireEvent.mouseDown(document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("点击对话框内部不关闭", () => {
+    const { onClose } = renderDialog([{ key: "local", label: "已保存的曲谱", scores: LOCAL }]);
+    fireEvent.mouseDown(screen.getByText("平沙落雁"));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("接入服务端搜索后，输入关键词提示「正在社区全库搜索」", () => {
+    renderDialog(
+      [
+        {
+          key: "community",
+          label: "社区曲谱",
+          scores: COMMUNITY,
+          readOnly: true,
+          total: 123,
+          onLoadMore: vi.fn(),
+        },
+      ],
+      { onCommunityFilterChange: vi.fn() },
+    );
+    fireEvent.change(screen.getByLabelText("按曲名搜索"), { target: { value: "广陵" } });
+    // 接入服务端过滤后不能再吓唬用户「只查已加载」，要说清是全库搜索
+    expect(screen.getByText(/正在社区全库搜索/)).toBeTruthy();
+    expect(screen.queryByText(/搜索只在已加载/)).toBeNull();
+  });
+});
