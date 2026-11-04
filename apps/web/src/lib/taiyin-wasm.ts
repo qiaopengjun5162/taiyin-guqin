@@ -159,6 +159,26 @@ export interface PathStats {
   longest_open_run: number;
 }
 
+/**
+ * 一个乐句的编排结果。
+ *
+ * `start` / `end` 是**传给 Rust 的那个数组**的下标（含两端）。调用方把休止符
+ * 滤掉再送进去，就要自己换算回带休止符的行号——这里不猜：猜错一步，
+ * 界面上标句的分隔线就会整体错位一行。
+ */
+export interface PhraseSpan {
+  /** 第几句（0 起）。 */
+  index: number;
+  /** 起始音下标（含）。 */
+  start: number;
+  /** 结束音下标（含）。 */
+  end: number;
+  /** 这一句有几个音（含排不出落点的音——它仍占谱面一行）。 */
+  note_count: number;
+  /** 这一句内部的活动量（跨气口的那次转移不算进任何一句）。 */
+  stats: PathStats;
+}
+
 /** 全局指法编排结果。候选与选中项出自同一次计算，索引天然对齐。 */
 export interface JianpuArrangement {
   /** 每个音的候选减字（被选中的那一个恒排首位）。 */
@@ -173,6 +193,13 @@ export interface JianpuArrangement {
   greedy_stats: PathStats;
   /** 编排结果与逐音挑选是否完全一样（此时不该夸「已优化」）。 */
   identical_to_greedy: boolean;
+  /**
+   * 按气口切出来的乐句，逐句报账。
+   *
+   * 短曲只有一句（整段就是一句），此时界面不必画分隔线；
+   * 旧版 wasm 没有这个字段，补成空数组——界面按「没分句」处理，不是报错。
+   */
+  phrases: PhraseSpan[];
 }
 
 const EMPTY_STATS: PathStats = {
@@ -221,7 +248,41 @@ export async function arrangeJianpuSequence(
     stats: normalizeStats(raw.stats),
     greedy_stats: normalizeStats(raw.greedy_stats),
     identical_to_greedy: Boolean(raw.identical_to_greedy),
+    // 旧 wasm 没有这个字段：空数组表示「没分句」，界面不该因此报错，
+    // 也不该假装有一句（那样会画一条没有意义的「第 1 句」分隔线）。
+    phrases: (raw.phrases ?? []).map((p, i) => ({
+      index: p.index ?? i,
+      start: p.start ?? 0,
+      end: p.end ?? 0,
+      note_count: p.note_count ?? 0,
+      stats: normalizeStats(p.stats),
+    })),
   };
+}
+
+/**
+ * 分句那一句人话。只有一句（或旧 wasm 没给）时返回空串——
+ * 短曲上标「第 1 句」纯属噪声，用户还会以为按钮坏了。
+ *
+ * 排序只按**一个**指标：快句里赶不上的换手次数。它决定「这一句能不能弹下来」，
+ * 换弦次数只是它的粗略代理。不看抽象总代价——那个分数涨跌对弹琴的人没有意义。
+ */
+export function describePhrases(phrases: PhraseSpan[]): string {
+  if (phrases.length < 2) return "";
+
+  const hardest = phrases.reduce((a, b) => {
+    if (b.stats.rushed_moves !== a.stats.rushed_moves) {
+      return b.stats.rushed_moves > a.stats.rushed_moves ? b : a;
+    }
+    return b.stats.string_changes > a.stats.string_changes ? b : a;
+  });
+  const head = `全曲 ${phrases.length} 句`;
+
+  const rushed = hardest.stats.rushed_moves;
+  if (rushed > 0) {
+    return `${head}，第 ${hardest.index + 1} 句最赶（快句里换手 ${rushed} 次），先慢练这句`;
+  }
+  return `${head}，没有哪一句赶不上手`;
 }
 
 /**
@@ -234,10 +295,15 @@ export async function arrangeJianpuSequence(
  * 反过来，如果有指标**变多**了，也要说出来。全局编排在长音之后允许手多走一趟，
  * 换来的是快句里不再换手——这个取舍是对的，但用户盯着列表数换弦次数时会发现对不上，
  * 不说就成了另一种撒谎。
+ *
+ * 长曲再补一句分句的账：整首的总数再漂亮，回到琴上还是得知道从哪一句开始练。
  */
 export function describeArrangement(result: JianpuArrangement): string {
+  const phraseNote = describePhrases(result.phrases);
+  const withPhrases = (text: string) => (phraseNote ? `${text}。${phraseNote}` : text);
+
   if (result.identical_to_greedy) {
-    return "这条已经是最顺的走法，逐音挑选和整句编排选的是同一个";
+    return withPhrases("这条已经是最顺的走法，逐音挑选和整句编排选的是同一个");
   }
 
   const parts: string[] = [];
@@ -264,14 +330,14 @@ export function describeArrangement(result: JianpuArrangement): string {
   if (shiftSaved > 0) parts.push(`少 ${shiftSaved} 次挪手`);
 
   if (parts.length === 0) {
-    return "已重排：落点换了，手的移动次数和逐音挑选一样";
+    return withPhrases("已重排：落点换了，手的移动次数和逐音挑选一样");
   }
 
   const extra =
     Math.max(0, -stringSaved) + Math.max(0, -shiftSaved);
   const caveat =
     extra > 0 ? `；换手总数多 ${extra} 次，但都落在来得及的地方` : "";
-  return `已编排：${parts.join("、")}${caveat}`;
+  return withPhrases(`已编排：${parts.join("、")}${caveat}`);
 }
 
 /**

@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { EMPTY_FILTER } from "@/lib/jianzi-dictionary-types";
+import type { PathStats, PhraseSpan } from "@/lib/taiyin-wasm";
 
 const glue = vi.hoisted(() => ({
   init: vi.fn(),
@@ -214,6 +215,46 @@ describe("taiyin-wasm · 全局指法编排", () => {
     });
     expect(out.identical_to_greedy).toBe(false);
   });
+
+  /**
+   * 分句要一路走到界面：旧产物没有 `phrases` 字段时补空数组，
+   * 有新字段时把每句缺的统计项补 0。
+   */
+  it("phrases 透传并补齐统计字段；没有这个字段时给空数组", async () => {
+    const w = await loadWasm();
+    glue.arrange_jianpu_sequence_to_jianzi.mockReturnValue(
+      JSON.stringify({
+        phrases: [
+          {
+            index: 0,
+            start: 0,
+            end: 3,
+            note_count: 4,
+            stats: { string_changes: 2 },
+          },
+        ],
+      }),
+    );
+    const out = await w.arrangeJianpuSequence([], "zheng");
+    expect(out.phrases).toEqual([
+      {
+        index: 0,
+        start: 0,
+        end: 3,
+        note_count: 4,
+        stats: {
+          string_changes: 2,
+          finger_shifts: 0,
+          technique_switches: 0,
+          rushed_moves: 0,
+          longest_open_run: 0,
+        },
+      },
+    ]);
+
+    glue.arrange_jianpu_sequence_to_jianzi.mockReturnValue("{}");
+    expect((await w.arrangeJianpuSequence([], "zheng")).phrases).toEqual([]);
+  });
 });
 
 /**
@@ -243,6 +284,7 @@ describe("taiyin-wasm · describeArrangement 说人话", () => {
       longest_open_run: 0,
     },
     identical_to_greedy: false,
+    phrases: [],
   };
 
   it("只说真的减少了的项", async () => {
@@ -563,5 +605,76 @@ describe("taiyin-wasm · 字典与减字码", () => {
       JSON.stringify([{ canonical: "勾", variants: ["勾", "勹"] }]),
     );
     expect(await w.getJianziVariantGroups()).toEqual([{ canonical: "勾", variants: ["勾", "勹"] }]);
+  });
+});
+
+/**
+ * 分句的文案。
+ *
+ * 长曲一句一句练，是琴人真实的工作方式；整首的总数再漂亮，
+ * 回到琴上仍要知道从哪一句开始。所以这段文案只有两个要求：
+ * 短曲别硬分句（一句时闭嘴），长曲要把「哪一句最赶」说成可执行的一句话。
+ */
+describe("taiyin-wasm · describePhrases 逐句报账", () => {
+  const stats = (over: Partial<PathStats> = {}): PathStats => ({
+    string_changes: 0,
+    finger_shifts: 0,
+    technique_switches: 0,
+    rushed_moves: 0,
+    longest_open_run: 0,
+    ...over,
+  });
+  const phrase = (
+    index: number,
+    start: number,
+    statsOver: Partial<PathStats> = {},
+  ): PhraseSpan => ({
+    index,
+    start,
+    end: start + 3,
+    note_count: 4,
+    stats: stats(statsOver),
+  });
+
+  it("只有一句时闭嘴：不标「第 1 句」", async () => {
+    const w = await loadWasm();
+    expect(w.describePhrases([])).toBe("");
+    expect(w.describePhrases([phrase(0, 0, { rushed_moves: 3 })])).toBe("");
+  });
+
+  it("指出最赶的一句，按快句换手次数比", async () => {
+    const w = await loadWasm();
+    const text = w.describePhrases([
+      phrase(0, 0, { rushed_moves: 1, string_changes: 9 }),
+      phrase(1, 4, { rushed_moves: 3 }),
+      phrase(2, 8, { string_changes: 5 }),
+    ]);
+    expect(text).toBe("全曲 3 句，第 2 句最赶（快句里换手 3 次），先慢练这句");
+  });
+
+  it("每句都赶得上手时，不挑一句来冤枉它", async () => {
+    const w = await loadWasm();
+    expect(
+      w.describePhrases([
+        phrase(0, 0, { string_changes: 6 }),
+        phrase(1, 4, { string_changes: 2 }),
+      ]),
+    ).toBe("全曲 2 句，没有哪一句赶不上手");
+  });
+
+  it("编排文案后面接上分句那句，用句号隔开", async () => {
+    const w = await loadWasm();
+    const text = w.describeArrangement({
+      candidates_per_note: [],
+      selections: [],
+      total_cost: 0,
+      stats: stats(),
+      greedy_stats: stats({ string_changes: 2 }),
+      identical_to_greedy: false,
+      phrases: [phrase(0, 0), phrase(1, 4, { rushed_moves: 2 })],
+    });
+    expect(text).toBe(
+      "已编排：少 2 次换弦。全曲 2 句，第 2 句最赶（快句里换手 2 次），先慢练这句",
+    );
   });
 });

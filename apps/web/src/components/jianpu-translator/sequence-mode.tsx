@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { NoteColumn, JianpuNumber } from "@/lib/types";
 import { createEmptyState } from "@/lib/jianzi";
 import {
@@ -8,6 +8,7 @@ import {
   arrangeJianpuSequence,
   describeArrangement,
   type JianpuArrangement,
+  type PhraseSpan,
 } from "@/lib/taiyin-wasm";
 import { selectCandidates } from "@/lib/api";
 import { useNotePreview } from "@/lib/use-note-preview";
@@ -266,6 +267,29 @@ export function SequenceMode({
     setArrangeResult(null);
   }
 
+  /**
+   * 「这一行是第几句的开头」。
+   *
+   * Rust 给的是**送进去的那个数组**的下标（送进去时滤掉了休止符），
+   * 这里按同样的顺序数一遍，换算回列表行号。少算一个休止符，
+   * 后面的分隔线就整体错一行——看起来只是「分句有点怪」，实际已经错位。
+   */
+  const phraseByRow = new Map<number, PhraseSpan>();
+  if (
+    arrangeResult &&
+    notesTuning === tuning &&
+    arrangeResult.phrases.length > 1
+  ) {
+    const spanByStart = new Map(arrangeResult.phrases.map((p) => [p.start, p]));
+    let playableIdx = 0;
+    notes.forEach((item, row) => {
+      if (item.kind !== "note") return;
+      const phrase = spanByStart.get(playableIdx);
+      if (phrase) phraseByRow.set(row, phrase);
+      playableIdx++;
+    });
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <textarea
@@ -347,36 +371,55 @@ export function SequenceMode({
       )}
       {notes.length > 0 && notesTuning === tuning && (
         <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto pr-1">
-          {notes.map((item, noteIdx) => (
-            <div
-              key={`${noteIdx}-${item.raw}`}
-              className="flex items-center gap-2 rounded border border-amber-700/15 bg-amber-900/5 px-2 py-1"
-            >
-              <span className="w-8 shrink-0 text-center text-xs text-stone-600">
-                {item.raw}
-              </span>
-              {/* 一个音常有三十多个落点，横排滑动看，不要把每个音拉成十几行 */}
-              <div className="flex flex-1 gap-1.5 overflow-x-auto pb-1">
-                {candidatesPerNote[noteIdx]?.map((c, candIdx) => {
-                  const state = buildJianziState(c);
-                  return (
-                    <div key={candIdx} className="w-[72px] shrink-0">
-                      <CandidateChip
-                        state={state}
-                        score={c.score}
-                        selected={selectedIndex[noteIdx] === candIdx}
-                        onPick={() => selectCandidate(noteIdx, candIdx)}
-                        onPreview={() => preview(state)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              <span className="w-5 shrink-0 text-right text-[9px] text-stone-500">
-                {candidatesPerNote[noteIdx]?.length ?? 0}
-              </span>
-            </div>
-          ))}
+          {notes.map((item, noteIdx) => {
+            const phrase = phraseByRow.get(noteIdx);
+            return (
+              <Fragment key={`${noteIdx}-${item.raw}`}>
+                {phrase && (
+                  <div
+                    data-phrase-index={phrase.index}
+                    className="flex items-center gap-2 px-1 pt-1"
+                  >
+                    <span className="text-[9px] tracking-widest text-amber-700/60">
+                      第 {phrase.index + 1} 句
+                    </span>
+                    <span className="h-px flex-1 bg-amber-700/15" />
+                    <span className="text-[9px] tracking-wider text-stone-500">
+                      {phrase.note_count} 音 · 换弦 {phrase.stats.string_changes}
+                      {phrase.stats.rushed_moves > 0
+                        ? ` · 快句换手 ${phrase.stats.rushed_moves}`
+                        : ""}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 rounded border border-amber-700/15 bg-amber-900/5 px-2 py-1">
+                  <span className="w-8 shrink-0 text-center text-xs text-stone-600">
+                    {item.raw}
+                  </span>
+                  {/* 一个音常有三十多个落点，横排滑动看，不要把每个音拉成十几行 */}
+                  <div className="flex flex-1 gap-1.5 overflow-x-auto pb-1">
+                    {candidatesPerNote[noteIdx]?.map((c, candIdx) => {
+                      const state = buildJianziState(c);
+                      return (
+                        <div key={candIdx} className="w-[72px] shrink-0">
+                          <CandidateChip
+                            state={state}
+                            score={c.score}
+                            selected={selectedIndex[noteIdx] === candIdx}
+                            onPick={() => selectCandidate(noteIdx, candIdx)}
+                            onPreview={() => preview(state)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <span className="w-5 shrink-0 text-right text-[9px] text-stone-500">
+                    {candidatesPerNote[noteIdx]?.length ?? 0}
+                  </span>
+                </div>
+              </Fragment>
+            );
+          })}
         </div>
       )}
     </div>

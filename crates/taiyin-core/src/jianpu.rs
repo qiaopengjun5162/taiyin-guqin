@@ -621,6 +621,37 @@ const FAST_NOTE_UNITS: u32 = 6;
 /// 「一拍半及更长」的时值下限：附点四分 = 12、二分 = 16、全音符 = 32。
 const SLOW_NOTE_UNITS: u32 = 12;
 
+/// 气口的判据：前一个音留了**两拍及以上**（二分 = 16、附点二分 = 24、全音符 = 32）。
+///
+/// 古琴谱上没有「换气记号」，气口是从时值上读出来的：一个音按住两拍，
+/// 弹的人一定会把这个音放足、抬手、再落下。于是前后两句之间**没有手位传承**——
+/// 上一句最后落在十徽还是二徽，跟下一句从哪起手毫无关系。
+///
+/// 之前整段当一条路径排，DP 会为了「下一句好接」牺牲这一句内部的舒适：
+/// 明明这一句走五徽最顺，却为了跨过气口接到一句起手在九徽的旋律，
+/// 把整句往七徽上拽。代价付了，人却不领情——他中间抬手了。
+///
+/// 取两拍而不是一拍半（[`SLOW_NOTE_UNITS`]）：附点四分常常是句中的伸展，
+/// 手不一定离开；两拍才是真正的呼吸。两个阈值各管一件事，不要合并。
+const PHRASE_BREATH_UNITS: u32 = 16;
+
+/// 这个音是不是一处气口之后的第一个音（即新乐句的起点）。
+///
+/// 只看**前一个音的时值**，与本音无关：气口是「上一句放足了」这个动作，
+/// 不是「这一句从长音开始」。所以曲首也算起点（前面没有音）。
+///
+/// 判据必须与 [`time_pressure`] 分开写：那一处描述「手有没有时间做动作」，
+/// 这一处描述「手是不是已经离开了琴面」。两件事恰好都跟时值有关，
+/// 但阈值故意不同（12 / 16），合并成一个常量会让调一处时另一处跟着漂。
+fn starts_phrase(notes: &[JianpuNote], idx: usize) -> bool {
+    if idx == 0 {
+        return true;
+    }
+    notes[idx - 1]
+        .duration_units
+        .is_some_and(|units| units >= PHRASE_BREATH_UNITS)
+}
+
 /// 时间紧时的代价倍率：同样的动作，在八分连八分的句子里要贵一半。
 const RUSHED_FACTOR: f64 = 1.5;
 
@@ -760,8 +791,19 @@ fn path_stats(notes: &[(Option<u32>, GuqinNote)]) -> PathStats {
 
     // 连续散音要正着扫一遍：它不是「相邻两音」的属性，而是一段长度，
     // 用 windows(2) 数不出来（三个散音只有两次转移，长度却是 3）。
+    //
+    // 跨气口要重新起算：二分音符放足之后抬手再落，两个散音之间隔着一次呼吸，
+    // 听起来不是「一路空弦干敲」。这与 DP 在气口处把串长归零是同一套判定，
+    // 否则界面报的串长和算法优化的不是一件事。
     let mut run = 0u32;
-    for (_, note) in notes {
+    for (idx, (_, note)) in notes.iter().enumerate() {
+        if idx > 0
+            && notes[idx - 1]
+                .0
+                .is_some_and(|units| units >= PHRASE_BREATH_UNITS)
+        {
+            run = 0;
+        }
         if note.note_type == NoteType::SanYin {
             run += 1;
             stats.longest_open_run = stats.longest_open_run.max(run);
@@ -808,6 +850,46 @@ type RunCostRow = Vec<[Option<i64>; 3]>;
 /// 回溯表：对每个候选、每个状态，记下「从哪个状态、哪个候选走过来」。
 type RunBackRow = Vec<[Option<(u8, usize)>; 3]>;
 
+/// 一行里代价最小的那个落点（连同它处在哪个散音串状态）。
+///
+/// 一句的终点没有「下一个音」来约束它，所以只能自己挑最小的；
+/// `None` 表示这一行没有任何可达状态（理论上不会发生）。
+fn row_min(rows: &RunCostRow) -> Option<(i64, u8, usize)> {
+    let mut best: Option<(i64, u8, usize)> = None;
+    for (j, row) in rows.iter().enumerate() {
+        for (state, cost) in row.iter().enumerate() {
+            let Some(cost) = *cost else { continue };
+            if best.is_none_or(|(b, _, _)| cost < b) {
+                best = Some((cost, state as u8, j));
+            }
+        }
+    }
+    best
+}
+
+/// 一个乐句的编排结果。
+///
+/// 长曲一句一句地练，是琴人真实的工作方式：整首弹不下来的地方，永远是某一句。
+/// 所以编排不只报「全曲省了几次换手」，还要报**每一句各自的账**——
+/// 否则用户看着一个漂亮的总数，回到琴上仍不知道从哪一句开始练。
+///
+/// `start` / `end` 是**传进 `arrange_sequence` 的那个数组**的下标（含两端）。
+/// 前端若把休止符滤掉再送进来，就要自己把它映射回带休止符的行号；
+/// 这里不做猜测——猜错一步，整行音符都会错位。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PhraseSpan {
+    /// 第几句（0 起）。
+    pub index: usize,
+    /// 起始音下标（含）。
+    pub start: usize,
+    /// 结束音下标（含）。
+    pub end: usize,
+    /// 这一句有几个音（含排不出落点的音——它仍占谱面一行）。
+    pub note_count: usize,
+    /// 这一句内部的活动量。跨气口的那次转移不算进任何一句。
+    pub stats: PathStats,
+}
+
 /// 全局编排结果。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Arrangement {
@@ -825,6 +907,11 @@ pub struct Arrangement {
     pub stats: PathStats,
     /// 同一段简谱改用「逐音取第一名」时的活动量，作为对照。
     pub greedy_stats: PathStats,
+    /// 按气口切出来的乐句，逐句报账。
+    ///
+    /// 全曲只有一句时也照常返回一条（整段就是一句），前端据此判断
+    /// 「这首短得没必要分句」——返回空数组会让人分不清「没分句」和「没算」。
+    pub phrases: Vec<PhraseSpan>,
     /// 编排结果与逐音挑选是否**完全一样**（每个音的落点都相同）。
     ///
     /// 这个字段是给界面说真话用的：短句或本来就很顺的旋律，全局最优可能就是
@@ -838,6 +925,11 @@ pub struct Arrangement {
 /// 一条路径求全局最优。差别在长句上非常明显——贪心常在第一音就锁死了一个
 /// 舒服但孤立的位置，后面每个音都在补偿；全局编排会牺牲一点单音舒适度，
 /// 换来整句少换把、少跨弦。
+///
+/// 「整句」是按气口切的（见 [`starts_phrase`]）：一处气口就是一次抬手，
+/// 前后没有手位传承，所以优化在气口处**重新开始**，同时按句报账
+/// （[`Arrangement::phrases`]）。没有气口的短句等价于整段一条路径，
+/// 与加这个维度之前完全一样。
 ///
 /// 复杂度 O(n·k²)：n 是音数，k 是单音候选数（通常 10~40）。
 /// 一首三百音的曲子约几十万次比较，毫秒级，可以在按键时同步跑。
@@ -869,6 +961,10 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
             continue;
         }
         let units = notes[note_idx].duration_units;
+        // 气口之后是新的一句：不接上一句的手位，也不接着数上一句的散音串。
+        // 一句之内的接续仍然照常计费，所以「整段最优」退化成「逐句最优」，
+        // 而不是退化成「逐音最优」——句内的取舍一分都没少。
+        let new_phrase = starts_phrase(notes, note_idx);
 
         let mut rows: RunCostRow = Vec::with_capacity(candidates.len());
         let mut backs: RunBackRow = Vec::with_capacity(candidates.len());
@@ -886,7 +982,7 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
             let reachable: &[u8] = if is_san { &[1, 2] } else { &[0] };
             for &state in reachable {
                 match (&last_row, &last_notes) {
-                    (Some(row_prev), Some(notes_prev)) => {
+                    (Some(row_prev), Some(notes_prev)) if !new_phrase => {
                         let mut best: Option<(i64, (u8, usize))> = None;
                         for (k, prev_note) in notes_prev.iter().enumerate() {
                             for (prev_state_idx, prev_cost) in row_prev[k].iter().enumerate() {
@@ -916,7 +1012,12 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
                         }
                     }
                     _ => {
-                        // 首音没有来路；`san_run_step(_, 0)` 的罚恒为 0，这里只是照常走一遍。
+                        // 首音或**气口之后的第一个音**：没有来路。
+                        // 气口处不接上一句的手位，是因为弹的人已经抬手换过气了，
+                        // 上一句落在哪跟他这一句从哪起手无关；硬接过去会让 DP
+                        // 为了一个不存在的手位约束，把整句往不合适的地方拽。
+                        //
+                        // `san_run_step(_, 0)` 的罚恒为 0，这里只是照常走一遍。
                         let (first_state, run_penalty) = san_run_step(is_san, 0);
                         if first_state == state {
                             row[state as usize] = Some(base + run_penalty);
@@ -941,19 +1042,15 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
     let mut total_cost: i64 = 0;
 
     // 从最后一行为起点回溯：末音代价最小的那条（连同它的散音串状态），
-    // 就是整句最优路径的终点。
+    // 就是最后一句最优路径的终点。
+    //
+    // 分句之后回溯要能**跨过气口**：气口那一行的 `back` 是 `None`（它没有来路），
+    // 若照旧 `break`，前面几句就全成了空选。所以遇到 `None` 不是结束，
+    // 而是「上一句到这儿为止」——回头在上一句的末行里另取一个最小值，
+    // 把那一句的最优配直接接上。
     if let Some(last_i) = dp.iter().rposition(|row| !row.is_empty()) {
-        let rows = &dp[last_i];
-        let mut best: Option<(i64, u8, usize)> = None;
-        for (j, row) in rows.iter().enumerate() {
-            for (state, cost) in row.iter().enumerate() {
-                let Some(cost) = *cost else { continue };
-                if best.is_none_or(|(b, _, _)| cost < b) {
-                    best = Some((cost, state as u8, j));
-                }
-            }
-        }
-        let (cost, mut cursor_state, mut cursor_j) = best.expect("非空行必然至少有一个可达状态");
+        let (cost, mut cursor_state, mut cursor_j) =
+            row_min(&dp[last_i]).expect("非空行必然至少有一个可达状态");
         total_cost = cost;
 
         let mut cursor_row = last_i;
@@ -962,7 +1059,16 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
             let Some((prev_state, prev_j)) =
                 prev_choice[cursor_row][cursor_j][cursor_state as usize]
             else {
-                break;
+                // 这一句到头了（曲首，或刚跨过一处气口）。找上一句的末行。
+                let Some(p) = (0..cursor_row).rev().find(|&p| !dp[p].is_empty()) else {
+                    break;
+                };
+                let (cost, state, j) = row_min(&dp[p]).expect("非空行必然至少有一个可达状态");
+                total_cost += cost;
+                cursor_row = p;
+                cursor_j = j;
+                cursor_state = state;
+                continue;
             };
             // 跳过中间的空候选行，落到最近一个真的非空的行
             let mut p = cursor_row;
@@ -1012,6 +1118,39 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
         })
         .collect();
 
+    // 逐句报账。切片按**原始下标**切，句内只保留真的排得出落点的音——
+    // 排不出落点的音在谱面上留空，不该被当成「这一句少了一个音」，
+    // 但它两头也不构成转移（转移要两个真的能弹的音）。
+    let phrase_starts: Vec<usize> = (0..notes.len())
+        .filter(|&i| starts_phrase(notes, i))
+        .collect();
+    let phrases: Vec<PhraseSpan> = phrase_starts
+        .iter()
+        .enumerate()
+        .map(|(index, &start)| {
+            let end = phrase_starts
+                .get(index + 1)
+                .map_or(notes.len() - 1, |&next| next - 1);
+            let path: Vec<(Option<u32>, GuqinNote)> = (start..=end)
+                .filter_map(|i| {
+                    selections[i].map(|j| {
+                        (
+                            notes[i].duration_units,
+                            candidates_per_note[i][j].note.clone(),
+                        )
+                    })
+                })
+                .collect();
+            PhraseSpan {
+                index,
+                start,
+                end,
+                note_count: end - start + 1,
+                stats: path_stats(&path),
+            }
+        })
+        .collect();
+
     // 把选中的候选提到首位，其余保持单音评分顺序。
     //
     // 不整体按 dp 值重排：那样「150 分」会排在「90 分」后面，
@@ -1033,6 +1172,7 @@ pub fn arrange_sequence(notes: &[JianpuNote], tuning: Tuning) -> Arrangement {
         stats: path_stats(&arranged_notes),
         greedy_stats: path_stats(&greedy_notes),
         identical_to_greedy: arranged_notes == greedy_notes,
+        phrases,
         candidates_per_note,
         selections,
         total_cost,
@@ -1327,18 +1467,24 @@ mod tests {
         let mut prev: Option<(Option<u32>, GuqinNote)> = None;
         // 贪心基线必须与 DP 用**同一套目标函数**：散音串的惩罚也得算进去，
         // 否则「编排不比贪心差」就成了拿两把尺子量同一件事。
+        // 气口同样要断：DP 在那一处不接上一句的手位，贪心若照接，
+        // 基线就凭空贵了一截，胜出成了假象。
         let mut run = 0u8;
-        for note in notes {
+        for (idx, note) in notes.iter().enumerate() {
             let Some(best) = translate_jianpu(*note, tuning).into_iter().next() else {
                 continue;
             };
             total += i64::from((COST_BASE - best.score).max(0));
+            let breath = starts_phrase(notes, idx);
+            if breath {
+                run = 0;
+            }
             let (next_run, run_penalty) =
                 san_run_step(best.note.note_type == NoteType::SanYin, run);
             run = next_run;
             total += run_penalty;
-            if let Some((units, ref p)) = prev {
-                total += transition_cost(p, units, &best.note);
+            if let (Some((units, p)), false) = (&prev, breath) {
+                total += transition_cost(p, *units, &best.note);
             }
             prev = Some((note.duration_units, best.note));
         }
@@ -1793,5 +1939,134 @@ mod tests {
                 assert!(arranged.greedy_stats.string_changes <= pairs);
             }
         }
+    }
+
+    // ── 分句（气口） ─────────────────────────────
+
+    /// 两拍及以上的长音之后就是新的一句；一拍半的不算。
+    ///
+    /// 这条钉住的是阈值本身：附点四分（12）常常只是句中的伸展，
+    /// 手不一定会离开琴面；两拍（16）才是真正的呼吸。
+    #[test]
+    fn test_phrase_split_follows_breath() {
+        let mut notes: Vec<JianpuNote> = (0..4)
+            .map(|_| JianpuNote::new(5, 0).with_duration(8))
+            .collect();
+        // 第四个音放足两拍 → 下一个音起新句
+        notes[3] = JianpuNote::new(5, 0).with_duration(16);
+        notes.extend((0..3).map(|_| JianpuNote::new(6, 0).with_duration(8)));
+
+        let arranged = arrange_sequence(&notes, Tuning::ZhengDiao);
+        let spans: Vec<(usize, usize, usize)> = arranged
+            .phrases
+            .iter()
+            .map(|p| (p.start, p.end, p.note_count))
+            .collect();
+        assert_eq!(spans, vec![(0, 3, 4), (4, 6, 3)]);
+
+        // 附点四分（12）不到两拍：不分句
+        let mut dotted: Vec<JianpuNote> = (0..3)
+            .map(|_| JianpuNote::new(5, 0).with_duration(8))
+            .collect();
+        dotted[2] = JianpuNote::new(5, 0).with_duration(12);
+        dotted.push(JianpuNote::new(6, 0).with_duration(8));
+        let arranged = arrange_sequence(&dotted, Tuning::ZhengDiao);
+        assert_eq!(arranged.phrases.len(), 1, "附点四分不该被当成气口");
+    }
+
+    /// 气口处散音串重新起算：隔着一口呼吸的两个散音不是「一串干敲」。
+    #[test]
+    fn test_phrase_run_resets_at_breath() {
+        let san = |string: u8| {
+            GuqinNote::open_string(
+                RightAction::Tiao,
+                StringNumber::new(string).expect("弦序 1..=7"),
+            )
+        };
+        // 散 散 散（两拍）散 散：中间抬手换过气，最长一串是 3，不是 5
+        let path: Vec<(Option<u32>, GuqinNote)> = vec![
+            (Some(4), san(1)),
+            (Some(4), san(2)),
+            (Some(16), san(3)),
+            (Some(4), san(4)),
+            (Some(4), san(5)),
+        ];
+        assert_eq!(path_stats(&path).longest_open_run, 3);
+
+        // 没有长音时照旧整串数：同样五个散音，最长一串就是 5
+        let continuous: Vec<(Option<u32>, GuqinNote)> =
+            (1..=5).map(|s| (Some(4), san(s))).collect();
+        assert_eq!(path_stats(&continuous).longest_open_run, 5);
+    }
+
+    /// 每一句都排满，不许因为回溯在气口处提前收手而留空。
+    ///
+    /// 这条是分句改动最容易踩的坑：气口那一行的回溯指针是 `None`，
+    /// 若照旧 `break`，前面几句会静默变成「没有落点」——谱面上就是一片空。
+    #[test]
+    fn test_every_phrase_gets_selected() {
+        let mut notes: Vec<JianpuNote> = (0..5)
+            .map(|i| JianpuNote::new((i % 5 + 1) as u8, 1).with_duration(8))
+            .collect();
+        notes[4] = JianpuNote::new(1, 1).with_duration(16);
+        notes.extend((0..5).map(|i| JianpuNote::new((i % 3 + 1) as u8, 1).with_duration(8)));
+
+        let arranged = arrange_sequence(&notes, Tuning::ZhengDiao);
+        assert_eq!(arranged.phrases.len(), 2);
+        for (i, sel) in arranged.selections.iter().enumerate() {
+            assert!(
+                sel.is_some(),
+                "第 {i} 个音被漏掉了：{:?}",
+                arranged.selections
+            );
+        }
+    }
+
+    /// 分句是**真的独立**：一句的落点不因为后面接了别的曲子而改变。
+    ///
+    /// 这是「气口处不接上一句的手位」的可验证后果。反过来说，
+    /// 如果实现只把气口的转移代价打折、没有断开，后半段就会被前半段牵着走，
+    /// 这条断言会红。
+    #[test]
+    fn test_phrase_arrangement_is_local() {
+        let mut first: Vec<JianpuNote> = (0..6)
+            .map(|i| JianpuNote::new((i % 4 + 1) as u8, 0).with_duration(8))
+            .collect();
+        first[5] = JianpuNote::new(6, -1).with_duration(16); // 句尾放足两拍
+        let second: Vec<JianpuNote> = (0..6)
+            .map(|i| JianpuNote::new((i % 3 + 5) as u8, 1).with_duration(8))
+            .collect();
+
+        let alone = arrange_sequence(&second, Tuning::ZhengDiao);
+        let together: Vec<JianpuNote> = first.iter().chain(second.iter()).copied().collect();
+        let joined = arrange_sequence(&together, Tuning::ZhengDiao);
+
+        // 后一句的每个落点都应与单独排时一致
+        for (i, sel) in alone.selections.iter().enumerate() {
+            assert_eq!(
+                joined.selections[first.len() + i],
+                *sel,
+                "第 {i} 个音被上一句牵扯了：{:?} vs {:?}",
+                joined.selections,
+                alone.selections
+            );
+        }
+        // 总代价同样是两段各自最优之和
+        let head = arrange_sequence(&first, Tuning::ZhengDiao);
+        assert_eq!(joined.total_cost, head.total_cost + alone.total_cost);
+    }
+
+    /// 没有气口就还是一句；空输入没有句子。分句不该改变老行为。
+    #[test]
+    fn test_phrase_edge_cases() {
+        let quarters: Vec<JianpuNote> = (0..4)
+            .map(|i| JianpuNote::new((i % 5 + 1) as u8, 0).with_duration(8))
+            .collect();
+        let arranged = arrange_sequence(&quarters, Tuning::ZhengDiao);
+        assert_eq!(arranged.phrases.len(), 1);
+        assert_eq!(arranged.phrases[0].note_count, 4);
+
+        let empty = arrange_sequence(&[], Tuning::ZhengDiao);
+        assert!(empty.phrases.is_empty());
     }
 }

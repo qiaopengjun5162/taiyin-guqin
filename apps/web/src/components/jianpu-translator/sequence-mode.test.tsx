@@ -25,6 +25,7 @@ import {
   arrangeJianpuSequence,
   type JianpuArrangement,
   type PathStats,
+  type PhraseSpan,
 } from "@/lib/taiyin-wasm";
 
 /**
@@ -68,6 +69,7 @@ function makeArrangement(
     identical?: boolean;
     stats?: PathStats;
     greedyStats?: PathStats;
+    phrases?: PhraseSpan[];
   } = {},
 ): JianpuArrangement {
   return {
@@ -89,6 +91,7 @@ function makeArrangement(
       longest_open_run: 0,
     },
     identical_to_greedy: options.identical ?? false,
+    phrases: options.phrases ?? [],
   };
 }
 
@@ -299,5 +302,131 @@ describe("SequenceMode · 智能编排", () => {
     await waitFor(() =>
       expect(screen.queryByText("已编排：少 2 次换弦")).toBeNull(),
     );
+  });
+
+  /**
+   * 分句分隔线要落在**该落的行**上。
+   *
+   * 送进 Rust 的数组滤掉了休止符，句子的 `start` 是那个数组的下标。
+   * 换算回列表行号时少算一个休止符，分隔线就整体往前错一行——
+   * 界面上只是「分句看着有点怪」，实际把「第 2 句」标在了上一句的尾音上。
+   * 所以这里输入里故意带一个休止符，数清楚第二句之前到底有几行。
+   */
+  it("按气口标出第几句，休止符不占句内音数、但占行号", async () => {
+    const onSelect = vi.fn();
+    const cand = () => [makeCandidate("散", 0, 0, "Tiao", 1)];
+    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+      JSON.stringify({
+        candidates_per_note: [cand(), cand(), cand(), cand(), cand()],
+      }),
+    );
+    // 5 6 (休止) 1 - 2 3 → 「1」放足两拍，这里是气口
+    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+      makeArrangement(
+        [cand(), cand(), cand(), cand(), cand()],
+        [0, 0, 0, 0, 0],
+        {
+          phrases: [
+            {
+              index: 0,
+              start: 0,
+              end: 2,
+              note_count: 3,
+              stats: {
+                string_changes: 2,
+                finger_shifts: 0,
+                technique_switches: 0,
+                rushed_moves: 0,
+                longest_open_run: 0,
+              },
+            },
+            {
+              index: 1,
+              start: 3,
+              end: 4,
+              note_count: 2,
+              stats: {
+                string_changes: 0,
+                finger_shifts: 0,
+                technique_switches: 0,
+                rushed_moves: 1,
+                longest_open_run: 0,
+              },
+            },
+          ],
+        },
+      ),
+    );
+
+    render(<SequenceMode tuning="zheng" onSelect={onSelect} />);
+
+    fireEvent.change(screen.getByPlaceholderText(/例如：5 6 1 2/), {
+      target: { value: "5 6 0 1 - 2 3" },
+    });
+    fireEvent.click(screen.getByText("翻译"));
+    await waitFor(() => expect(screen.getByText("智能编排")).toBeTruthy());
+    fireEvent.click(screen.getByText("智能编排"));
+
+    await waitFor(() => expect(screen.getByText("第 1 句")).toBeTruthy());
+    expect(screen.getByText("第 2 句")).toBeTruthy();
+    // 句内账目跟着分隔线一起显示
+    expect(screen.getByText("3 音 · 换弦 2")).toBeTruthy();
+    expect(screen.getByText("2 音 · 换弦 0 · 快句换手 1")).toBeTruthy();
+
+    // 第二句的分隔线前面应当有 4 个**音符行**：5、6、休止、1 -
+    // （分隔线本身不算行，所以按 data 属性跳过）
+    const second = document.querySelector('[data-phrase-index="1"]');
+    expect(second).not.toBeNull();
+    let rowsBefore = 0;
+    for (
+      let el = second?.previousElementSibling;
+      el;
+      el = el.previousElementSibling
+    ) {
+      if (!el.hasAttribute("data-phrase-index")) rowsBefore++;
+    }
+    expect(rowsBefore).toBe(4);
+  });
+
+  it("只有一句时不画分隔线（短曲标「第 1 句」纯属噪声）", async () => {
+    const onSelect = vi.fn();
+    const cand = () => [makeCandidate("散", 0, 0, "Tiao", 1)];
+    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+      JSON.stringify({ candidates_per_note: [cand(), cand()] }),
+    );
+    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+      makeArrangement(
+        [cand(), cand()],
+        [0, 0],
+        {
+          phrases: [
+            {
+              index: 0,
+              start: 0,
+              end: 1,
+              note_count: 2,
+              stats: {
+                string_changes: 0,
+                finger_shifts: 0,
+                technique_switches: 0,
+                rushed_moves: 0,
+                longest_open_run: 0,
+              },
+            },
+          ],
+        },
+      ),
+    );
+
+    render(<SequenceMode tuning="zheng" onSelect={onSelect} />);
+    fireEvent.change(screen.getByPlaceholderText(/例如：5 6 1 2/), {
+      target: { value: "5 6" },
+    });
+    fireEvent.click(screen.getByText("翻译"));
+    await waitFor(() => expect(screen.getByText("智能编排")).toBeTruthy());
+    fireEvent.click(screen.getByText("智能编排"));
+
+    await waitFor(() => expect(screen.getByText("已编排：少 2 次换弦")).toBeTruthy());
+    expect(document.querySelector("[data-phrase-index]")).toBeNull();
   });
 });

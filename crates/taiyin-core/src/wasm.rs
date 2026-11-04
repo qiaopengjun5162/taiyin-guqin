@@ -60,7 +60,8 @@ pub fn translate_jianpu_sequence_to_jianzi(input_json: &str) -> String {
 /// 输入 JSON: `{"notes": [{"number": 5, "octave": 0}], "tuning": "ruibin"?}`
 /// 输出 JSON:
 /// `{"candidates_per_note": [[...]], "selections": [0, 0, null], "total_cost": 1234,
-///   "stats": {...}, "greedy_stats": {...}, "identical_to_greedy": false}`
+///   "stats": {...}, "greedy_stats": {...}, "identical_to_greedy": false,
+///   "phrases": [{"index":0,"start":0,"end":11,"note_count":12,"stats":{...}}]}`
 ///
 /// 与 `translate_jianpu_sequence_to_jianzi` 的区别：那一版逐音贪心，只跟前一个音
 /// 比远近；这一版把整句当一条路径求全局最优，牺牲个别音的单音舒适度，
@@ -70,6 +71,10 @@ pub fn translate_jianpu_sequence_to_jianzi(input_json: &str) -> String {
 /// `stats` / `greedy_stats` 是同一段简谱两条路径的活动量（换弦、同指挪位、
 /// 技法切换），界面据此把「编排到底省了什么」说成琴人能懂的话；
 /// `identical_to_greedy` 让界面在没有改善时不必硬夸。
+///
+/// `phrases` 是按气口切出来的乐句（前一个音留了两拍及以上即为一处气口），
+/// 逐句带上 `start` / `end`（**输入数组**的下标，含两端）、音数与活动量。
+/// 长曲一句一句练，界面据此标出「第几句」以及哪一句最赶。
 #[wasm_bindgen]
 pub fn arrange_jianpu_sequence_to_jianzi(input_json: &str) -> String {
     let req: SequenceRequest = match serde_json::from_str(input_json) {
@@ -85,6 +90,7 @@ pub fn arrange_jianpu_sequence_to_jianzi(input_json: &str) -> String {
         "stats": arrangement.stats,
         "greedy_stats": arrangement.greedy_stats,
         "identical_to_greedy": arrangement.identical_to_greedy,
+        "phrases": arrangement.phrases,
     })
     .to_string()
 }
