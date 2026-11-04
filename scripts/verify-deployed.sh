@@ -16,7 +16,10 @@
 #
 # 退出码：0 = 全过；1 = 有失败项（逐条已打印）。
 
-set -uo pipefail
+# 刻意不用 pipefail：本脚本每条判定都是「输出里有没有这段字符串」，
+# 配上 `grep -q` 就会在命中那一刻提前关闭管道，上游（openssl / curl）收到 SIGPIPE、
+# 退出码非 0，pipefail 于是把「命中」判成「失败」。这条坑让 TLS 检查假红过两次。
+set -u
 
 BASE="${1:-}"
 if [[ -z "$BASE" ]]; then
@@ -43,7 +46,17 @@ if [[ "$BASE" == https://* ]]; then
   hostport="${BASE#https://}"
   hostport="${hostport%%/*}"
   hostname_only="${hostport%%:*}"
-  if echo | openssl s_client -servername "$hostname_only" -connect "$hostport" 2>/dev/null \
+  # openssl 不读 http_proxy，得显式 -proxy；否则在代理环境下这条会假红，
+  # 把「证书没问题」误判成「证书有问题」——比不检查更糟。
+  proxy_args=()
+  p="${HTTPS_PROXY:-${https_proxy:-}}"
+  if [[ -n "$p" ]]; then
+    p="${p#http://}"; p="${p#https://}"; p="${p%/}"
+    proxy_args=(-proxy "$p")
+  fi
+  # 注意是 2>&1 不是 2>/dev/null：openssl 把 "Verify return code" 打在 stderr 上，
+  # 吞掉 stderr 会让这条检查永远失败（假红，比不检查更坏）。
+  if echo | openssl s_client -servername "$hostname_only" -connect "$hostport" "${proxy_args[@]}" 2>&1 \
       | grep -q "Verify return code: 0 (ok)"; then
     ok "TLS 证书有效（$hostname_only）"
   else

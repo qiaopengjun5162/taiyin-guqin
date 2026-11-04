@@ -18,7 +18,8 @@ name: taiyin
 services:
   pg:
     image: postgres:16
-    container_name: taiyin-pg
+    # 名字可覆盖：本机已经跑着一套开发用的 taiyin-pg 时，第二次起会撞名。
+    container_name: ${PG_NAME:-taiyin-pg}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${PG_USER:-taiyin}
@@ -43,7 +44,7 @@ services:
 
   server:
     image: ghcr.io/qiaopengjun5162/taiyin-server:${IMAGE_TAG:-latest}
-    container_name: taiyin-server
+    container_name: ${SERVER_NAME:-taiyin-server}
     restart: unless-stopped
     depends_on:
       pg:
