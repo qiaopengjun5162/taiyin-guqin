@@ -23,6 +23,17 @@ export interface ScorePhrase {
   beats: number;
 }
 
+/**
+ * 一句在下标上的身份：**边界即身份**。
+ *
+ * 谱面一改，句的起止就变了，这条键也跟着变——练习进度因此自然作废，
+ * 不会出现「第 3 句已过原速」标在一段你根本没练过的音上。
+ * 带上 noteCount 是为了区分「边界相同但少了一个音」这种裁剪。
+ */
+export function phraseKey(phrase: ScorePhrase): string {
+  return `${phrase.start}-${phrase.end}-${phrase.noteCount}`;
+}
+
 /** 一拍 = 8 个单位，与 Rust 的 `duration_units` 是同一把尺子。 */
 const UNITS_PER_BEAT = 8;
 

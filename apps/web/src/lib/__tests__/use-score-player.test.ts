@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useScorePlayer } from "../use-score-player";
+import { PRACTICE_COUNT_IN_BEATS, useScorePlayer } from "../use-score-player";
 import { createEmptyState } from "@/lib/jianzi";
 import type { NoteColumn } from "../types";
 
@@ -46,6 +46,14 @@ class FakeAudioContext {
     return Promise.resolve();
   }
 }
+
+/** 排程给音频设备的开始时刻（秒），按调度顺序。 */
+function startTimes(): number[] {
+  return startMock.mock.calls.map((c) => c[0] as number);
+}
+
+/** play 里固定的调度余量（`ctx.currentTime + 0.05`）。 */
+const T0 = 0.05;
 
 describe("useScorePlayer", () => {
   beforeEach(() => {
@@ -189,8 +197,8 @@ describe("useScorePlayer", () => {
       await result.current.play(1, { endIndex: 3, repeat: 3, tempo: 0.6 });
     });
 
-    // 区间内 3 个有声音符 × 3 遍；第 5 个音绝不能漏进来
-    expect(startMock).toHaveBeenCalledTimes(9);
+    // 区间内 3 个有声音符 × 3 遍 + 两声预备拍；第 5 个音绝不能漏进来
+    expect(startMock).toHaveBeenCalledTimes(9 + PRACTICE_COUNT_IN_BEATS);
     expect(result.current.isPlaying).toBe(true);
     expect(result.current.practicePass).toBe(1);
 
@@ -198,6 +206,33 @@ describe("useScorePlayer", () => {
       result.current.stop();
     });
     expect(result.current.practicePass).toBeNull();
+  });
+
+  it("起手前空两拍：两声预备在入拍之前，第一个音整整晚两拍", async () => {
+    const notes = [
+      makeNote({ jianpuNumber: "5", duration: "四分" }),
+      makeNote({ jianpuNumber: "6", duration: "四分" }),
+    ];
+    const { result } = renderHook(() => useScorePlayer(notes, 120));
+
+    await act(async () => {
+      await result.current.play(0, { endIndex: 1, repeat: 1, tempo: 1 });
+    });
+
+    const times = startTimes().sort((a, b) => a - b);
+    // 一拍 0.5 秒：两声预备落在 t0 与 t0+0.5
+    expect(times[0]).toBeCloseTo(T0, 5);
+    expect(times[1]).toBeCloseTo(T0 + 0.5, 5);
+    // 第一个音在 t0+1.0；之前点下去就响（没有预备）时它会在 t0
+    expect(times[2]).toBeCloseTo(T0 + 1, 5);
+    // 整首播放不留预备拍：那是「我要听这首」，不需要起手时间
+    startMock.mockClear();
+    await act(async () => {
+      await result.current.stop();
+      await result.current.play(0);
+    });
+    expect(startTimes()[0]).toBeCloseTo(T0, 5);
+    expect(startMock).toHaveBeenCalledTimes(2);
   });
 
   it("慢练按倍率放慢：0.5× 时同一个音的落点晚一倍", async () => {
@@ -213,12 +248,18 @@ describe("useScorePlayer", () => {
         await result.current.play(0, { endIndex: 1, repeat: 1, tempo: 0.5 });
       });
 
+      // 0.5× 时一拍 1 秒，预备两拍 → 第一个音在 2.05 秒
       act(() => {
-        vi.advanceTimersByTime(60);
+        vi.advanceTimersByTime(2040);
+      });
+      expect(result.current.playingIndex).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(20);
       });
       expect(result.current.playingIndex).toBe(0);
 
-      // 原速一拍照亮下一音；半速时这一刻还没到（1 拍 = 1 秒）
+      // 原速一拍照亮下一音；半速时这一刻还没到
       act(() => {
         vi.advanceTimersByTime(600);
       });
@@ -237,6 +278,7 @@ describe("useScorePlayer", () => {
     vi.useFakeTimers();
     try {
       // 两个四分音 = 1 秒；120 BPM 下一拍 0.5 秒 → 每遍 1.5 秒
+      // 预备两拍 = 1 秒，所以第一遍从 1.0 秒起，第二遍从 2.5 秒起
       const notes = [
         makeNote({ jianpuNumber: "5", duration: "四分" }),
         makeNote({ jianpuNumber: "6", duration: "四分" }),
@@ -248,9 +290,9 @@ describe("useScorePlayer", () => {
       });
       expect(result.current.practicePass).toBe(1);
 
-      // 第二遍开始（1.5s）之前，仍停在第一遍
+      // 第二遍开始（2.5s）之前，仍停在第一遍
       act(() => {
-        vi.advanceTimersByTime(1400);
+        vi.advanceTimersByTime(2400);
       });
       expect(result.current.practicePass).toBe(1);
 
@@ -260,6 +302,65 @@ describe("useScorePlayer", () => {
       expect(result.current.practicePass).toBe(2);
       // 第二遍的第一个音也在这里亮起：索引回到句首，不是继续往后数
       expect(result.current.playingIndex).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("走完最后一遍才回调「练完」，手动停不算", async () => {
+    vi.useFakeTimers();
+    try {
+      const notes = [
+        makeNote({ jianpuNumber: "5", duration: "四分" }),
+        makeNote({ jianpuNumber: "6", duration: "四分" }),
+      ];
+      const onPracticeEnd = vi.fn();
+      const { result } = renderHook(() => useScorePlayer(notes, 120, undefined, undefined, onPracticeEnd));
+
+      await act(async () => {
+        await result.current.play(0, { endIndex: 1, repeat: 3, tempo: 1 });
+      });
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(onPracticeEnd).not.toHaveBeenCalled();
+
+      // 三遍 4.5 秒 + 预备 1 秒 + 余音，一起走完
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(onPracticeEnd).toHaveBeenCalledTimes(1);
+      expect(result.current.isPlaying).toBe(false);
+
+      // 手动按停止不该被当成「练完了」
+      await act(async () => {
+        await result.current.play(0, { endIndex: 1, repeat: 3, tempo: 1 });
+      });
+      act(() => {
+        result.current.stop();
+      });
+      expect(onPracticeEnd).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("整首播放不回调「练完」——那不是练习", async () => {
+    vi.useFakeTimers();
+    try {
+      const onPracticeEnd = vi.fn();
+      const notes = [makeNote({ jianpuNumber: "5", duration: "四分" })];
+      const { result } = renderHook(() =>
+        useScorePlayer(notes, 120, undefined, undefined, onPracticeEnd),
+      );
+
+      await act(async () => {
+        await result.current.play();
+      });
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(onPracticeEnd).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

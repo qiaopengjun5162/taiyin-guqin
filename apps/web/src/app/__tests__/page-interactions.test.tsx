@@ -8,7 +8,7 @@
  * 真音频合成、真 WAV 编码、真 HTTP 分别由 audio-export / audio-synth / api 的测试守。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import type { NoteColumn } from "@/lib/types";
 
 const h = vi.hoisted(() => ({
@@ -41,6 +41,14 @@ const h = vi.hoisted(() => ({
   reportScore: vi.fn(),
 }));
 
+/**
+ * 播放 hook 收到的「练完三遍」回调。
+ *
+ * 单独放一个容器、不塞进 `h`：`h` 里全是 vi.fn()，beforeEach 会一律 mockReset，
+ * 混进一个普通函数就会连 beforeEach 一起炸掉。
+ */
+const practiceEnd = vi.hoisted(() => ({ current: null as null | (() => void) }));
+
 /** 可切换的存储模式：默认 browser（与既有用例一致），迁移用例里临时切 server。 */
 const storeState = vi.hoisted(() => ({ storageMode: "browser" as "server" | "browser" }));
 
@@ -48,8 +56,22 @@ const storeState = vi.hoisted(() => ({ storageMode: "browser" as "server" | "bro
 vi.mock("@/lib/use-score-player", async () => {
   const React = await import("react");
   return {
-    useScorePlayer: () => {
+    useScorePlayer: (
+      _notes: unknown,
+      _bpm?: number,
+      _concertPitch?: number,
+      _tuning?: unknown,
+      onPracticeEnd?: () => void,
+    ) => {
       const [isPlaying, setPlaying] = React.useState(false);
+      // 真 hook 在「三遍走完」时先停再回调；这里让替身照做，
+      // 否则用例触发完回调还停在「正在练」，看不出停止后的样子
+      practiceEnd.current = onPracticeEnd
+        ? () => {
+            setPlaying(false);
+            onPracticeEnd();
+          }
+        : null;
       return {
         isPlaying,
         playingIndex: isPlaying ? 0 : null,
@@ -190,6 +212,7 @@ async function loadExample() {
 
 beforeEach(() => {
   Object.values(h).forEach((fn) => fn.mockReset());
+  practiceEnd.current = null;
   // 定弦是「偏好 + 曲谱属性」双身份，存在 localStorage 里且有模块级缓存；
   // 不清理的话上一个用例切过的调会漏给下一个用例。
   window.localStorage.clear();
@@ -1483,5 +1506,74 @@ describe("Home · 逐句慢练", () => {
     expect(h.stopPlayback).toHaveBeenCalledTimes(2);
     // 第二次只是停止，不该再起一遍
     expect(h.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("三遍真的走完才记账，并在句子上标「已过原速」", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    // 直接选原速：过关判定看的是「在 1× 下标完整走完三遍」
+    fireEvent.click(await screen.findByLabelText("慢练倍速 1×"));
+    fireEvent.click(await screen.findByLabelText("慢练第 2 句"));
+    act(() => practiceEnd.current?.());
+
+    // 第二句 start 4 / end 7 / 4 个位置 → 键 4-7-4
+    const stored = Object.keys(window.localStorage)
+      .filter((k) => k.startsWith("taiyin.practiceProgress.v1:"))
+      .map((k) => window.localStorage.getItem(k))
+      .join("");
+    expect(stored).toContain('"4-7-4":1');
+
+    expect(await screen.findByLabelText("慢练第 2 句 · 已过原速")).toBeTruthy();
+    expect(screen.getByText("已过 1/2")).toBeTruthy();
+  });
+
+  it("同一档练第二遍不再写一次——重复的写只会让存储白白多一次抖动", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    const practiceOnce = async () => {
+      fireEvent.click(await screen.findByLabelText(/^慢练第 2 句/));
+      act(() => practiceEnd.current?.());
+      await waitFor(() => expect(practiceEnd.current).not.toBeNull());
+    };
+
+    await practiceOnce();
+    const key = Object.keys(window.localStorage).find((k) =>
+      k.startsWith("taiyin.practiceProgress.v1:"),
+    );
+    expect(key).toBeTruthy();
+    const first = window.localStorage.getItem(key as string);
+
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    await practiceOnce();
+    expect(setItem).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(key as string)).toBe(first);
+    setItem.mockRestore();
+  });
+
+  it("中途按停不算练过——没走完的三遍不能算成绩", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    fireEvent.click(await screen.findByLabelText("慢练倍速 1×"));
+    fireEvent.click(await screen.findByLabelText("慢练第 2 句"));
+    fireEvent.click(await screen.findByLabelText("停止慢练第 2 句"));
+
+    expect(
+      Object.keys(window.localStorage).filter((k) =>
+        k.startsWith("taiyin.practiceProgress.v1:"),
+      ),
+    ).toEqual([]);
+    expect(screen.queryByLabelText("慢练第 2 句 · 已过原速")).toBeNull();
   });
 });

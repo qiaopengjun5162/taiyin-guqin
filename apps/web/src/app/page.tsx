@@ -36,7 +36,14 @@ import { forgetMyScore, isMyScore, rememberMyScore } from "@/lib/owner-token";
 import { getCurrentUserId } from "@/lib/auth";
 import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
-import { PRACTICE_REPEATS, useScorePhrases } from "@/lib/score-phrases";
+import { PRACTICE_REPEATS, phraseKey, useScorePhrases } from "@/lib/score-phrases";
+import {
+  readProgress,
+  recordTempo,
+  scoreProgressKey,
+  writeProgress,
+  type PhraseProgress,
+} from "@/lib/practice-progress";
 import { useMetronome } from "@/lib/use-metronome";
 import {
   CONCERT_PITCH_DEFAULT,
@@ -165,17 +172,53 @@ export default function Home() {
   const [recognizerTab, setRecognizerTab] = useState<"single" | "sheet">("single");
   // 录入区两种进法：点选简谱转减字，或把减字码整段粘回来。
   const [inputTab, setInputTab] = useState<"jianpu" | "code">("jianpu");
-  const { play, stop: stopPlayback, isPlaying, playingIndex, practicePass } = useScorePlayer(
-    score,
-    bpm,
-    concertPitch,
-    tuning,
-  );
   // 分句：句界由 Rust 切（与编排同一套判据），前端只提供时值。
   // 只有两句以上才会在界面上出现「分句」那一条。
   const scorePhrases = useScorePhrases(score);
   const [practiceTempo, setPracticeTempo] = useState(0.6);
   const [practiceIndex, setPracticeIndex] = useState<number | null>(null);
+
+  /**
+   * 每句练到哪一档。
+   *
+   * 键里带着社区 id / 曲名 / 音数：换了谱就是另一份进度，
+   * 不会出现「这首的第 3 句已过原速」标在你没练过的一段音上。
+   */
+  const practiceProgressKey = scoreProgressKey(
+    currentScoreId,
+    scoreTitle,
+    score.length,
+  );
+  const [phraseProgress, setPhraseProgress] = useState<PhraseProgress>({});
+  // 渲染期读 localStorage 会让预渲染与首帧不一致，只能进 effect 读
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 外部存储 → React 状态的同步
+    setPhraseProgress(readProgress(practiceProgressKey));
+  }, [practiceProgressKey]);
+
+  /**
+   * 三遍真的走完才记一笔。
+   *
+   * 记的是「这次练到的那一档」，不是「已过关」——过没过是读的时候用
+   * `isCleared` 算的。两件事分开，才不会被一句没走完的练习骗过去。
+   */
+  const handlePracticeEnd = useCallback(() => {
+    if (practiceIndex === null) return;
+    const phrase = scorePhrases[practiceIndex];
+    if (!phrase) return;
+    const next = recordTempo(phraseProgress, phraseKey(phrase), practiceTempo);
+    if (next === phraseProgress) return;
+    setPhraseProgress(next);
+    writeProgress(practiceProgressKey, next);
+  }, [practiceIndex, scorePhrases, phraseProgress, practiceTempo, practiceProgressKey]);
+
+  const { play, stop: stopPlayback, isPlaying, playingIndex, practicePass } = useScorePlayer(
+    score,
+    bpm,
+    concertPitch,
+    tuning,
+    handlePracticeEnd,
+  );
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -437,24 +480,29 @@ export default function Home() {
   /**
    * 慢练某一句：先停再播，区间 / 倍率 / 遍数一次性交给播放器。
    *
+   * 倍率由调用方显式传入（句子按钮给当前档，`再快一档` 给下一档）：
+   * 若在这里读 `practiceTempo` 再 `setPracticeTempo`，同一次事件里
+   * 播放拿到的仍是旧值，听起来就像「按了没反应」。
+   *
    * 节拍器一并停掉：它按原速走，慢练时留着只会把人往原速上带。
    * 慢练的全部意义就是「这一段手还跟不上原速」，让它跟着一个原速的
    * 滴答声去弹，等于一边踩刹车一边踩油门。
    */
   const handlePracticePhrase = useCallback(
-    (index: number) => {
+    (index: number, tempo: number) => {
       const phrase = scorePhrases[index];
       if (!phrase) return;
       stopPlayback();
       if (metronomeRunning) stopMetronome();
+      setPracticeTempo(tempo);
       setPracticeIndex(index);
       void play(phrase.start, {
         endIndex: phrase.end,
         repeat: PRACTICE_REPEATS,
-        tempo: practiceTempo,
+        tempo,
       });
     },
-    [scorePhrases, stopPlayback, metronomeRunning, stopMetronome, play, practiceTempo],
+    [scorePhrases, stopPlayback, metronomeRunning, stopMetronome, play],
   );
 
   const handleStopPractice = useCallback(() => {
@@ -1260,8 +1308,10 @@ export default function Home() {
         bpm={bpm}
         tempo={practiceTempo}
         activeIndex={activePracticeIndex}
+        selectedIndex={practiceIndex}
         pass={practicePass}
         repeat={PRACTICE_REPEATS}
+        progress={phraseProgress}
         onTempoChange={setPracticeTempo}
         onStart={handlePracticePhrase}
         onStop={handleStopPractice}
