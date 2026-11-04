@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{HeaderMap, HeaderValue, Method},
     middleware::from_fn_with_state,
     response::IntoResponse,
@@ -160,6 +160,12 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .route_layer(GovernorLayer::new(write_limiter))
         .get(list_scores);
 
+    // 发布配额：与限流互补的**存量**闸门（限流管每秒几次，配额管一共能有几首）。
+    let publish_quota = PublishQuota {
+        per_account: config.publish_quota_per_account,
+        per_device: config.publish_quota_per_device,
+    };
+
     let translate_routes = Router::new()
         .route("/api/v1/translate/select", post(select_candidates))
         .route("/api/v1/jianzi/recognize", post(recognize_jianzi))
@@ -189,6 +195,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .merge(translate_routes)
         .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024)) // 5 MB
         .layer(cors)
+        .layer(Extension(publish_quota))
         .with_state(state)
 }
 
@@ -232,6 +239,91 @@ async fn read_caller(headers: &HeaderMap, pool: &PgPool) -> AppResult<Caller> {
         user_id: user.map(|u| u.id),
         owner_token: read_owner_token(headers),
     })
+}
+
+/// 发布配额策略。由 `app()` 从配置塞进请求扩展。
+///
+/// 用 `Extension` 而不是加进 `AppState`：配额是**策略**，和连接池、LLM 配置
+/// 这类资源不是一类东西；而且 `AppState` 一加字段，所有测试里的结构体字面量
+/// 都要跟着改一遍——为一个只在一处用到的数改十几个文件不划算。
+#[derive(Clone, Copy, Debug)]
+struct PublishQuota {
+    per_account: i64,
+    per_device: i64,
+}
+
+/// 数「这个身份已经占了多少行」。
+///
+/// 两个条件都走占位符，并且刻意合并成**一条**查询：登录用户既数账号名下的谱，
+/// 也数这台设备还没认领的谱。分成两条 SQL 容易只更新一条，症状是
+/// 「登录之后额度突然翻倍」——不会报错，只会绕开闸门。
+///
+/// 被数到的集合必须是「这个身份删得掉的集合」的子集。否则有人把额度用满之后
+/// 连自己腾地方都做不到，只能等管理员进库删行——那等于把配额做成了封号。
+const PUBLISHED_COUNT_SQL: &str = "\
+SELECT count(*) FROM scores \
+WHERE ($1::uuid IS NOT NULL AND owner_user_id = $1) \
+   OR ($2::text IS NOT NULL AND owner_user_id IS NULL AND owner_token = $2)";
+
+/// 在事务里检查并「预留」一个发布位；超额直接 409。
+///
+/// 必须是事务（`pg_advisory_xact_lock` + 计数 + 插入同进同出）：
+/// 只把计数放在插入之前，两个并发请求会同时数到 `limit - 1`，然后一起插进去。
+/// 锁的粒度是**身份**，不是全表：两个不同用户发谱互不阻塞。
+async fn reserve_publish_slot(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    caller: &Caller,
+    quota: PublishQuota,
+) -> AppResult<()> {
+    // 有登录态就按账号算，否则按本机凭证算——与 `ensure_can_edit` 认的两种身份一致。
+    let by_account = caller.user_id.is_some();
+    let limit = if by_account {
+        quota.per_account
+    } else {
+        quota.per_device
+    };
+
+    let lock_key = match (caller.user_id, caller.owner_token.as_deref()) {
+        (Some(id), _) => format!("taiyin:quota:user:{id}"),
+        (None, Some(token)) => format!("taiyin:quota:device:{token}"),
+        // 调用方保证「至少有一条腿」；真走到这里当未授权处理，不 panic。
+        (None, None) => {
+            return Err(AppError::Unauthorized("发布到社区需要发布者身份".into()));
+        }
+    };
+    // `hashtextextended` 把身份串压成一个 bigint 锁号；第二个参数是种子，固定 0。
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(&lock_key)
+        .execute(&mut **tx)
+        .await?;
+
+    let used: i64 = sqlx::query_scalar(PUBLISHED_COUNT_SQL)
+        .bind(caller.user_id)
+        .bind(caller.owner_token.as_deref())
+        .fetch_one(&mut **tx)
+        .await?;
+
+    if used < limit {
+        return Ok(());
+    }
+
+    // 文案里必须带上「怎么解开」。一句干巴巴的「超出配额」会让人以为服务坏了，
+    // 而实际上这是唯一一条**用户自己就能解除**的限制：删掉旧谱即可。
+    //
+    // 措辞用「已有」而不是「已发布」：这个端点在界面上就是「保存」，
+    // 而保存即入库、进而出现在社区列表里。同一句提示要同时读得通。
+    Err(AppError::Conflict(if by_account {
+        format!(
+            "你在社区已有 {used} 首，达到账号上限（{limit} 首）。\
+             删掉几首旧谱就能继续。"
+        )
+    } else {
+        format!(
+            "这台设备在社区已有 {used} 首，达到未登录上限（{limit} 首）。\
+             登录后每个账号可存 {} 首，也可以先删掉几首旧谱。",
+            quota.per_account
+        )
+    }))
 }
 
 /// 校验「这个调用者能否改 / 删这首谱」。
@@ -512,6 +604,7 @@ async fn recognize_sheet(
 
 async fn create_score(
     State(state): State<AppState>,
+    Extension(quota): Extension<PublishQuota>,
     headers: HeaderMap,
     Json(req): Json<CreateScoreRequest>,
 ) -> AppResult<Json<Score>> {
@@ -530,7 +623,8 @@ async fn create_score(
     // 持久化凭证，用户完全感觉不到；而一个裸 `curl` 会被挡在门外。
     //
     // 注意这不等于反垃圾的全部：脚本随手造一个 UUID 也能算「有主」。真正治本
-    // 还得靠发布限流（见 `write_limiter`）与未来的账号配额，这里先把死数据堵住。
+    // 靠三样东西合力——发布限流（`write_limiter`）管速率，发布配额
+    // （`reserve_publish_slot`）管存量，账号体系让代价落到具体的人身上。
     let caller = read_caller(&headers, &state.pool).await?;
     if caller.user_id.is_none() && caller.owner_token.is_none() {
         return Err(AppError::Unauthorized(
@@ -539,6 +633,10 @@ async fn create_score(
                 .into(),
         ));
     }
+
+    // 配额检查与插入必须同处一个事务：中间隔开，两个并发请求就都能通过检查。
+    let mut tx = state.pool.begin().await?;
+    reserve_publish_slot(&mut tx, &caller, quota).await?;
 
     let score = sqlx::query_as::<_, Score>(
         "INSERT INTO scores (title, notes, tuning, author, owner_token, owner_user_id) \
@@ -552,8 +650,9 @@ async fn create_score(
     .bind(&author)
     .bind(&caller.owner_token)
     .bind(caller.user_id)
-    .fetch_one(&state.pool)
+    .fetch_one(&mut *tx)
     .await?;
+    tx.commit().await?;
 
     Ok(Json(score))
 }

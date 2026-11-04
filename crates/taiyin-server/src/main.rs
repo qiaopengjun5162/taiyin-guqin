@@ -29,6 +29,21 @@ async fn main() -> anyhow::Result<()> {
     if config.translate_api_key.is_some() {
         tracing::info!("/translate/select 已启用 API-key 闸门（纵深防御）");
     }
+    // 配额 0 = 发布入口关闭。这可能是应急时的**故意**操作，但更可能是手滑，
+    // 所以要在启动日志里喊出来——否则「社区突然谁都不能存谱」会被当成故障查半天。
+    if config.publish_quota_per_account == 0 || config.publish_quota_per_device == 0 {
+        tracing::warn!(
+            account = config.publish_quota_per_account,
+            device = config.publish_quota_per_device,
+            "发布配额为 0：对应身份将**完全无法保存 / 发布曲谱**（若非有意，请检查 PUBLISH_QUOTA_* 环境变量）"
+        );
+    } else {
+        tracing::info!(
+            account = config.publish_quota_per_account,
+            device = config.publish_quota_per_device,
+            "发布配额已启用"
+        );
+    }
 
     let pool = db::init_pool(&config.database_url).await?;
 

@@ -157,6 +157,7 @@ curl -i http://127.0.0.1:3001/health
 | `GLOBAL_RATE_PER_SECOND` / `GLOBAL_RATE_BURST` | 可选 | 全局限流：默认每 IP 每秒 2 次、突发 60。**这两个是真在跑的**，所有请求都过这道闸 |
 | `AUTH_RATE_PER_SECOND` / `AUTH_RATE_BURST` | 可选 | 注册 / 登录的**独立**限流：默认每秒 2 次、突发 8。比全局严，因为口令散列故意慢（Argon2id 每次数百毫秒），不限流等于给攻击者一个把单核 CPU 打满的开关。1 核小机器别调大 |
 | `WRITE_RATE_PER_SECOND` / `WRITE_RATE_BURST` | 可选 | 发布曲谱的**独立**限流（只锁 `POST /api/v1/scores`）：默认每秒 1 次、突发 10。它是全站唯一「一个请求换一行数据」的口子，不限就等于让人灌库；**列表读取不在这把锁里**，别把它挂到整条 `/scores` 上 |
+| `PUBLISH_QUOTA_PER_ACCOUNT` / `PUBLISH_QUOTA_PER_DEVICE` | 可选 | 发布**配额**（存量，不是速率）：每个账号默认最多 100 首、每台未登录设备默认最多 30 首，超了返回 409 并提示「删掉几首旧谱」。限流管「每秒几次」，管不住「一秒发一首、连发两天」；两个都要有。未登录额度故意更低，因为本机凭证清了缓存就能换一个。**设成 0 = 立刻关闭发布入口**（出事时的应急开关，不用回滚） |
 | `TRANSLATE_RATE_PER_SECOND` / `TRANSLATE_RATE_BURST` | 可选 | AI 翻译端点限流：默认每秒 1 次、突发 5，因为每次调用都在烧额度 |
 
 ---

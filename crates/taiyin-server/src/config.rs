@@ -37,6 +37,20 @@ pub struct ServerConfig {
     pub write_per_second: u64,
     /// 发布端点限流：突发容量。留出「一次批量导入十来首」的余地。
     pub write_burst: u32,
+    /// 一个**账号**最多能在社区保留多少首谱。
+    ///
+    /// 限流管的是「每秒几次」，管不住「慢慢来」：一秒发一首、连发两天，
+    /// 就是一整库垃圾。配额是**存量**闸门，与限流的**速率**闸门互补。
+    ///
+    /// 100 这个数按「一个人的真实打谱量」定：认真打谱一年也就几十首，
+    /// 真正要发到一百首以上的，多半该自己建站或分批整理，而不是占着公共列表。
+    pub publish_quota_per_account: i64,
+    /// 一个**本机凭证**（未登录）最多能保留多少首。
+    ///
+    /// 比账号低得多，因为本机凭证是**随手可换**的：清了缓存就是一个新身份。
+    /// 给未登录用户和账号一样的额度，等于这个闸门对脚本完全无效。
+    /// 但也不能太低——刚上手、还没决定注册的人，发十首二十首都很正常。
+    pub publish_quota_per_device: i64,
 }
 
 impl ServerConfig {
@@ -59,6 +73,10 @@ impl ServerConfig {
         let auth_burst = parse_u32("AUTH_RATE_BURST", 8);
         let write_per_second = parse_u64("WRITE_RATE_PER_SECOND", 1);
         let write_burst = parse_u32("WRITE_RATE_BURST", 10);
+        // 负数没有意义（夹到 0）；0 是**刻意保留**的：出事时把配额设成 0 就等于
+        // 立刻关掉发布入口，不用改代码、不用回滚，比「停服务」温和得多。
+        let publish_quota_per_account = parse_i64("PUBLISH_QUOTA_PER_ACCOUNT", 100).max(0);
+        let publish_quota_per_device = parse_i64("PUBLISH_QUOTA_PER_DEVICE", 30).max(0);
 
         Self {
             database_url,
@@ -72,6 +90,8 @@ impl ServerConfig {
             auth_burst,
             write_per_second,
             write_burst,
+            publish_quota_per_account,
+            publish_quota_per_device,
         }
     }
 
@@ -95,6 +115,8 @@ impl Default for ServerConfig {
             auth_burst: 8,
             write_per_second: 1,
             write_burst: 10,
+            publish_quota_per_account: 100,
+            publish_quota_per_device: 30,
         }
     }
 }
@@ -122,6 +144,13 @@ fn parse_u32(key: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
+fn parse_i64(key: &str, default: i64) -> i64 {
+    env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,35 +169,28 @@ mod tests {
     fn cors_locked_reflects_origins() {
         assert!(
             !ServerConfig {
-                database_url: String::new(),
                 allowed_origins: vec![],
-                translate_api_key: None,
-                global_per_second: 2,
-                global_burst: 60,
-                translate_per_second: 1,
-                translate_burst: 5,
-                auth_per_second: 2,
-                auth_burst: 8,
-                write_per_second: 1,
-                write_burst: 10,
+                ..ServerConfig::default()
             }
             .cors_locked()
         );
         assert!(
             ServerConfig {
-                database_url: String::new(),
                 allowed_origins: vec!["https://x.test".into()],
-                translate_api_key: None,
-                global_per_second: 2,
-                global_burst: 60,
-                translate_per_second: 1,
-                translate_burst: 5,
-                auth_per_second: 2,
-                auth_burst: 8,
-                write_per_second: 1,
-                write_burst: 10,
+                ..ServerConfig::default()
             }
             .cors_locked()
         );
+    }
+
+    /// 配额默认值不能是 0：0 等于「谁都不能发布」，真按默认值跑起来会发现
+    /// 整个社区只读——这种错不会报错，只会静默地没人能发。
+    #[test]
+    fn publish_quota_defaults_are_permissive() {
+        let cfg = ServerConfig::default();
+        assert!(cfg.publish_quota_per_account > 0);
+        assert!(cfg.publish_quota_per_device > 0);
+        // 未登录额度必须更紧，否则「换一个新凭证」就等于重置配额。
+        assert!(cfg.publish_quota_per_device < cfg.publish_quota_per_account);
     }
 }
