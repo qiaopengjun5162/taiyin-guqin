@@ -36,8 +36,9 @@ import { forgetMyScore, isMyScore, rememberMyScore } from "@/lib/owner-token";
 import { getCurrentUserId } from "@/lib/auth";
 import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
-import { PRACTICE_REPEATS, phraseKey, useScorePhrases } from "@/lib/score-phrases";
+import { JOIN_REPEATS, PRACTICE_REPEATS, joinRange, phraseKey, useScorePhrases } from "@/lib/score-phrases";
 import {
+  joinTempo,
   readProgress,
   recordTempo,
   scoreProgressKey,
@@ -179,6 +180,21 @@ export default function Home() {
   const [practiceIndex, setPracticeIndex] = useState<number | null>(null);
 
   /**
+   * 正在走的那一段：哪句到哪句、什么档、走几遍。
+   *
+   * 不从 `practiceIndex` 推：末句往前接时头一句并不是用户点的那句，
+   * 拿它当起点会把「第 5+6 句」播成「第 6 句」——而画面上还写着两句。
+   * 也不把合练的档写回 `practiceTempo`：那是手选的档位，
+   * 合练的档是两句算出来的，写回去会让下次点句子莫名其妙地变快/变慢。
+   */
+  const [practicePlay, setPracticePlay] = useState<{
+    from: number;
+    to: number;
+    tempo: number;
+    repeat: number;
+  } | null>(null);
+
+  /**
    * 每句练到哪一档。
    *
    * 键里带着社区 id / 曲名 / 音数：换了谱就是另一份进度，
@@ -201,16 +217,30 @@ export default function Home() {
    *
    * 记的是「这次练到的那一档」，不是「已过关」——过没过是读的时候用
    * `isCleared` 算的。两件事分开，才不会被一句没走完的练习骗过去。
+   *
+   * 合练（两句连着走）**不会**虚报成绩，靠的是两件事实而不是一个 if：
+   * ① 合练档位取两句里更慢的那句（`joinTempo`），所以它永远不高于任一句的
+   *    已有成绩，`recordTempo` 的「只升不降」在这里天然写不进东西；
+   * ② 记的是**实际走的那一档**（`practicePlay.tempo`），不是手边拨到的档。
+   * 少任何一条都会冒出「合练一遍就过关」的假横线，所以这两条各有用例守着。
    */
   const handlePracticeEnd = useCallback(() => {
     if (practiceIndex === null) return;
     const phrase = scorePhrases[practiceIndex];
     if (!phrase) return;
-    const next = recordTempo(phraseProgress, phraseKey(phrase), practiceTempo);
+    /**
+     * 记实际走的那一档，不是手边选中的那一档。
+     *
+     * 档位在播放中是可以拨的（拨了不打断这一遍）。走完之后 `practiceTempo`
+     * 可能已经不是刚才那遍的速度了——照它记账，等于把「0.6 走完」写成
+     * 「1× 走完」，句子上立刻多出一根朱砂横线，那是句谎话。
+     */
+    const usedTempo = practicePlay?.tempo ?? practiceTempo;
+    const next = recordTempo(phraseProgress, phraseKey(phrase), usedTempo);
     if (next === phraseProgress) return;
     setPhraseProgress(next);
     writeProgress(practiceProgressKey, next);
-  }, [practiceIndex, scorePhrases, phraseProgress, practiceTempo, practiceProgressKey]);
+  }, [practicePlay, practiceIndex, scorePhrases, phraseProgress, practiceTempo, practiceProgressKey]);
 
   const { play, stop: stopPlayback, isPlaying, playingIndex, practicePass } = useScorePlayer(
     score,
@@ -496,6 +526,7 @@ export default function Home() {
       if (metronomeRunning) stopMetronome();
       setPracticeTempo(tempo);
       setPracticeIndex(index);
+      setPracticePlay({ from: index, to: index, tempo, repeat: PRACTICE_REPEATS });
       void play(phrase.start, {
         endIndex: phrase.end,
         repeat: PRACTICE_REPEATS,
@@ -505,14 +536,64 @@ export default function Home() {
     [scorePhrases, stopPlayback, metronomeRunning, stopMetronome, play],
   );
 
+  /**
+   * 合练：把刚练过那句和相邻那句连着走两遍。
+   *
+   * 分句是为了拆开练，拆完必须合回去——单句练习的区间首尾都被切掉了，
+   * 所以「上一句收尾 → 下一句起手」这一下，在单句里永远练不到。
+   *
+   * 档位取两句里更慢的那句：快的那句等一等，慢的那句不追。
+   */
+  const handlePracticeJoin = useCallback(() => {
+    const range =
+      practiceIndex !== null ? joinRange(scorePhrases, practiceIndex) : null;
+    if (!range) return;
+    const first = scorePhrases[range.from];
+    const last = scorePhrases[range.to];
+    if (!first || !last) return;
+    const tempo = joinTempo(
+      phraseProgress[phraseKey(first)] ?? 0,
+      phraseProgress[phraseKey(last)] ?? 0,
+      practiceTempo,
+    );
+    stopPlayback();
+    if (metronomeRunning) stopMetronome();
+    setPracticePlay({
+      from: range.from,
+      to: range.to,
+      tempo,
+      repeat: JOIN_REPEATS,
+    });
+    void play(range.start, {
+      endIndex: range.end,
+      repeat: JOIN_REPEATS,
+      tempo,
+    });
+  }, [
+    practiceIndex,
+    scorePhrases,
+    phraseProgress,
+    practiceTempo,
+    stopPlayback,
+    metronomeRunning,
+    stopMetronome,
+    play,
+  ]);
+
   const handleStopPractice = useCallback(() => {
     stopPlayback();
     setPracticeIndex(null);
+    setPracticePlay(null);
   }, [stopPlayback]);
 
-  // 只有「正在慢练」才高亮那一句：整首播放时若也高亮，用户会以为在循环某一句
-  const activePracticeIndex =
-    isPlaying && practicePass != null ? practiceIndex : null;
+  // 只有「正在慢练」才高亮：整首播放时若也高亮，用户会以为在循环某一句
+  const activePractice = isPlaying && practicePass != null ? practicePlay : null;
+  const activePracticeIndex = activePractice?.from ?? null;
+  // 合练才给「到哪一句」：单句时 from === to，没必要让组件再判一次
+  const activeJoinTo =
+    activePractice && activePractice.to > activePractice.from
+      ? activePractice.to
+      : null;
 
   /** 保存曲谱到后端 */
   async function handleSave() {
@@ -1308,13 +1389,16 @@ export default function Home() {
         bpm={bpm}
         tempo={practiceTempo}
         activeIndex={activePracticeIndex}
+        joinTo={activeJoinTo}
+        joinedTempo={activeJoinTo !== null ? (activePractice?.tempo ?? null) : null}
         selectedIndex={practiceIndex}
         pass={practicePass}
-        repeat={PRACTICE_REPEATS}
+        repeat={activePractice?.repeat ?? PRACTICE_REPEATS}
         progress={phraseProgress}
         onTempoChange={setPracticeTempo}
         onStart={handlePracticePhrase}
         onStop={handleStopPractice}
+        onJoin={handlePracticeJoin}
       />
 
       {/* ── 拍点高亮（节拍器/联动播放时显示，重拍为朱砂色） ── */}

@@ -47,6 +47,39 @@ const UNITS_PER_BEAT = 8;
 export const PRACTICE_REPEATS = 3;
 
 /**
+ * 合练（两句连着走）连弹几遍。
+ *
+ * 两遍，比单句少一遍：合练不是记肌肉，是确认「上一句收尾之后手还找得到下一句的起手」。
+ * 一遍跨过那个气口，一遍确认不是碰巧；再往下就是重复单句已经练过的东西，
+ * 而多走一遍的代价是两句的时间——长句两句一遍就二十秒，三遍一分钟，
+ * 练琴的人会在第二分钟开始怀疑这个按钮。
+ */
+export const JOIN_REPEATS = 2;
+
+/**
+ * 合练区间：本句 + 相邻那一句。
+ *
+ * 有下一句就往后再接——练琴真正会断的地方是「上一句收尾 → 下一句起手」这一个气口，
+ * 往后接正好跨过一次；末句没有下一句，就往前接，跨的仍然是它前面那个气口。
+ *
+ * 只有一句时返回 null：那时「合」只是把这一句再弹一遍，叫重复，不叫合练。
+ */
+export function joinRange(
+  phrases: ScorePhrase[],
+  index: number,
+): { from: number; to: number; start: number; end: number } | null {
+  const current = phrases[index];
+  if (!current || phrases.length < 2) return null;
+  const neighbor = index + 1 < phrases.length ? index + 1 : index - 1;
+  const from = Math.min(index, neighbor);
+  const to = Math.max(index, neighbor);
+  const first = phrases[from];
+  const last = phrases[to];
+  if (!first || !last) return null;
+  return { from, to, start: first.start, end: last.end };
+}
+
+/**
  * 一个音占多少 1/8 拍。
  *
  * 时值表只有 `durationToBeats` 一份（它已经处理了附点），这里只做单位换算，

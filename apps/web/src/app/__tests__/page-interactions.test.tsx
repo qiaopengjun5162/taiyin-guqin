@@ -1558,6 +1558,87 @@ describe("Home · 逐句慢练", () => {
     setItem.mockRestore();
   });
 
+  it("合练：跨过气口把两句连着走，档位取两句里更慢的那句", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    // 先把第 1 句练到 0.8×（合练只对练过的句子开放）
+    fireEvent.click(await screen.findByLabelText("慢练倍速 0.8×"));
+    fireEvent.click(screen.getByLabelText("慢练第 1 句"));
+    act(() => practiceEnd.current?.());
+    h.play.mockClear();
+
+    fireEvent.click(await screen.findByLabelText("连弹第 1+2 句"));
+
+    // 第 2 句还没练过 → 按手选档位；区间从第 1 句起点一直排到第 2 句终点
+    expect(h.play).toHaveBeenCalledWith(0, {
+      endIndex: 7,
+      repeat: 2,
+      tempo: 0.8,
+    });
+    // 两句都在响，状态行要说两句——只报头一句，用户会以为后一句没放出来
+    expect(
+      await screen.findByText("第 1+2 句 · 8 个位置 · 0.8× · 第 1/2 遍"),
+    ).toBeTruthy();
+  });
+
+  it("合练走完不记账——跨了两句，成绩记到哪一句上都是谎话", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    // 第 1 句练到 0.6×
+    fireEvent.click(await screen.findByLabelText("慢练第 1 句"));
+    act(() => practiceEnd.current?.());
+    // 手边把档位拨到 0.9×（还没练），合练仍按两句里更慢的那句走 → 0.6×
+    fireEvent.click(screen.getByLabelText("慢练倍速 0.9×"));
+    h.play.mockClear();
+
+    fireEvent.click(await screen.findByLabelText("连弹第 1+2 句"));
+    expect(h.play).toHaveBeenCalledWith(0, {
+      endIndex: 7,
+      repeat: 2,
+      tempo: 0.6,
+    });
+    act(() => practiceEnd.current?.());
+
+    const stored = Object.keys(window.localStorage)
+      .filter((k) => k.startsWith("taiyin.practiceProgress.v1:"))
+      .map((k) => window.localStorage.getItem(k))
+      .join("");
+    // 第 1 句仍是单句练出来的 0.6×，没被合练改写成手边的 0.9×
+    expect(stored).toContain('"0-3-4":0.6');
+    expect(stored).not.toContain("0.9");
+    // 第 2 句从未单独走完，不能因为合练过就算练过
+    expect(stored).not.toContain('"4-7-4"');
+  });
+
+  it("练到一半把档位拨高，走完记的仍是实际那一档", async () => {
+    h.splitPhrases.mockResolvedValue([
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    await loadExample();
+
+    fireEvent.click(await screen.findByLabelText("慢练第 2 句"));
+    // 正在练的时候拨到 1×：这一遍不会重新排程，跑的还是 0.6×
+    fireEvent.click(screen.getByLabelText("慢练倍速 1×"));
+    act(() => practiceEnd.current?.());
+
+    const stored = Object.keys(window.localStorage)
+      .filter((k) => k.startsWith("taiyin.practiceProgress.v1:"))
+      .map((k) => window.localStorage.getItem(k))
+      .join("");
+    expect(stored).toContain('"4-7-4":0.6');
+    // 拨一下就算过关，那根朱砂横线就成了谎话
+    expect(screen.queryByLabelText("慢练第 2 句 · 已过原速")).toBeNull();
+  });
+
   it("中途按停不算练过——没走完的三遍不能算成绩", async () => {
     h.splitPhrases.mockResolvedValue([
       { start: 0, end: 3 },

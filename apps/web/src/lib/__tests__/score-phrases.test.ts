@@ -12,6 +12,8 @@ import {
   useScorePhrases,
   phraseSeconds,
   describePhrase,
+  joinRange,
+  JOIN_REPEATS,
   PRACTICE_REPEATS,
   type ScorePhrase,
 } from "../score-phrases";
@@ -168,5 +170,34 @@ describe("时长口径", () => {
 
   it("连弹遍数是 3：一遍听、两遍跟、三遍记", () => {
     expect(PRACTICE_REPEATS).toBe(3);
+  });
+});
+
+describe("合练区间", () => {
+  const three: ScorePhrase[] = [
+    { start: 0, end: 3, noteCount: 4, beats: 4 },
+    { start: 4, end: 9, noteCount: 6, beats: 8 },
+    { start: 10, end: 12, noteCount: 3, beats: 4 },
+  ];
+
+  it("往后接：跨过这一句和下一句之间的那个气口", () => {
+    expect(joinRange(three, 0)).toEqual({ from: 0, to: 1, start: 0, end: 9 });
+    expect(joinRange(three, 1)).toEqual({ from: 1, to: 2, start: 4, end: 12 });
+  });
+
+  it("末句没有下一句，就往前接上一句", () => {
+    expect(joinRange(three, 2)).toEqual({ from: 1, to: 2, start: 4, end: 12 });
+  });
+
+  it("只有一句、空谱、下标越界都返回 null，不猜一个区间出来", () => {
+    expect(joinRange([three[0]], 0)).toBeNull();
+    expect(joinRange([], 0)).toBeNull();
+    expect(joinRange(three, 3)).toBeNull();
+    expect(joinRange(three, -1)).toBeNull();
+  });
+
+  it("合练走两遍：一遍跨气口、一遍确认不是碰巧", () => {
+    expect(JOIN_REPEATS).toBe(2);
+    expect(JOIN_REPEATS).toBeLessThan(PRACTICE_REPEATS);
   });
 });

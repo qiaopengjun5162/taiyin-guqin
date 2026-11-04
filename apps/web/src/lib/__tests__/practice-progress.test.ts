@@ -6,6 +6,7 @@ import {
   TEMPO_LADDER,
   clearedCount,
   isCleared,
+  joinTempo,
   nearestTempo,
   nextTempo,
   nextUnclearedIndex,
@@ -47,6 +48,20 @@ describe("档位", () => {
     expect(nearestTempo(0.74)).toBe(0.7);
     expect(nearestTempo(0.76)).toBe(0.8);
     expect(nearestTempo(3)).toBe(1);
+  });
+});
+
+describe("合练档位", () => {
+  it("取两句里更慢的那句：快的那句等一等，慢的那句不追", () => {
+    expect(joinTempo(1, 0.7, 0.6)).toBe(0.7);
+    expect(joinTempo(0.7, 1, 0.6)).toBe(0.7);
+    expect(joinTempo(0.8, 0.8, 0.6)).toBe(0.8);
+  });
+
+  it("没练过的那句按手选的档位算，不会比手选更快", () => {
+    expect(joinTempo(1, 0, 0.6)).toBe(0.6);
+    expect(joinTempo(0, 1, 0.6)).toBe(0.6);
+    expect(joinTempo(0, 0, 0.9)).toBe(0.9);
   });
 });
 

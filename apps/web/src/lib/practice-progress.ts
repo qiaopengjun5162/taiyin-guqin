@@ -122,6 +122,19 @@ export function recordTempo(
   return { ...progress, [phraseKey]: tempo };
 }
 
+/**
+ * 合练用哪一档：**取两句里更慢的那一句**。
+ *
+ * 合练不是考试，是让手在气口处别停。只要有一句还没到这个速度，
+ * 跨气口时就必然赶或者拖——那时练的已经不是连接，而是补救。
+ * 快的那句等一等，慢的那句不追，这是唯一能让两句话都成立的速度。
+ *
+ * 没练过的那句（记 0）按当前手选的档位算：生地方不该比手选的更快。
+ */
+export function joinTempo(bestA: number, bestB: number, fallback: number): number {
+  return Math.min(bestA || fallback, bestB || fallback);
+}
+
 /** 有几句到了原速。 */
 export function clearedCount(
   phraseKeys: string[],

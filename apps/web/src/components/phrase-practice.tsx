@@ -2,6 +2,7 @@
 
 import {
   describePhrase,
+  joinRange,
   phraseKey,
   type ScorePhrase,
 } from "@/lib/score-phrases";
@@ -27,6 +28,10 @@ const FIRST_TEMPO = 0.6;
  * 1. 句子 + 每句的进度点：告诉你**今天还差哪几句**；
  * 2. 档位：告诉你多快（等距 0.1，`再快一档` 才永远指同一件事）；
  * 3. 状态与唯一的下一步动作：练完三遍不用自己找按钮，「再快一档」就在眼前。
+ *
+ * 旁边那个「2+3 连着」是唯一的**次要**动作，样式压过一头：分句练是为了拆开，
+ * 拆开练完必须合回去——不然你只会一句一句地弹，一到气口就断，而那个断裂
+ * 恰好在单句练习里永远练不到（区间首尾都被切掉了）。
  */
 export function PhrasePractice({
   phrases,
@@ -37,17 +42,24 @@ export function PhrasePractice({
   pass,
   repeat,
   progress,
+  joinTo,
+  joinedTempo,
   onTempoChange,
   onStart,
   onStop,
+  onJoin,
 }: {
   phrases: ScorePhrase[];
   /** 当前速度，用来把拍数说成秒数。 */
   bpm: number;
   /** 当前选中的档位。 */
   tempo: number;
-  /** 正在播第几句（0 起）；没在播为 null。 */
+  /** 正在播第几句（0 起）；没在播为 null。合练时是区间的**头**一句。 */
   activeIndex: number | null;
+  /** 合练时区间到第几句（0 起，一定 ≥ `activeIndex`）；单句慢练为 null。 */
+  joinTo: number | null;
+  /** 合练实际用的档位（两句里更慢的那句）；单句慢练为 null。 */
+  joinedTempo: number | null;
   /** 最近练过的那一句；决定「再快一档」练的是哪句。 */
   selectedIndex: number | null;
   /** 已经进行到第几遍（1 起）；没在练为 null。 */
@@ -59,6 +71,8 @@ export function PhrasePractice({
   onTempoChange: (tempo: number) => void;
   onStart: (index: number, tempo: number) => void;
   onStop: () => void;
+  /** 合练：把最近练过那句和相邻那句连着走。 */
+  onJoin: () => void;
 }) {
   // 一句及以下不显示：整首播放按钮已经在上面，再给一个「只播这一句」是噪声
   if (phrases.length < 2) return null;
@@ -69,12 +83,25 @@ export function PhrasePractice({
   const targetBest = target ? (progress[phraseKey(target)] ?? 0) : 0;
   const playing = activeIndex !== null && pass !== null;
 
+  // 合练区间：最近练过那句 + 相邻那句。练过一遍以上才给——一次都没走完的音，
+  // 先合起来只会把「不会」和「接不上」混成一件说不清的事。
+  const joined = selectedIndex !== null ? joinRange(phrases, selectedIndex) : null;
+  const canJoin = joined !== null && !playing && targetBest > 0;
+
   let status: string;
   let action: { label: string; onClick: () => void } | null = null;
 
   if (playing && activeIndex !== null) {
     const phrase = phrases[activeIndex];
-    status = `第 ${activeIndex + 1} 句 · ${phrase.noteCount} 个位置 · 第 ${pass}/${repeat} 遍`;
+    if (joinTo !== null) {
+      // 合练时说「这两句一共多少位置」，而不是只报头一句——用户听到的是两段。
+      const span = phrases
+        .slice(activeIndex, joinTo + 1)
+        .reduce((sum, p) => sum + p.noteCount, 0);
+      status = `第 ${activeIndex + 1}+${joinTo + 1} 句 · ${span} 个位置 · ${joinedTempo ?? tempo}× · 第 ${pass}/${repeat} 遍`;
+    } else {
+      status = `第 ${activeIndex + 1} 句 · ${phrase.noteCount} 个位置 · 第 ${pass}/${repeat} 遍`;
+    }
   } else if (target && selectedIndex !== null && isCleared(targetBest)) {
     const nextIdx = nextUnclearedIndex(keys, progress);
     status =
@@ -109,7 +136,11 @@ export function PhrasePractice({
           分句
         </span>
         {phrases.map((phrase, index) => {
-          const isActive = activeIndex === index;
+          // 合练时区间的两句都在响，就都点亮：只亮头一句，用户会以为后一句没放出来。
+          const isActive =
+            activeIndex !== null &&
+            index >= activeIndex &&
+            index <= (joinTo ?? activeIndex);
           const isSelected = selectedIndex === index;
           const best = progress[phraseKey(phrase)] ?? 0;
           const passed = isCleared(best);
@@ -187,6 +218,16 @@ export function PhrasePractice({
             className="shrink-0 min-h-[44px] px-2.5 rounded border border-amber-600/50 bg-amber-800/20 text-[10px] tracking-wider text-amber-100 hover:bg-amber-800/35"
           >
             {action.label}
+          </button>
+        )}
+        {canJoin && joined && (
+          <button
+            onClick={onJoin}
+            aria-label={`连弹第 ${joined.from + 1}+${joined.to + 1} 句`}
+            title={`把第 ${joined.from + 1}、${joined.to + 1} 句连着走一遍，跨过中间那个气口——分句练会的那两句，合起来才算会`}
+            className="shrink-0 min-h-[44px] px-2.5 rounded border border-amber-700/25 text-[10px] tabular-nums tracking-wider text-stone-400 hover:text-stone-200 hover:border-amber-600/50 transition-all"
+          >
+            {joined.from + 1}+{joined.to + 1} 连着
           </button>
         )}
       </div>

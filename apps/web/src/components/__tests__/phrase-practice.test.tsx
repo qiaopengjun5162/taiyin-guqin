@@ -22,6 +22,8 @@ function setup(overrides: Partial<Parameters<typeof PhrasePractice>[0]> = {}) {
     bpm: 120,
     tempo: 0.6,
     activeIndex: null as number | null,
+    joinTo: null as number | null,
+    joinedTempo: null as number | null,
     selectedIndex: null as number | null,
     pass: null as number | null,
     repeat: 3,
@@ -29,6 +31,7 @@ function setup(overrides: Partial<Parameters<typeof PhrasePractice>[0]> = {}) {
     onTempoChange: vi.fn(),
     onStart: vi.fn(),
     onStop: vi.fn(),
+    onJoin: vi.fn(),
     ...overrides,
   };
   return { props, ...render(<PhrasePractice {...props} />) };
@@ -158,5 +161,57 @@ describe("PhrasePractice", () => {
       screen.getByText("第 2 句还没走完一遍——再点一次它"),
     ).toBeTruthy();
     expect(screen.queryByText("再快一档")).toBeNull();
+  });
+
+  it("练过一遍才给合练：把这一句和相邻那句连着走", () => {
+    const { props } = setup({ selectedIndex: 0, progress: { [KEY_0]: 0.8 } });
+
+    expect(screen.getByText("1+2 连着")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("连弹第 1+2 句"));
+    expect(props.onJoin).toHaveBeenCalled();
+    expect(props.onStart).not.toHaveBeenCalled();
+  });
+
+  it("一遍都没走完就谈合练，只会把「不会」和「接不上」混成一件事", () => {
+    setup({ selectedIndex: 0, progress: {} });
+    expect(screen.queryByText("1+2 连着")).toBeNull();
+  });
+
+  it("正在练的时候不给合练按钮——手上正走着，眼前不该冒出第二个开始", () => {
+    setup({ activeIndex: 1, pass: 1, selectedIndex: 1, progress: { [KEY_1]: 1 } });
+    expect(screen.queryByLabelText(/^连弹第/)).toBeNull();
+  });
+
+  it("合练时报两句一共多少位置、实际用的档位，且两句都点亮", () => {
+    setup({
+      activeIndex: 0,
+      joinTo: 1,
+      joinedTempo: 0.8,
+      pass: 1,
+      repeat: 2,
+      selectedIndex: 0,
+      progress: { [KEY_0]: 0.9 },
+    });
+
+    expect(screen.getByText("第 1+2 句 · 10 个位置 · 0.8× · 第 1/2 遍")).toBeTruthy();
+    // 两句都在响，就都点亮：只亮头一句，用户会以为后一句没放出来
+    expect(screen.getByLabelText("停止慢练第 1 句").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByLabelText("停止慢练第 2 句").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("末句没有下一句，往前接上一句——跨的仍是它前面那个气口", () => {
+    const three: ScorePhrase[] = [
+      ...PHRASES,
+      { start: 10, end: 12, noteCount: 3, beats: 4 },
+    ];
+    const { props } = setup({
+      phrases: three,
+      selectedIndex: 2,
+      progress: { "10-12-3": 0.7 },
+    });
+
+    expect(screen.getByText("2+3 连着")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("连弹第 2+3 句"));
+    expect(props.onJoin).toHaveBeenCalled();
   });
 });
