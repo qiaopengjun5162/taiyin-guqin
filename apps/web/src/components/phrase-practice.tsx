@@ -84,7 +84,7 @@ export function PhrasePractice({
             aria-label={`慢练倍速 ${t}×`}
             className={`min-h-[44px] px-2 rounded border text-[10px] tabular-nums tracking-wider transition-all ${
               tempo === t
-                ? "border-amber-600/50 bg-amber-800/20 text-stone-900"
+                ? "border-amber-600/60 bg-amber-700/25 text-amber-100"
                 : "border-amber-700/20 text-stone-500 hover:border-amber-600/50 hover:text-stone-300"
             }`}
           >
