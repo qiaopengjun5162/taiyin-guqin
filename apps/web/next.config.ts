@@ -1,11 +1,12 @@
 import type { NextConfig } from "next";
 
 /**
- * 站点挂在子路径下（GitHub Pages 项目页）。
- * 这里是一个常量、三处引用：路由前缀、静态资源前缀、运行时读取的 WASM 路径。
- * 若改到 Vercel 根路径部署，只需把它改成 ""。
+ * 站点部署路径，可由构建期环境变量 `BASE_PATH` 覆盖：
+ * - GitHub Pages 项目页走子路径 `/taiyin-guqin`（默认值，CI 里显式传入）；
+ * - Vercel / Netlify 部署到根路径时，把 `BASE_PATH` 设为空串即可。
+ * 一处定义、三处引用：路由前缀、静态资源前缀、运行时读取的 WASM 路径。
  */
-const BASE_PATH = "/taiyin-guqin";
+const BASE_PATH = process.env.BASE_PATH ?? "/taiyin-guqin";
 
 const nextConfig: NextConfig = {
   // 静态导出：前端是客户端重应用，WASM + AudioContext 均在浏览器运行，

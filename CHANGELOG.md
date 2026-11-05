@@ -1,5 +1,23 @@
 # 更新日志
 
+## [0.39.4] - 2026-11-05
+
+### 免费托管就绪：默认进纯前端模式，站能真正用起来
+
+上一轮把仓库变量 `TAIYIN_API_URL` 设成了指向那台暂时连不上的死后端，导致线上识别
+走不通（503）。本版让「免费 + 真能用」成为默认：
+
+- **删除死后端变量** `TAIYIN_API_URL`：推送后 GitHub Pages 自动进入 `browser-only`
+  模式——减字识别（模板匹配）、播放、WAV/PNG/SVG 导出、本地曲谱**全在浏览器跑，
+  零后端、零成本**。等后端就绪，在 Settings → Variables 设回地址、重跑 `pages.yml`
+  即可切回连后端。
+- **`BASE_PATH` 改由环境变量驱动**（`next.config.ts`）：GitHub Pages 子路径
+  `/taiyin-guqin` 为默认，`pages.yml` 显式传入；Vercel / Netlify 部署时设空串走根路径。
+  一处定义、三处引用（路由前缀 / 静态资源前缀 / 运行时 WASM 路径），解决之前「换平台
+  就得改代码重提 PR」的问题。
+- **新增 `vercel.json` 与 `netlify.toml`**：两个免费托管平台开箱即用配置，构建期
+  自动编译 WASM + 静态导出到 `apps/web/dist`，`BASE_PATH` 置空走根路径。
+
 ## [0.39.3] - 2026-11-05
 
 ### 整页识别搬进浏览器：纯静态站也能认电子谱面

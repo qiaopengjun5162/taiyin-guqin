@@ -1,0 +1,7 @@
+[build]
+command = "cargo install wasm-pack --locked 2>/dev/null || true && cd crates/taiyin-core && wasm-pack build --target web && cd ../.. && rm -rf apps/web/wasm apps/web/public/wasm && cp -r crates/taiyin-core/pkg apps/web/wasm && cp -r crates/taiyin-core/pkg apps/web/public/wasm && cd apps/web && pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter web build"
+publish = "apps/web/dist"
+
+[build.environment]
+  BASE_PATH = ""
+  NODE_VERSION = "22"

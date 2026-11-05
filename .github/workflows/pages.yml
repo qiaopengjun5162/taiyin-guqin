@@ -56,13 +56,19 @@ jobs:
         #
         # 前端读 `process.env.NEXT_PUBLIC_API_URL`（见 lib/api.ts 的 getApiBase），
         # NEXT_PUBLIC_ 前缀会被 Next 内联进客户端 bundle。留空时它是空串，
-        # `getApiBase()` 走 `|| null` → 退回「纯前端模式」（曲谱只存本机），
-        # 所以变量没设也不会把站点搞坏。
+        # `getApiBase()` 走 `|| null` → 退回「纯前端模式」（曲谱只存本机、识别走浏览器
+        # 内模板匹配），所以变量没设也不会把站点搞坏。
         #
-        # 用仓库变量而不是写死：换域名时只改 Settings → Variables，重跑本工作流即可，
-        # 不用改代码、不用重新 review 一个只改了字符串的提交。
+        # ⚠️ 当前 `TAIYIN_API_URL` 仓库变量指向的后端（taiyin.qintopia.cn）暂未运行，
+        # 故这里**不注入**该地址 → 线上站自动进入 browser-only，减字识别/播放/导出全在
+        # 浏览器跑、零后端、零成本。等后端就绪，在 Settings → Variables 设回地址、重跑
+        # 本工作流即可切回「连后端」模式。
+        #
+        # BASE_PATH 显式给子路径，兼容 GitHub Pages 项目页；Vercel/Netlify 部署时
+        # 把 BASE_PATH 设为空串（见仓库根 vercel.json / netlify.toml）。
         env:
           NEXT_PUBLIC_API_URL: ${{ vars.TAIYIN_API_URL }}
+          BASE_PATH: /taiyin-guqin
         run: pnpm --filter web build
 
       - name: Upload artifact
