@@ -260,8 +260,9 @@ describe("JianziRecognizer", () => {
   });
   it("静态站点走浏览器内模板匹配，不调用后端", async () => {
     vi.mocked(isBrowserOnlyMode).mockReturnValue(true);
-    // 用索引里真实存在的条目（徽位），别再造「大九勾四」这种整字模板——
-    // 模板索引里没有整字，假数据会让测试假装算法能认整字。
+    // 用索引里真实存在的条目（徽位 sm_7.6）。模板索引含本项目的完整减字
+    // （213 个复合减字 + 55 个部件），电子谱面/清晰截图可识别；本测试只验证
+    // 「浏览器内模板匹配、不调后端」这条路径，不替后端模型背书。
     vi.mocked(recognizeFile).mockResolvedValue({
       name: "sm_7.6",
       text: "七徽六分",
@@ -282,9 +283,11 @@ describe("JianziRecognizer", () => {
     expect(recognizeJianzi).not.toHaveBeenCalled();
     expect(screen.getAllByText(/本机模板匹配/).length).toBeGreaterThan(0);
     expect(screen.getByText(/命中 sm_7\.6/)).toBeTruthy();
-    // 只认部件这件事必须写在面板上，别让用户以为能认整字
-    expect(screen.getByText(/只认单个部件/)).toBeTruthy();
-    expect(screen.getByText("减字部件识别（本机模板匹配）")).toBeTruthy();
+    // 纠正后的文案：本机模板匹配可识别「完整减字」（电子谱面/清晰截图），
+    // 而非「只认部件」；拍照/手写/扫描件不支持。
+    expect(screen.getByText(/可识别本项目字体渲染的完整减字/)).toBeTruthy();
+    expect(screen.getByText(/拍照、手写、扫描件暂不支持/)).toBeTruthy();
+    expect(screen.getByText("减字谱识别（本机模板匹配）")).toBeTruthy();
   });
 
   it("匹配度低时不把结果当答案，明确告警", async () => {

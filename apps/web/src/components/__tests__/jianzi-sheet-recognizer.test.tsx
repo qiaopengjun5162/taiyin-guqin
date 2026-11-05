@@ -4,6 +4,7 @@ import { JianziSheetRecognizer } from "@/components/jianzi-sheet-recognizer";
 
 vi.mock("@/lib/api", () => ({
   recognizeJianziSheet: vi.fn(),
+  isBrowserOnlyMode: vi.fn(() => false),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) {

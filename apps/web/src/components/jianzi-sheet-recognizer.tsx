@@ -1,13 +1,23 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { JianziState, NoteColumn } from "@/lib/types";
 import { parseJianziText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "@/components/svg-jianzi-block";
-import { recognizeJianziSheet, ApiError } from "@/lib/api";
+import { recognizeJianziSheet, ApiError, isBrowserOnlyMode } from "@/lib/api";
 import { schedulePluck } from "@/lib/audio-synth";
 import { jianziToFrequency, jianziToJianpu } from "@/lib/jianzi-pitch";
 import { usePitchContext } from "@/lib/use-pitch-context";
+import { loadTemplateIndex } from "@/lib/jianzi-template";
+import { recognizeSheetFile } from "@/lib/jianzi-sheet-segment";
+
+/** 该模式在页面生命周期内不变，无需通知。 */
+const subscribeNoop = () => () => {};
+
+/** 模板索引的静态地址：随 basePath 变化，用文档基准 URL 解析最稳。 */
+function templateIndexUrl(): string {
+  return new URL("data/template_index.json", document.baseURI).toString();
+}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -25,9 +35,14 @@ function fileToBase64(file: File): Promise<string> {
 /**
  * 整页减字谱识别面板（P1：对标 udywang「琴与人的交互 1 号」5×7 字阵）。
  *
- * 上传一整页减字谱图片 → 后端 Claude 多模态识别为若干按网格坐标排布的字格 →
+ * 上传一整页减字谱图片 → 切分成字格 → 逐格识别为规范减字 →
  * 前端重排为可读网格，每格：① 可点听（按减字精确推算音高）；② 下方输入框可校正误读
  * （实时重解析、重渲染、重推音高）；③ 按阅读顺序（同排从右到左）一键导入为可演奏曲谱。
+ *
+ * 两条识别路径，能力边界不同：
+ * - 有后端（本机开发）：走后端多模态接口，可认完整减字；
+ * - 静态站点（线上）：走浏览器内「投影切分 + 模板匹配」，对本项目字体渲染的
+ *   干净电子谱面有效（与单字识别同源）；拍照/手写件不适用。
  *
  * 导入诊断：把每格按「有效减字」分为 可解析 / 有字但解析失败（标「无法解析」，需校正）/
  * 无字 三类，导入后如实报告成功与跳过数量，避免「识别到了但解析不出来」被静默丢弃。
@@ -39,6 +54,9 @@ export function JianziSheetRecognizer({
 }) {
   // 导入时反推的音高必须按当前定弦，否则慢三弦/紧五弦那张谱会整体错半音
   const { tuning, concertPitch } = usePitchContext();
+  // 静态站点无后端时走本机模板切分+匹配（能力只到电子谱面），分支跟着变。
+  // 服务端快照固定 false，避免水合不一致。
+  const browserOnly = useSyncExternalStore(subscribeNoop, isBrowserOnlyMode, () => false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cells, setCells] = useState<
@@ -57,6 +75,22 @@ export function JianziSheetRecognizer({
     setEdits({});
     setLoading(true);
     try {
+      if (browserOnly) {
+        const index = await loadTemplateIndex(templateIndexUrl());
+        const cells = await recognizeSheetFile(index, f);
+        setCells(
+          cells.map((c) => ({
+            row: c.row,
+            col: c.col,
+            glyph: c.m?.text ?? null,
+            explanation: c.m
+              ? `本机模板匹配：命中 ${c.m.name}，距离 ${c.m.distance.toFixed(0)}`
+              : null,
+            confidence: c.m?.confidence ?? null,
+          })),
+        );
+        return;
+      }
       const base64 = await fileToBase64(f);
       const mediaType = f.type || "image/jpeg";
       const resp = await recognizeJianziSheet(base64, mediaType);
