@@ -58,6 +58,34 @@ PostgreSQL 容器（数据库）                 ← 真正存曲谱的地方
 
 ---
 
+### 离「对公众开放」还差这几件事（2026-11-05 状态）
+
+代码、镜像、验收都已就绪；开工前先备齐下面三件，①③要机器主人动手：
+
+| # | 事项 | 谁来做 | 怎么做 |
+|---|---|---|---|
+| ① | 服务器授权 SSH 公钥 | 机器主人 | 把运维机 `~/.ssh/id_rsa.pub` 的一整行追加到服务器的 `~/.ssh/authorized_keys`（云控制台或现有登录方式都能做） |
+| ② | DNS 解析 | 机器主人 | DNS 给 `taiyin.qintopia.cn` 加一条 A 记录指向服务器公网 IP。**没域名也能先跑通**：把 `服务器IP.nip.io` 当域名用，事后换真域名只改反代与仓库变量 |
+| ③ | SMTP 授权码（找回口令真发信） | 机器主人 | 在邮箱设置里生成 SMTP 授权码。配好之前找回邮件只进日志、走管理员重置兜底——不挡上线，挡的是「自助找回」这一条 |
+
+镜像 `ghcr.io/qiaopengjun5162/taiyin-server` **已公开、匿名可拉**，服务器不需要 GitHub 账号。
+
+### 一键部署（推荐入口）
+
+三件事齐了之后，在任何能免密 SSH 到服务器的机器上一条命令完成上线（下面第 1～5 节全部自动跑）：
+
+```bash
+bash scripts/deploy-to-server.sh ubuntu@服务器 taiyin.qintopia.cn
+```
+
+脚本做这些事：SSH / DNS 预检 → 生成强口令写入 `/opt/taiyin/.env`（不回显）→ 起数据库与后端
+→ 接入机器上已有的 nginx / caddy 并签 HTTPS 证书 → 跑线上验收（`verify-deployed.sh`）→
+设置前端默认后端地址（`TAIYIN_API_URL`）。**国内服务器拉不动 docker.io / ghcr.io 时
+自动兜底「本机代拉 → scp 注入」**，不卡网络。拿不准先加 `--dry-run` 看它打算干什么。
+下面各节是手动版，供理解每步含义与排障。
+
+---
+
 ## 1. 服务器准备
 
 **这步在干什么**：把服务器变成能跑容器的样子，并把门关好（只开 80 / 443）。
@@ -145,13 +173,16 @@ curl -i http://127.0.0.1:13001/health     # 返回 200 即成功
 docker compose logs -f server
 ```
 
-> **镜像是私有的，直接 `pull` 会 `denied`**。两种解法：
-> ① GitHub → 你的头像 → **Packages** → `taiyin-server` → 右侧 **Package settings**
-> → 把可见性改成 **Public**。一次点击，之后永久免登录（推荐）；
-> ② 或先 `docker login ghcr.io -u <你的GitHub用户名>`，口令用一枚带 `read:packages` 的 PAT。
+> **镜像已公开、匿名可拉**（2026-11-05 实测不带凭据能取到 manifest）。若 `pull` 仍报
+> `denied`，去 GitHub → 头像 → **Packages** → `taiyin-server` → **Package settings**
+> 确认可见性是 **Public**（曾是私有：CI 的 `GITHUB_TOKEN` 有包读权限所以 CI 一直绿，
+> 私有态时服务器照样 denied——踩过的坑，留着防再踩）。
 >
-> ⚠️ **别看 CI 能拉就以为谁都行**：workflow 里的 `GITHUB_TOKEN` 对本仓库的包有读权限，
-> 所以 Deploy Smoke 一直是绿的，而服务器上照样 `denied`。这是踩过的坑，写在手册里防再踩。
+> **国内服务器常常连不上 docker.io / ghcr.io**（TLS 超时，实测）。`scripts/deploy-to-server.sh`
+> 会自动兜底：在能上网的机器代拉 → `docker save` → scp → 服务器 `docker load`。手动部署同理：
+> 把两个镜像（`postgres:16` + `ghcr.io/qiaopengjun5162/taiyin-server:latest`）save 成 tar
+> 拷进去 load；或给 docker 配镜像加速器（腾讯云内网 `mirror.ccs.tencentyun.com` 只加速
+> docker.io，ghcr 仍要走代拉）。
 
 > **回滚**：把 `.env` 里的 `IMAGE_TAG` 改成上一个 `sha-xxxxxx`，再 `docker compose up -d`。
 > 不用重新编译，也不用整包重下。
@@ -374,7 +405,7 @@ node scripts/e2e-community.mjs https://qiaopengjun5162.github.io/taiyin-guqin/ h
 | # | 标准 | 状态 | 依据 |
 |---|---|---|---|
 | 1 | 线上手机走完「拼 → 译 → 编 → 播 → 慢练 → 导出 → 存」不报错 | ✅ | `scripts/e2e-community.mjs` 9 项（375px 无横向溢出） |
-| 2 | 注册 / 登录 / 发布 / 收藏 / 检索全通，数据落真 Postgres | ✅ 接口层 | `scripts/verify-deployed.sh` 21 项（带 ADMIN_TOKEN 再 +4 项重置口令链路）；**对公众开放还差一台长期服务器**（见第 0 节） |
+| 2 | 注册 / 登录 / 发布 / 收藏 / 检索全通，数据落真 Postgres | ✅ 接口层 | `scripts/verify-deployed.sh` 21 项（带 ADMIN_TOKEN 再 +4 项重置口令链路）；**对公众开放还差：服务器授权 SSH 公钥 + 一条 DNS 记录**（见第 0 节「离对公众开放还差这几件事」，齐了用 `scripts/deploy-to-server.sh` 一条命令上线） |
 | 3 | AI 识别拿真实谱图跑一批，准确率有一个明确数字 | ⚠️ 有数字：**纯 AI exact 0%**（42 条字体真值；11-05 提示词去坍缩后仍 0%，模型改为诚实 null 不再背模板）；电子谱面模板路径 100% | `tools/eval-jianzi/README.md`「基线结果」。**结论：现阶段不对外开识别**，电子谱面走模板即可 |
 | 4 | 密码丢了能自己找回 | ✅ 代码已备齐：邮件令牌自助找回（30 分钟有效、一次有效、改密踢会话）+ 管理员重置兜底；**生产启用需配 SMTP**（见环境变量表） | `scripts/verify-deployed.sh` 第 9/10 节；`tests/admin_reset.rs` 6 项 + `tests/password_reset_flow.rs` 8 项 |
 

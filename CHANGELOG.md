@@ -1,5 +1,31 @@
 # 更新日志
 
+## [0.39.2] - 2026-11-05
+
+### 上线冲刺包：一条命令部署，验收 24 项全过
+
+「差一台服务器」变成「差三件小事，然后一条命令」。新增
+`scripts/deploy-to-server.sh`（在能免密 SSH 到服务器的机器上跑）：
+
+```bash
+bash scripts/deploy-to-server.sh ubuntu@服务器 taiyin.qintopia.cn
+```
+
+一条命令替手册第 1～5 节：SSH / DNS 预检（公钥没配会直接告诉你怎么加）→ 生成强口令写
+`/opt/taiyin/.env`（不回显）→ 起库起后端 → 接入机器上已有的 nginx / caddy 并自动签
+HTTPS 证书 → 跑 `verify-deployed.sh` 线上验收 → 设 `TAIYIN_API_URL` 让全站默认连后端。
+幂等可重跑，`--dry-run` 先看计划。
+
+- **国内网络兜底**（实测坐实）：国内服务器连不上 docker.io / ghcr.io（TLS 超时）。
+  脚本自动改走「能上网的机器代拉 linux/amd64 镜像 → docker save → scp → 服务器
+  docker load」，注册表可达就直拉、不可达也不卡死。
+- **全文档实测演练**：一次性 Linux 虚机（amd64 Ubuntu + Docker）从裸机跑到验收——
+  兜底路径如期命中，部署后 `verify-deployed.sh` **24 项全过**（含管理员重置：改密即踢
+  旧会话、旧口令登不进、新口令能进）。
+- 文档修正两处失真：①ghcr 镜像**已公开**（匿名探测 manifest 200），手册「镜像是私有的」
+  改掉；②「对公众开放还差一台长期服务器」改为「差 SSH 公钥授权 + 一条 DNS 记录」，
+  并把三件事的清单写进手册第 0 节。
+
 ## [0.39.1] - 2026-11-05
 
 ### 识别提示词去坍缩：治得了说谎，治不了不识字
