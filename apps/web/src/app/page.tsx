@@ -504,6 +504,26 @@ export default function Home() {
     setEditingIndex(null);
   }
 
+  /**
+   * 拖动改时值：直接落到音符上，不再走「进编辑模式 → 改键盘时值 → 确认」。
+   *
+   * 顺手退出编辑模式：键盘里那份时值状态还是旧的，留着它再点「确认」
+   * 会把刚拖好的时值改回去——这种"改完又被覆盖"最难查。
+   */
+  function handleChangeDuration(
+    index: number,
+    value: { duration: NoteColumn["duration"]; dotted: boolean },
+  ) {
+    commitScore((prev) =>
+      prev.map((n, i) =>
+        i === index
+          ? { ...n, duration: value.duration, jianpuDot: value.dotted }
+          : n,
+      ),
+    );
+    if (editingIndex === index) setEditingIndex(null);
+  }
+
   function handleRemove(id: string) {
     const removedIdx = score.findIndex((n) => n.id === id);
     commitScore((prev) => prev.filter((n) => n.id !== id));
@@ -1351,7 +1371,7 @@ export default function Home() {
         className="mt-8 w-full"
         style={{ maxWidth: `${WIDTH_MAX_REM[layoutPref.width]}rem` }}
       >
-        <ScoreView notes={score} beatsPerBar={beatsPerBar} layout={layoutPref.layout} density={layoutPref.density} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} editingIndex={editingIndex} playingIndex={playingIndex} />
+        <ScoreView notes={score} beatsPerBar={beatsPerBar} layout={layoutPref.layout} density={layoutPref.density} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} onChangeDuration={handleChangeDuration} editingIndex={editingIndex} playingIndex={playingIndex} />
         {score.length === 0 && (
           <div className="mt-4 text-center">
             <p className="text-[11px] tracking-wider text-amber-700/40">

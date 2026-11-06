@@ -15,6 +15,12 @@ import {
   type ScoreDensity,
   type ScoreLayout,
 } from "@/lib/score-layout";
+import {
+  DRAG_THRESHOLD_PX,
+  dragDuration,
+  durationLabel,
+  type DurationValue,
+} from "@/lib/duration-drag";
 import { JianziBlock } from "./jianzi-block";
 
 const SERIF_FONT =
@@ -41,6 +47,7 @@ export function ScoreView({
   onRemove,
   onEdit,
   onSeekLyric,
+  onChangeDuration,
   editingIndex,
   playingIndex,
 }: {
@@ -51,6 +58,8 @@ export function ScoreView({
   onRemove?: (id: string) => void;
   onEdit?: (index: number) => void;
   onSeekLyric?: (index: number) => void;
+  /** 左右拖动音符改时值；不传则不可拖（例如播放中）。 */
+  onChangeDuration?: (index: number, value: DurationValue) => void;
   editingIndex?: number | null;
   playingIndex?: number | null;
 }) {
@@ -87,6 +96,8 @@ export function ScoreView({
       onRemove={onRemove}
       onEdit={onEdit}
       onSeekLyric={onSeekLyric}
+      // 播放中禁止拖动：时值一变，正在跑的音符时间表就失效了，播放器会走音
+      onChangeDuration={playingIndex != null ? undefined : onChangeDuration}
       isEditing={editingIndex === index}
       isPlaying={playingIndex === index}
     />
@@ -226,6 +237,7 @@ function NoteColumnView({
   onRemove,
   onEdit,
   onSeekLyric,
+  onChangeDuration,
   isEditing,
   isPlaying,
 }: {
@@ -235,6 +247,7 @@ function NoteColumnView({
   onRemove?: (id: string) => void;
   onEdit?: (index: number) => void;
   onSeekLyric?: (index: number) => void;
+  onChangeDuration?: (index: number, value: DurationValue) => void;
   isEditing?: boolean;
   isPlaying?: boolean;
 }) {
@@ -242,6 +255,17 @@ function NoteColumnView({
 
   // 双谱联动高亮：悬停简谱↔减字互相反向强调，让"音高"与"指法"的对应一眼可见。
   const [linkHover, setLinkHover] = useState<"jianpu" | "jianzi" | null>(null);
+
+  // 拖动改时值：位移超过阈值才算拖，否则仍是点击（进编辑模式）。
+  // 两者共用同一个手势起点，必须靠这个阈值分开，否则"点一下"会被判成拖动。
+  const [dragPreview, setDragPreview] = useState<DurationValue | null>(null);
+  const dragRef = useRef<{
+    startX: number;
+    start: DurationValue;
+    active: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+  const draggable = Boolean(onChangeDuration) && !isPlaying;
 
   // 播放时把当前音符列滚动进视野，长曲不跟丢（仅在浏览器支持 scrollIntoView 时）
   const columnRef = useRef<HTMLDivElement>(null);
@@ -254,21 +278,85 @@ function NoteColumnView({
     }
   }, [isPlaying]);
 
+  function endDrag() {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (drag?.active && dragPreview) {
+      // 拖完紧接着会来一次 click，别让它再进编辑模式
+      suppressClickRef.current = true;
+      const unchanged =
+        dragPreview.duration === note.duration &&
+        dragPreview.dotted === note.jianpuDot;
+      if (!unchanged) onChangeDuration?.(index, dragPreview);
+    }
+    setDragPreview(null);
+  }
+
   return (
     <div
       ref={columnRef}
       data-note-column
+      data-dragging={dragPreview ? true : undefined}
       data-playing={isPlaying || undefined}
-      className={`group flex flex-col items-center select-none cursor-pointer rounded pt-1 transition-all duration-150 hover:bg-amber-50/50 ${
+      className={`group flex flex-col items-center select-none rounded pt-1 transition-all duration-150 ${
+        draggable ? "cursor-ew-resize" : "cursor-pointer"
+      } hover:bg-amber-50/50 ${
         isPlaying
           ? "ring-1 ring-emerald-600/50 bg-emerald-50 shadow-sm shadow-emerald-500/10"
           : isEditing
             ? "ring-1 ring-amber-500/40 bg-amber-50 shadow-sm shadow-amber-500/10"
-            : ""
+            : dragPreview
+              ? "ring-1 ring-rose-400/60 bg-rose-50"
+              : ""
       }`}
-      style={{ width: NOTE_COLUMN_WIDTH, flex: "0 0 auto" }}
-      onClick={() => onEdit?.(index)}
+      style={{
+        width: NOTE_COLUMN_WIDTH,
+        flex: "0 0 auto",
+        position: "relative",
+        // 横向拖拽归我们，纵向滚动仍交给页面——否则手机上拖时值会拖不动页面
+        touchAction: draggable ? "pan-y" : undefined,
+      }}
+      onPointerDown={(e) => {
+        if (!draggable) return;
+        dragRef.current = {
+          startX: e.clientX,
+          start: { duration: note.duration, dotted: note.jianpuDot },
+          active: false,
+        };
+        // 指针捕获：手指滑出音符范围后仍能收到 move/up，否则拖一半就断
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        const dx = e.clientX - drag.startX;
+        if (!drag.active && Math.abs(dx) < DRAG_THRESHOLD_PX) return;
+        drag.active = true;
+        setDragPreview(dragDuration(drag.start, dx));
+      }}
+      onPointerUp={endDrag}
+      onPointerCancel={() => {
+        dragRef.current = null;
+        setDragPreview(null);
+      }}
+      onClick={() => {
+        if (suppressClickRef.current) {
+          suppressClickRef.current = false;
+          return;
+        }
+        onEdit?.(index);
+      }}
     >
+      {/* 拖动时浮出目标时值：没有这个反馈，用户不知道拖到哪一档了 */}
+      {dragPreview && (
+        <span
+          data-drag-preview
+          className="absolute -top-2 -right-1 z-10 px-1 py-px rounded bg-rose-600 text-white text-[9px] leading-tight tracking-wider shadow"
+        >
+          {durationLabel(dragPreview)}
+        </span>
+      )}
+
       {/* 序号 */}
       <span className="text-[8px] text-stone-400/40 mb-0.5 leading-none">
         {index + 1}

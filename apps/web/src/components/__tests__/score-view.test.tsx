@@ -7,6 +7,23 @@ import { ScoreView } from "../score-view";
 import { createEmptyState } from "@/lib/jianzi";
 import type { NoteColumn, JianziState } from "@/lib/types";
 
+/**
+ * jsdom 没有 PointerEvent。
+ *
+ * 不补这一层的话，`fireEvent.pointerMove(el, { clientX })` 会退化成普通 Event、
+ * 把 clientX 丢掉——拖动测试仍然"通过"，但实际什么都没测到。这类假通过比不写还糟。
+ */
+if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number;
+    constructor(type: string, params: PointerEventInit = {}) {
+      super(type, params);
+      this.pointerId = params.pointerId ?? 1;
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+
 function makeNote(overrides: Partial<NoteColumn> = {}): NoteColumn {
   const jianzi: JianziState = {
     ...createEmptyState(),
@@ -325,6 +342,169 @@ describe("ScoreView", () => {
       const noteA = compact.querySelector<HTMLElement>("[data-note-column]")!;
       const noteB = loose.querySelector<HTMLElement>("[data-note-column]")!;
       expect(noteA.style.width).toBe(noteB.style.width);
+    });
+  });
+
+  /**
+   * 拖动改时值：手势与「点击进编辑模式」共用同一个起点，必须靠位移阈值分开。
+   * 分不开的后果是「想点一下改音，结果时值被拖没了」——这类误触最难解释。
+   */
+  describe("拖动改时值", () => {
+    const STEP = 40;
+
+    function columnOf(container: HTMLElement): HTMLElement {
+      return container.querySelector<HTMLElement>("[data-note-column]")!;
+    }
+
+    it("向右拖两格把四分变二分", () => {
+      const onChangeDuration = vi.fn();
+      const { container } = render(
+        <ScoreView
+          notes={[makeNote({ duration: "四分" })]}
+          onChangeDuration={onChangeDuration}
+        />,
+      );
+      const col = columnOf(container);
+
+      fireEvent.pointerDown(col, { clientX: 100 });
+      fireEvent.pointerMove(col, { clientX: 100 + STEP * 2 });
+      fireEvent.pointerUp(col);
+
+      expect(onChangeDuration).toHaveBeenCalledWith(0, {
+        duration: "二分",
+        dotted: false,
+      });
+    });
+
+    it("向左拖一格把四分变附点八分", () => {
+      const onChangeDuration = vi.fn();
+      const { container } = render(
+        <ScoreView
+          notes={[makeNote({ duration: "四分" })]}
+          onChangeDuration={onChangeDuration}
+        />,
+      );
+      const col = columnOf(container);
+
+      fireEvent.pointerDown(col, { clientX: 100 });
+      fireEvent.pointerMove(col, { clientX: 100 - STEP });
+      fireEvent.pointerUp(col);
+
+      expect(onChangeDuration).toHaveBeenCalledWith(0, {
+        duration: "八分",
+        dotted: true,
+      });
+    });
+
+    it("位移不足阈值时不算拖动，仍按点击进编辑模式", () => {
+      const onChangeDuration = vi.fn();
+      const onEdit = vi.fn();
+      const { container } = render(
+        <ScoreView
+          notes={[makeNote()]}
+          onChangeDuration={onChangeDuration}
+          onEdit={onEdit}
+        />,
+      );
+      const col = columnOf(container);
+
+      fireEvent.pointerDown(col, { clientX: 100 });
+      fireEvent.pointerMove(col, { clientX: 103 });
+      fireEvent.pointerUp(col);
+      fireEvent.click(col);
+
+      expect(onChangeDuration).not.toHaveBeenCalled();
+      expect(onEdit).toHaveBeenCalledWith(0);
+    });
+
+    it("拖完紧跟的那次 click 被吃掉，下一次点击仍正常", () => {
+      const onChangeDuration = vi.fn();
+      const onEdit = vi.fn();
+      const { container } = render(
+        <ScoreView
+          notes={[makeNote()]}
+          onChangeDuration={onChangeDuration}
+          onEdit={onEdit}
+        />,
+      );
+      const col = columnOf(container);
+
+      fireEvent.pointerDown(col, { clientX: 100 });
+      fireEvent.pointerMove(col, { clientX: 100 + STEP });
+      fireEvent.pointerUp(col);
+      fireEvent.click(col);
+
+      expect(onChangeDuration).toHaveBeenCalledTimes(1);
+      expect(onEdit).not.toHaveBeenCalled();
+      fireEvent.click(col);
+      expect(onEdit).toHaveBeenCalledWith(0);
+    });
+
+    it("目标时值没变时不产生空改动（否则撤销栈里全是废步）", () => {
+      const onChangeDuration = vi.fn();
+      const { container } = render(
+        <ScoreView
+          notes={[makeNote({ duration: "四分" })]}
+          onChangeDuration={onChangeDuration}
+        />,
+      );
+      const col = columnOf(container);
+
+      fireEvent.pointerDown(col, { clientX: 100 });
+      fireEvent.pointerMove(col, { clientX: 100 + 12 });
+      fireEvent.pointerUp(col);
+
+      expect(onChangeDuration).not.toHaveBeenCalled();
+    });
+
+    it("拖动过程中浮出目标时值徽标", () => {
+      const { container } = render(
+        <ScoreView notes={[makeNote()]} onChangeDuration={vi.fn()} />,
+      );
+      const col = columnOf(container);
+
+      expect(container.querySelector("[data-drag-preview]")).toBeNull();
+      fireEvent.pointerDown(col, { clientX: 100 });
+      fireEvent.pointerMove(col, { clientX: 100 + STEP * 2 });
+      expect(container.querySelector("[data-drag-preview]")!.textContent).toBe(
+        "二分",
+      );
+      fireEvent.pointerUp(col);
+      expect(container.querySelector("[data-drag-preview]")).toBeNull();
+    });
+
+    it("播放中禁止拖动（时值一变，播放时间表就失效）", () => {
+      const onChangeDuration = vi.fn();
+      const { container } = render(
+        <ScoreView
+          notes={[makeNote()]}
+          onChangeDuration={onChangeDuration}
+          playingIndex={0}
+        />,
+      );
+      const col = columnOf(container);
+
+      fireEvent.pointerDown(col, { clientX: 100 });
+      fireEvent.pointerMove(col, { clientX: 100 + STEP * 2 });
+      fireEvent.pointerUp(col);
+
+      expect(onChangeDuration).not.toHaveBeenCalled();
+    });
+
+    it("不传 onChangeDuration 时不接管手势（只读场景）", () => {
+      const onEdit = vi.fn();
+      const { container } = render(
+        <ScoreView notes={[makeNote()]} onEdit={onEdit} />,
+      );
+      const col = columnOf(container);
+
+      fireEvent.pointerDown(col, { clientX: 100 });
+      fireEvent.pointerMove(col, { clientX: 100 + STEP * 2 });
+      fireEvent.pointerUp(col);
+      fireEvent.click(col);
+
+      expect(container.querySelector("[data-drag-preview]")).toBeNull();
+      expect(onEdit).toHaveBeenCalledWith(0);
     });
   });
 });
