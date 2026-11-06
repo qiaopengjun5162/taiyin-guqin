@@ -229,4 +229,16 @@ pnpm --filter web build   # 输出到 apps/web/dist
 
 ## 📄 许可
 
-MIT
+代码：MIT
+
+**减字谱字体：不是本项目的作品。** 本站渲染减字用的字形来自第三方开源字体
+「忘机减字谱楷体」v1.1（作者：忘机，<https://www.wjjzp.com>），
+以 SIL Open Font License 1.1 发布，允许商用。本项目原样分发该字体文件，
+未做修改；许可全文见 [`apps/web/public/fonts/OFL.txt`](apps/web/public/fonts/OFL.txt)，
+来源与用法见 [`apps/web/public/fonts/README.md`](apps/web/public/fonts/README.md)。
+若你 fork 本项目，请一并保留该许可与署名。
+
+> 在此之前，仓库里曾分发一份改名的副本（抹掉版权字段、清空 `placeholder` 字形）。
+> 那份文件已删除——OFL 允许修改，但要求保留原作者版权声明，改名副本不满足这一点，
+> 而它带来的功能收益经比对为零。
+

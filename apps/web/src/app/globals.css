@@ -1,6 +1,10 @@
 @import "tailwindcss";
 
-/* ── 太音减字谱楷体（基于忘机减字谱楷体修改，去除推广弹窗） ──
+/* ── 减字谱楷体（第三方开源字体：忘机减字谱楷体，OFL 1.1） ──
+ *
+ * 字体本身原样分发（public/fonts/WangJiJianZiPuKaiTi.ttf，与官网原件 md5 相同），
+ * 许可全文在 public/fonts/OFL.txt，来源与用法见同目录 README.md。
+ * **不要**修改字体文件的名称表来去掉厂商信息——那是署名，改掉即违反 OFL。
  *
  * 注意：@font-face 的 src 是**部署路径相关**的——GitHub Pages 在 `/taiyin-guqin/`
  * 子路径下，Vercel/Netlify 在根路径。写在静态 CSS 里只能硬编码其中一个，

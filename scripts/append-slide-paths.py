@@ -16,7 +16,7 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.ttLib import TTFont
 
-FONT_PATH = "apps/web/public/fonts/TaiYinJianZiPuKaiTi.ttf"
+FONT_PATH = "apps/web/public/fonts/WangJiJianZiPuKaiTi.ttf"
 OUTPUT_PATH = "apps/web/src/lib/svg-paths.ts"
 
 # svg-paths 键 → 字体字形名

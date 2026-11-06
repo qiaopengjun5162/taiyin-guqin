@@ -90,12 +90,16 @@ try {
   log(`\n=== 2) 减字字体真加载（丢了会退化成汉字） ===`);
   const fontInfo = await page.evaluate(async () => {
     await document.fonts
-      .load('24px "TaiYinJianZiPuKaiTi"', "散挑二")
+      .load('24px "WangJiJianZiPuKaiTi"', "散挑二")
       .catch(() => {});
     await document.fonts.ready;
-    const faces = [...document.fonts].filter((f) => f.family.includes("TaiYin"));
+    // 按族名筛：这个字体是我们原样分发的第三方开源字体（OFL 1.1），
+    // 族名就是人家的原名，不再改成自有前缀——改名前缀会让署名消失。
+    const faces = [...document.fonts].filter((f) =>
+      f.family.includes("WangJiJianZiPuKaiTi")
+    );
     return {
-      check: document.fonts.check('24px "TaiYinJianZiPuKaiTi"'),
+      check: document.fonts.check('24px "WangJiJianZiPuKaiTi"'),
       faces: faces.map((f) => `${f.family}:${f.status}`),
     };
   });
@@ -199,7 +203,7 @@ try {
       const hasDigit = /\d/.test(c.textContent || "");
       // 减字有两条合法渲染路径：字体 GSUB 连字 / SVG 四象限积木（无连字时降级）
       const hasFontLayer = [...c.querySelectorAll("div")].some((d) =>
-        (d.getAttribute("style") || "").includes("TaiYinJianZiPuKaiTi")
+        (d.getAttribute("style") || "").includes("WangJiJianZiPuKaiTi")
       );
       const hasSvgLayer = c.querySelectorAll("svg").length > 0;
       const hasJianziText =

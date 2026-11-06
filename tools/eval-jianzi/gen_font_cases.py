@@ -39,7 +39,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-FONT = REPO / "apps" / "web" / "public" / "fonts" / "TaiYinJianZiPuKaiTi.ttf"
+FONT = REPO / "apps" / "web" / "public" / "fonts" / "WangJiJianZiPuKaiTi.ttf"
 
 # 完整谱字（复合字形）的命名前缀；sm_* 是部件（如「十一徽一分」），不进主数据集。
 COMPOUND_PREFIXES = ("lg", "lgw", "xl", "md")
@@ -206,7 +206,7 @@ def main() -> int:
     payload = {
         "mode": "single",
         "source": (
-            "font: TaiYinJianZiPuKaiTi.ttf，真值由 GSUB 连字表反查"
+            "font: WangJiJianZiPuKaiTi.ttf，真值由 GSUB 连字表反查"
             "（gen_font_cases.py 生成）"
         ),
         "items": built,

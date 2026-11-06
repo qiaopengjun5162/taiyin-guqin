@@ -126,7 +126,7 @@ EVAL_BACKEND=http://127.0.0.1:3099 \
 
 ## 真减字数据集：从字体渲染，零人工标注
 
-`gen_font_cases.py` 直接读项目自带字体 `TaiYinJianZiPuKaiTi.ttf`，按**字形名**取轮廓
+`gen_font_cases.py` 直接读项目自带字体 `WangJiJianZiPuKaiTi.ttf`，按**字形名**取轮廓
 渲染成 PNG，真值由 **GSUB 连字表反查**自动得出（连字把构件字符合成一个字形，反读这张表
 就是真值文本）。好处是：真值来自字体本身（不靠人眼看图写、不会写错），样本可无限扩、
 完全可复现。一个字形有多个等价写法时（如「半涓/半蠲」）会写进 `ground_truth_alts`，

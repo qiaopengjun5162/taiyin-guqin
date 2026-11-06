@@ -2,7 +2,7 @@
 """
 太音 · SVG 积木路径提取脚本
 
-从 TaiYinJianZiPuKaiTi.ttf 提取核心部首/指法符号的 SVG 轮廓路径，
+从 WangJiJianZiPuKaiTi.ttf 提取核心部首/指法符号的 SVG 轮廓路径，
 输出为 TypeScript 字典文件 (svg-paths.ts)，供 SvgJianziBlock 使用。
 
 输出结构：
@@ -19,7 +19,7 @@ import os
 from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 
-FONT_PATH = "apps/web/public/fonts/TaiYinJianZiPuKaiTi.ttf"
+FONT_PATH = "apps/web/public/fonts/WangJiJianZiPuKaiTi.ttf"
 OUTPUT_PATH = "apps/web/src/lib/svg-paths.ts"
 
 TARGET_GLYPHS = {

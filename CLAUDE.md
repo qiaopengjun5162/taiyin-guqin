@@ -312,12 +312,21 @@ src/
 - **指法语义时代分流**（管平湖 1957）：相同符号在不同时代谱式中语义可能相反。例如 "女" 在《广陵散》（早期谱）中作"按"（左手），在《自远堂》（晚期谱）中作"如"（右手双弹）。`JianziState` 未来需预留 `era: 'Early' | 'Late'` 模态字段，用于指法解析分流。
 - **古体字形已整合**：22 个标准 CJK 字符的 SVG path 已替换为來自齊伋體（明代木刻版风格）的古体字形。右手指法外壳（半包围结构）保持当前字体路径不变，因其结构不适合用标准 CJK 字符替换。
 
-## 忘机减字谱楷体（TaiYinJianZiPuKaiTi）
+## 减字谱字体（WangJiJianZiPuKaiTi）
 
-- 原始字体 `WangJiJianZiPuKaiTi1.1.ttf` (1.2MB) —— 含 DRM 广告 glyph（名为 `placeholder`，面积 580 万像素，映射到 10 万+ Unicode 码位）
-- 清理后字体 `TaiYinJianZiPuKaiTi.ttf` —— 所有 name table 条目已改名，placeholder glyph 清空，码位重映射到 .notdef
+- 第三方开源字体**「忘机减字谱楷体」v1.1**，SIL OFL 1.1，**原样分发**：
+  `apps/web/public/fonts/WangJiJianZiPuKaiTi.ttf`，md5 `dbb08e86b57bd9121e14ad068677bcc8`，
+  与官网原件（<https://www.wjjzp.com/jzpWeb/download/>）逐字节相同
+- 许可全文在同目录 `OFL.txt`；来源、用法与踩坑记录在 `fonts/README.md`；页脚有署名
 - GSUB: 26 lookups（ContextSubst/ChainContextSubst/LigatureSubst/SingleSubst），GPOS: 227 lookups
 - 字体本质是 GSUB 连字引擎，不支持拆开独立渲染
+- ⚠️ `placeholder` 字形：134 条轮廓、bbox 3.8em 宽、**映射 75,679 个码位**
+  （ASCII 与常见标点全在内）。任何未被收录的字符都会渲染成这块巨幅图形，
+  不是空白也不是豆腐块。**所以只能用它排已确认能组字的指法串，不能当通用 font-family。**
+- 历史：曾有一份改名副本 `TaiYinJianZiPuKaiTi.ttf`——名称表版权字段被换成
+  `Modified for Taiyin Guqin Project`、厂商 URL 被删、`placeholder` 被清空。
+  已废弃并换回原件：那份改动违反 OFL 的署名要求，而逐字形比对显示它与原件的
+  真字形、advance 完全一致（只差 `placeholder` 一个），收益为零。
 
 ## 代理设置
 

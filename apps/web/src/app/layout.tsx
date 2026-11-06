@@ -44,7 +44,15 @@ export const metadata: Metadata = {
  * 与 basePath / assetPrefix 同源，三处不会走偏。
  */
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-const JIANZI_FONT_CSS = `@font-face{font-family:"TaiYinJianZiPuKaiTi";src:url("${BASE_PATH}/fonts/TaiYinJianZiPuKaiTi.ttf") format("truetype");font-weight:normal;font-style:normal;font-display:swap}`;
+/**
+ * 字体族名用**原名**而不是自取别名。
+ *
+ * 这个字体是第三方开源作品（忘机减字谱楷体，OFL 1.1），本站只是使用者。
+ * 曾经把它改名成「TaiYinJianZiPuKaiTi」并抹掉版权字段分发，等于把别人的
+ * 署名换成自己的——既违反 OFL，也让「字是谁做的」在开发者工具里消失。
+ * 现在原样分发官方文件，族名照抄，署名在页脚与 public/fonts/README.md。
+ */
+const JIANZI_FONT_CSS = `@font-face{font-family:"WangJiJianZiPuKaiTi";src:url("${BASE_PATH}/fonts/WangJiJianZiPuKaiTi.ttf") format("truetype");font-weight:normal;font-style:normal;font-display:swap}`;
 
 export default function RootLayout({
   children,

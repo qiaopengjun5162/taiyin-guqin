@@ -4,7 +4,7 @@ import type { JianziState } from "@/lib/types";
 import { jianziToText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "./svg-jianzi-block";
 
-const JIANZI_FONT = '"TaiYinJianZiPuKaiTi", "KaiTi", "STKaiti", "Ma Shan Zheng", "Noto Serif SC", serif';
+const JIANZI_FONT = '"WangJiJianZiPuKaiTi", "KaiTi", "STKaiti", "Ma Shan Zheng", "Noto Serif SC", serif';
 
 /** 降级到 SVG 渲染的触发条件（字体 GSUB 无法正确处理的情况）。 */
 function needsSvg(state: JianziState): boolean {

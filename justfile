@@ -104,7 +104,7 @@ docker-down:
 
 # ── SVG 字形提取 ──────────────────────────────
 
-# 从 TaiYinJianZiPuKaiTi 提取所有 SVG path（基准版本）
+# 从 WangJiJianZiPuKaiTi 提取所有 SVG path（基准版本）
 extract-svg-paths:
     python3 scripts/extract-svg-paths.py
 

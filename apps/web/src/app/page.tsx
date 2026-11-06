@@ -2025,27 +2025,41 @@ export default function Home() {
 
       {/* ── 页脚 ── */}
       <div className="no-print mt-auto pt-10 flex flex-col items-center gap-2">
-        <p className="text-[11px] tracking-[0.15em] text-amber-700/30">
+        <p className="text-[11px] tracking-[0.15em] text-amber-200/40">
           先选音色，再依次拼出完整减字
         </p>
         <Link
           href="/yuelun"
-          className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
+          className="text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
         >
           乐论 · 《荀子》读书
         </Link>
         <Link
           href="/jianzipu"
-          className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
+          className="text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
         >
           减字谱 · 科普
         </Link>
         <Link
           href="/zidian"
-          className="text-[11px] tracking-[0.15em] text-amber-700/40 hover:text-amber-100/70 transition-colors underline underline-offset-2"
+          className="text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
         >
           减字字典 · 字全表
         </Link>
+        {/*
+         * 字体署名。减字谱字形是这个项目的核心，但那套字形不是我们画的：
+         * 是「忘机减字谱楷体」（OFL 1.1）——原样分发，只换引用方式。
+         * 署名挂在每个页面都看得见的页脚，而不是塞进源码注释里，
+         * 不然「字是谁做的」这件事就只存在于 git 历史中。
+         */}
+        <a
+          href="https://www.wjjzp.com/jzpWeb/index.html"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-[10px] tracking-[0.15em] text-amber-200/45 hover:text-amber-100 transition-colors underline underline-offset-2"
+        >
+          减字谱字形：忘机减字谱楷体（OFL 1.1）
+        </a>
       </div>
     </main>
   );
