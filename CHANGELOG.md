@@ -1,5 +1,24 @@
 # 更新日志
 
+## [0.39.6] - 2026-11-06
+
+### 修 Vercel monorepo 导入：单项目只部署前端
+
+用户的 Vercel 导入页把仓库识别成 monorepo（检测到 `apps/web` 前端、`crates/taiyin-server`
+Rust 后端、根目录 Container 三应用），根目录提示需 `vercel.json` 走 Services 多服务部署——
+但那会试图部署后端/容器，不符合「只部署纯前端静态站」目标。
+
+- **`scripts/build-static.sh` 开头加「回到仓库根」**：`cd "$(git rev-parse --show-toplevel || pwd)"`，
+  无论 Vercel/Netlify 从哪个子目录调用，后续相对路径都成立（原来假设在仓库根跑）。
+- **新增 `apps/web/vercel.json`**：适配 Vercel 单项目导入 `apps/web`（项目根即 `apps/web`），
+  `buildCommand=bash scripts/build-static.sh`、`outputDirectory=dist`、env `BASE_PATH=""` /
+  `PNPM_VERSION=11` / SPA 兜底。仓库根 `vercel.json` 保留供「根目录项目」用，两份对应各自项目根。
+- **`docs/免费部署.md` Vercel 步骤改写**：明确点 `apps/web` 的「Import single project →」，
+  不要选根目录 Services；并说明现在有两份 `vercel.json`。
+
+验证：构建脚本本地端到端跑通（WASM 编译+导出 dist）；GitHub Pages CI 上一轮已证 `dist` 为真实
+产物目录（线上站 200 实测）。
+
 ## [0.39.5] - 2026-11-06
 
 ### 抽出自包含静态构建脚本，Vercel / Netlify 免费托管开箱即用

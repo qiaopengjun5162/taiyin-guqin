@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm install --frozen-lockfile --ignore-scripts",
+  "buildCommand": "bash scripts/build-static.sh",
+  "outputDirectory": "dist",
+  "env": {
+    "BASE_PATH": "",
+    "PNPM_VERSION": "11"
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

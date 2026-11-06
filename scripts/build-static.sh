@@ -14,6 +14,10 @@
 # 脚本对「已装工具链」的幂等：cargo/wasm-pack 存在时跳过安装步骤。
 set -euo pipefail
 
+# 无论 Vercel / Netlify / 本地从哪个子目录调用，都先回到仓库根，
+# 这样后面的相对路径（crates/taiyin-core、apps/web/wasm）始终成立。
+cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
 echo "== 准备 Rust 工具链 =="
 if ! command -v cargo >/dev/null 2>&1; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
