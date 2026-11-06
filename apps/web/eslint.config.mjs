@@ -20,6 +20,9 @@ const eslintConfig = defineConfig([
     "dist/**",
     // vitest 覆盖率报告（含 lcov-report 的 HTML 与其中的 .js），每次跑覆盖率都会重写。
     "coverage/**",
+    // 线上冒烟脚本（e2e/smoke.mjs）：Node 环境执行的发布后验证工具，
+    // 不是 Next 运行时源码，顶层 await 与 console.log 是刻意的输出方式。
+    "e2e/**",
   ]),
 ]);
 

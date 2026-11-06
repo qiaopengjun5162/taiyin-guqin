@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:serial": "vitest run --no-file-parallelism --maxWorkers=1"
+    "test:serial": "vitest run --no-file-parallelism --maxWorkers=1",
+    "test:live": "node e2e/smoke.mjs"
   },
   "dependencies": {
     "html-to-image": "^1.11.13",
