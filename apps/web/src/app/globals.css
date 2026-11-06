@@ -1,13 +1,15 @@
 @import "tailwindcss";
 
-/* ── 太音减字谱楷体（基于忘机减字谱楷体修改，去除推广弹窗） ── */
-@font-face {
-  font-family: "TaiYinJianZiPuKaiTi";
-  src: url("/taiyin-guqin/fonts/TaiYinJianZiPuKaiTi.ttf") format("truetype");
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
-}
+/* ── 太音减字谱楷体（基于忘机减字谱楷体修改，去除推广弹窗） ──
+ *
+ * 注意：@font-face 的 src 是**部署路径相关**的——GitHub Pages 在 `/taiyin-guqin/`
+ * 子路径下，Vercel/Netlify 在根路径。写在静态 CSS 里只能硬编码其中一个，
+ * 另一个平台的字体就会 404（Vercel 还会被 SPA rewrites 兜成 200 的 HTML，
+ * 浏览器解析失败后静默回退系统字体 → 减字退化成「散挑二」三个汉字）。
+ *
+ * 所以这里不声明 @font-face，改由 `app/layout.tsx` 用 `NEXT_PUBLIC_BASE_PATH`
+ * 动态注入。<-- 别把这段挪回 CSS。
+ */
 
 /* ── 太音主题调色板 ── */
 :root {

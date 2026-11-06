@@ -31,6 +31,21 @@ export const metadata: Metadata = {
   description: "古琴减字谱输入法 | AI 简谱翻译 | 琴友社区 — 用科技复活非遗文化",
 };
 
+/**
+ * 减字谱字体按部署路径注入。
+ *
+ * 字体在 `public/fonts/` 下，路径必须是 `/fonts/...`（根部署）或
+ * `/taiyin-guqin/fonts/...`（GitHub Pages 子路径）。写死在 globals.css 里
+ * 只能对一半：Vercel 上会请求到不存在的子路径，被 SPA rewrites 兜成
+ * 200 的 HTML，浏览器解析失败后静默回退系统字体——减字谱整片退化成
+ * 「散挑二」这类汉字，看起来"能用"但其实核心渲染失效。
+ *
+ * `NEXT_PUBLIC_BASE_PATH` 由 next.config.ts 的 `env` 在构建期内联，
+ * 与 basePath / assetPrefix 同源，三处不会走偏。
+ */
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const JIANZI_FONT_CSS = `@font-face{font-family:"TaiYinJianZiPuKaiTi";src:url("${BASE_PATH}/fonts/TaiYinJianZiPuKaiTi.ttf") format("truetype");font-weight:normal;font-style:normal;font-display:swap}`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -41,6 +56,10 @@ export default function RootLayout({
       lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} ${notoSerifSC.variable} ${maShanZheng.variable} h-full antialiased`}
     >
+      <head>
+        {/* 减字谱楷体：路径随部署根变化，见 JIANZI_FONT_CSS 注释 */}
+        <style dangerouslySetInnerHTML={{ __html: JIANZI_FONT_CSS }} />
+      </head>
       <body className="min-h-dvh flex flex-col">
         {/* 墨迹晕染 SVG 滤镜（全局不可见，供 ink-bleed 类引用） */}
         <svg xmlns="http://www.w3.org/2000/svg" className="hidden" aria-hidden>
