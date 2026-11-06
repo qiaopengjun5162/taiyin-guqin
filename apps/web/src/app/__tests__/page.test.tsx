@@ -49,7 +49,8 @@ describe("Home（主页面冒烟）", () => {
     render(<Home />);
 
     expect(screen.getByText("太音")).toBeTruthy();
-    expect(screen.getByText("古琴 · 减字谱 · 拼装键盘")).toBeTruthy();
+    expect(screen.getByText("太音 · 古琴 AI 传习")).toBeTruthy();
+    expect(screen.getByText("减字谱智能拼装 · 非遗科技复活")).toBeTruthy();
     // 核心控件是「能用」的最小证据：没有播放/节拍器/BPM，页面就只是张图。
     expect(screen.getByLabelText("播放")).toBeTruthy();
     expect(screen.getByLabelText("启动节拍器")).toBeTruthy();
