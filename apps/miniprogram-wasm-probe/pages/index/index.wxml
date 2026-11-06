@@ -1,0 +1,35 @@
+<view class="page">
+    <view class="hero">
+        <text class="eyebrow">TAIYIN WASM PROBE</text>
+        <text class="title">{{title}}</text>
+        <text class="subtitle">{{subtitle}}</text>
+    </view>
+
+    <view class="state-card" wx:if="{{viewState === 'loading'}}">
+        <view class="spinner"></view>
+        <text class="state-title">{{statusText}}</text>
+        <text class="state-description">正在通过 WXWebAssembly 实例化 Rust 编排核心。</text>
+    </view>
+
+    <view class="state-card state-card-error" wx:elif="{{viewState === 'error'}}">
+        <text class="state-icon">!</text>
+        <text class="state-title">{{statusText}}</text>
+        <text class="state-description">{{errorMsg}}</text>
+        <button class="primary-button" bindtap="handleRetry">重新探测</button>
+    </view>
+
+    <view class="content-card" wx:else>
+        <text class="section-title">{{statusText}}</text>
+        <text class="section-description">下面是 Worker 里跑 Rust 编排核心返回的原始 JSON。</text>
+        <view class="feature-list">
+            <view class="feature-item" wx:for="{{rows}}" wx:key="name">
+                <text class="feature-index">{{index + 1}}</text>
+                <view class="row-body">
+                    <text class="row-name">{{item.name}}</text>
+                    <text class="row-text">{{item.text}}</text>
+                </view>
+            </view>
+        </view>
+        <button class="primary-button" bindtap="handleRetry">再跑一遍</button>
+    </view>
+</view>

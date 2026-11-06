@@ -1,0 +1,9 @@
+{
+  "desc": "WorkBuddy 原生微信小程序基础模板站点地图",
+  "rules": [
+    {
+      "action": "allow",
+      "page": "*"
+    }
+  ]
+}
