@@ -142,6 +142,60 @@ export function formatDuration(seconds: number): string {
   return m === 0 ? `${h} 小时` : `${h} 小时 ${m} 分`;
 }
 
+/** 逐日格子：一天一格，用来看出「哪天断了」。 */
+export interface DayCell {
+  date: string;
+  seconds: number;
+  /** 有记录的条目数（同一天记多笔会 > 1）。 */
+  entries: number;
+  isToday: boolean;
+}
+
+/**
+ * 最近 `days` 天的逐日汇总，**从最早排到今天**。
+ *
+ * 为什么不复用 `summarize`：「练习天数 5 天」回答不了「上一次练是几天前」。
+ * 断没断这件事必须看得见连续的空格，而不是一个总数——这是「日课」和
+ * 「本周小结」的区别。
+ *
+ * 没有记录的日子也要占位（`seconds: 0`），否则空格会被挤掉，
+ * 补出来的条带看起来像「天天练」。
+ */
+export function recentDays(
+  entries: PracticeEntry[],
+  today: Date,
+  days = 14,
+): DayCell[] {
+  const n = Math.max(1, Math.floor(days));
+  const byDate = new Map<string, { seconds: number; entries: number }>();
+  for (const e of entries) {
+    const hit = byDate.get(e.date);
+    if (hit) {
+      hit.seconds += e.seconds;
+      hit.entries += 1;
+    } else {
+      byDate.set(e.date, { seconds: e.seconds, entries: 1 });
+    }
+  }
+
+  const todayKey = localDateKey(today);
+  const out: DayCell[] = [];
+  for (let back = n - 1; back >= 0; back -= 1) {
+    // 用本地年月日构造，而不是 `today - back*86400e3`：
+    // 后者在夏令时切换的那一天会漂掉一小时，进而算错日期键。
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back);
+    const key = localDateKey(d);
+    const hit = byDate.get(key);
+    out.push({
+      date: key,
+      seconds: hit?.seconds ?? 0,
+      entries: hit?.entries ?? 0,
+      isToday: key === todayKey,
+    });
+  }
+  return out;
+}
+
 // ──────────────────────────────────────────────
 // 存储
 // ──────────────────────────────────────────────

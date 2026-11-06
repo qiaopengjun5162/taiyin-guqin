@@ -153,3 +153,37 @@ export function nextUnclearedIndex(
   }
   return null;
 }
+
+/** 一句「卡着」的记录：练过、还没到原速。 */
+export interface StickingPoint {
+  index: number;
+  /** 这一句的最好档位。 */
+  best: number;
+}
+
+/**
+ * 卡住的句子——练过、但还没到原速，最慢的排前面。
+ *
+ * 三个过滤条件各有理由：
+ * - **练过才叫卡住**（`best > 0`）。没碰过的句子放进来，列表会变成
+ *   「全谱待办」，每天看都一样，等于没信息。
+ * - **到原速就不算**（`isCleared`）。已经过了的句子不需要再提醒。
+ * - **零档位不算**：0 是「从来没走到过」，与 0.5×「走下来但抖」是两回事。
+ *
+ * 排序按档位升序、同档按谱面顺序：最慢的那句就是最该先练的那句，
+ * 而同一档里按先后练，比按随机顺序练更容易连成气口。
+ */
+export function stickingPoints(
+  phraseKeys: string[],
+  progress: PhraseProgress,
+  limit = 3,
+): StickingPoint[] {
+  const out: StickingPoint[] = [];
+  phraseKeys.forEach((key, index) => {
+    const best = progress[key] ?? 0;
+    if (best <= 0 || isCleared(best)) return;
+    out.push({ index, best });
+  });
+  out.sort((a, b) => (a.best === b.best ? a.index - b.index : a.best - b.best));
+  return limit > 0 ? out.slice(0, limit) : out;
+}

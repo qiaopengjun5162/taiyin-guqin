@@ -17,16 +17,31 @@ import {
   listEntries,
   localDateKey,
   monthRange,
+  recentDays,
   streakDays,
   summarize,
   weekRange,
   type PracticeEntry,
 } from "@/lib/practice-log";
+import type { StickingPoint } from "@/lib/practice-progress";
 
 /** 专注计时至少这么久才值得记一笔，避免点错了也留痕。 */
 const MIN_TIMER_SECONDS = 10;
 
-export function PracticeLogPanel({ scoreTitle = "" }: { scoreTitle?: string }) {
+/** 条带显示多少天。两周：够看出一周里固定断在哪天，又不至于挤成一排竖线。 */
+const STRIP_DAYS = 14;
+
+export function PracticeLogPanel({
+  scoreTitle = "",
+  sticking = [],
+  onPracticePhrase,
+}: {
+  scoreTitle?: string;
+  /** 练过但还没到原速的句子（由页面按当前谱算出）。 */
+  sticking?: StickingPoint[];
+  /** 点「练这句」直接进那一句的慢练。 */
+  onPracticePhrase?: (index: number) => void;
+}) {
   const [entries, setEntries] = useState<PracticeEntry[]>([]);
   const [tab, setTab] = useState<"week" | "month">("week");
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +91,26 @@ export function PracticeLogPanel({ scoreTitle = "" }: { scoreTitle?: string }) {
   }, [entries, tab, today]);
   const streak = useMemo(() => streakDays(entries, today), [entries, today]);
   const maxScoreSeconds = summary.byScore[0]?.seconds ?? 0;
+
+  // 逐日条带：回答「上一次练是几天前」，这是周/月汇总答不了的
+  const strip = useMemo(() => recentDays(entries, today, STRIP_DAYS), [entries, today]);
+  const stripMax = useMemo(
+    () => Math.max(1, ...strip.map((d) => d.seconds)),
+    [strip],
+  );
+  /** 上一次练习（不含今天）距今天数；今天练过则显示「今天」。 */
+  const lastGap = useMemo(() => {
+    const todayKey = localDateKey(today);
+    if (entries.some((e) => e.date === todayKey)) return 0;
+    const past = entries
+      .map((e) => e.date)
+      .filter((d) => d < todayKey)
+      .sort();
+    if (past.length === 0) return null;
+    const last = new Date(`${past[past.length - 1]}T00:00:00`);
+    const ms = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - last.getTime();
+    return Math.max(1, Math.round(ms / 86400000));
+  }, [entries, today]);
 
   async function handleManualAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -154,6 +189,80 @@ export function PracticeLogPanel({ scoreTitle = "" }: { scoreTitle?: string }) {
             </div>
           ))}
         </div>
+
+        {/* 逐日条带：空格子才是信息——它说明哪一天断了，而「练习天数 5 天」看不出来 */}
+        <div className="mt-3 rounded border border-stone-300/70 bg-white/35 px-2 py-2">
+          <div className="mb-1 flex items-baseline justify-between">
+            <span className="text-[10px] tracking-wider text-stone-500">
+              近 {STRIP_DAYS} 天
+            </span>
+            <span className="text-[10px] tracking-wider text-stone-500" data-testid="last-practice">
+              {lastGap === null
+                ? "还没练过"
+                : lastGap === 0
+                  ? "今天练过"
+                  : `上次练是 ${lastGap} 天前`}
+            </span>
+          </div>
+          <div className="flex h-10 items-end gap-[3px]">
+            {strip.map((d) => {
+              const pct = d.seconds > 0 ? Math.max(8, Math.round((d.seconds / stripMax) * 100)) : 0;
+              return (
+                <div
+                  key={d.date}
+                  data-day={d.date}
+                  data-seconds={d.seconds}
+                  title={`${d.date.slice(5)} · ${d.seconds > 0 ? formatDuration(d.seconds) : "未练"}`}
+                  className={`flex h-full flex-1 flex-col justify-end ${
+                    d.isToday ? "rounded-sm ring-1 ring-amber-600/45" : ""
+                  }`}
+                >
+                  <span
+                    className={`block w-full rounded-sm ${
+                      d.seconds > 0 ? "bg-amber-600/60" : "bg-stone-400/15"
+                    }`}
+                    style={{ height: d.seconds > 0 ? `${pct}%` : "3px" }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-0.5 flex justify-between text-[9px] tabular-nums tracking-wider text-stone-400">
+            <span>{strip[0]?.date.slice(5)}</span>
+            <span>今天</span>
+          </div>
+        </div>
+
+        {/* 卡点句：练过但还没到原速，最慢的排前面 */}
+        {sticking.length > 0 && (
+          <div className="mt-2 rounded border border-amber-700/25 bg-amber-800/[0.06] px-2 py-2">
+            <p className="text-[10px] tracking-wider text-amber-800/80">
+              卡着的句子 · 练过但还没到原速
+            </p>
+            <ul className="mt-1 flex flex-col gap-1">
+              {sticking.map((s) => (
+                <li key={s.index} className="flex items-center gap-2">
+                  <span className="text-[11px] tabular-nums tracking-wider text-stone-700">
+                    第 {s.index + 1} 句
+                  </span>
+                  <span className="text-[10px] tabular-nums tracking-wider text-stone-500">
+                    最高 {s.best}×
+                  </span>
+                  {onPracticePhrase && (
+                    <button
+                      type="button"
+                      onClick={() => onPracticePhrase(s.index)}
+                      aria-label={`慢练第 ${s.index + 1} 句`}
+                      className="ml-auto min-h-[32px] rounded border border-amber-700/30 px-2 text-[10px] tracking-wider text-stone-700 transition-colors hover:border-amber-600/60"
+                    >
+                      练这句
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {summary.byScore.length > 0 && (
           <div className="mt-2 flex flex-col gap-1">

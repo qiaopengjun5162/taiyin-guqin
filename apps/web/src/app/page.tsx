@@ -66,6 +66,7 @@ import {
   readProgress,
   recordTempo,
   scoreProgressKey,
+  stickingPoints,
   writeProgress,
   type PhraseProgress,
 } from "@/lib/practice-progress";
@@ -633,6 +634,29 @@ export default function Home() {
       });
     },
     [scorePhrases, stopPlayback, metronomeRunning, stopMetronome, play],
+  );
+
+  /**
+   * 卡点句：练过但还没到原速的句子，最慢的排前面。
+   * 喂给日课面板——「哪句卡着」是周/月汇总答不出来的，它只回答「练了多久」。
+   */
+  const sticking = useMemo(
+    () => stickingPoints(scorePhrases.map(phraseKey), phraseProgress),
+    [scorePhrases, phraseProgress],
+  );
+
+  /**
+   * 从日课点「练这句」：档位接着它自己的最好成绩走，不硬塞面板上选的档。
+   * 刚到 0.6× 的句子直接按 0.8× 起步，多半一上来就垮，反而打击人。
+   * 还没成绩的句子才退回当前选的档位。
+   */
+  const handleStickingPractice = useCallback(
+    (index: number) => {
+      const phrase = scorePhrases[index];
+      const best = phrase ? (phraseProgress[phraseKey(phrase)] ?? 0) : 0;
+      handlePracticePhrase(index, best > 0 ? best : practiceTempo);
+    },
+    [scorePhrases, phraseProgress, practiceTempo, handlePracticePhrase],
   );
 
   /**
@@ -2016,7 +2040,11 @@ export default function Home() {
               {practiceLogTab === "record" ? (
                 <RecorderPanel scoreTitle={scoreTitle} />
               ) : (
-                <PracticeLogPanel scoreTitle={scoreTitle} />
+                <PracticeLogPanel
+                  scoreTitle={scoreTitle}
+                  sticking={sticking}
+                  onPracticePhrase={handleStickingPractice}
+                />
               )}
             </div>
           )}

@@ -148,3 +148,66 @@ describe("PracticeLogPanel", () => {
     expect((screen.getByLabelText("练习曲目") as HTMLInputElement).value).toBe("潇湘水云");
   });
 });
+
+describe("逐日条带", () => {
+  it("14 个格子都在，没练的日子也占位（空格才是信息）", async () => {
+    await act(async () => {
+      await addEntry({ scoreTitle: "良宵引", seconds: 300 });
+    });
+    await renderPanel();
+    const cells = document.querySelectorAll("[data-day]");
+    expect(cells).toHaveLength(14);
+    // 今天有记录，其余 13 天是空格
+    const withData = [...cells].filter((c) => c.getAttribute("data-seconds") !== "0");
+    expect(withData).toHaveLength(1);
+  });
+
+  it("今天练过就说「今天练过」，从没练过就说「还没练过」", async () => {
+    // 先挂一次看空态
+    await renderPanel();
+    expect(screen.getByTestId("last-practice").textContent).toBe("还没练过");
+
+    // 记一笔后重新挂载（面板只在挂载时读一次本地记录）
+    await act(async () => {
+      await addEntry({ scoreTitle: "良宵引", seconds: 60 });
+    });
+    const second = await act(async () => {
+      return render(<PracticeLogPanel />);
+    });
+    const labels = second.getAllByTestId("last-practice");
+    expect(labels.some((el) => el.textContent === "今天练过")).toBe(true);
+  });
+});
+
+describe("卡点句", () => {
+  const sticking = [
+    { index: 2, best: 0.6 },
+    { index: 5, best: 0.7 },
+  ];
+
+  it("有卡点句时列出句号与档位，「练这句」回调对应句", async () => {
+    const onPracticePhrase = vi.fn();
+    await act(async () => {
+      render(
+        <PracticeLogPanel sticking={sticking} onPracticePhrase={onPracticePhrase} />,
+      );
+    });
+    expect(screen.getByText(/卡着的句子/)).toBeTruthy();
+    expect(screen.getByText("第 3 句")).toBeTruthy();
+    expect(screen.getByText("最高 0.6×")).toBeTruthy();
+    expect(screen.getByText("第 6 句")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("慢练第 3 句"));
+    expect(onPracticePhrase).toHaveBeenCalledWith(2);
+    fireEvent.click(screen.getByLabelText("慢练第 6 句"));
+    expect(onPracticePhrase).toHaveBeenCalledWith(5);
+  });
+
+  it("没有卡点句就不占地方", async () => {
+    await act(async () => {
+      render(<PracticeLogPanel sticking={[]} />);
+    });
+    expect(screen.queryByText(/卡着的句子/)).toBeNull();
+    expect(screen.queryByText("练这句")).toBeNull();
+  });
+});

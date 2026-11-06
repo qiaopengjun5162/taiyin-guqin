@@ -13,6 +13,7 @@ import {
   readProgress,
   recordTempo,
   scoreProgressKey,
+  stickingPoints,
   writeProgress,
   type PhraseProgress,
 } from "../practice-progress";
@@ -121,5 +122,38 @@ describe("记录成绩", () => {
     expect(nextUnclearedIndex(["a", "b", "c"], { a: 1, b: 0.7, c: 1 })).toBe(1);
     expect(nextUnclearedIndex(["a", "b"], { a: 1, b: 1 })).toBeNull();
     expect(nextUnclearedIndex([], {})).toBeNull();
+  });
+});
+
+describe("卡点句", () => {
+  it("练过但没到原速的才算卡住：没碰过的和已过的都不进", () => {
+    const got = stickingPoints(["a", "b", "c", "d"], { b: 0.6, c: 1, d: 0.8 });
+    // a 没练过（0）不进；c 到原速不进
+    expect(got.map((s) => s.index)).toEqual([1, 3]);
+    expect(got.map((s) => s.best)).toEqual([0.6, 0.8]);
+  });
+
+  it("最慢的排前面，同档按谱面顺序", () => {
+    const got = stickingPoints(
+      ["a", "b", "c", "d"],
+      { a: 0.8, b: 0.5, c: 0.8, d: 0.6 },
+      10, // 不设上限，专门看排序
+    );
+    expect(got.map((s) => s.index)).toEqual([1, 3, 0, 2]);
+    expect(got.map((s) => s.best)).toEqual([0.5, 0.6, 0.8, 0.8]);
+  });
+
+  it("只取前几个，避免变成全谱待办", () => {
+    const keys = ["a", "b", "c", "d", "e"];
+    const progress: PhraseProgress = { a: 0.5, b: 0.5, c: 0.5, d: 0.5, e: 0.5 };
+    expect(stickingPoints(keys, progress)).toHaveLength(3);
+    expect(stickingPoints(keys, progress, 2)).toHaveLength(2);
+    // limit <= 0 视为不限制
+    expect(stickingPoints(keys, progress, 0)).toHaveLength(5);
+  });
+
+  it("零档位不算卡住——那是没走到过，不是走到了但抖", () => {
+    expect(stickingPoints(["a"], { a: 0 })).toEqual([]);
+    expect(stickingPoints([], {})).toEqual([]);
   });
 });

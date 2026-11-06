@@ -12,6 +12,7 @@ import {
   listRecordings,
   localDateKey,
   monthRange,
+  recentDays,
   renameRecording,
   saveRecording,
   streakDays,
@@ -217,5 +218,52 @@ describe("录音存储", () => {
     expect(defaultRecordingName(" 流水 ")).toBe("流水");
     expect(defaultRecordingName("   ")).toBe("练习");
     expect(defaultRecordingName()).toBe("练习");
+  });
+});
+
+describe("逐日条带", () => {
+  const TODAY = new Date(2026, 10, 6); // 2026-11-06，本地时区构造
+
+  it("每天一格、从最早排到今天，没练的日子也占位", () => {
+    const cells = recentDays([entry("2026-11-06", 300), entry("2026-11-02", 600)], TODAY, 5);
+    expect(cells.map((c) => c.date)).toEqual([
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-04",
+      "2026-11-05",
+      "2026-11-06",
+    ]);
+    expect(cells.map((c) => c.seconds)).toEqual([600, 0, 0, 0, 300]);
+    // 空格子必须存在：没有它们，条带看起来像「天天练」
+    expect(cells.filter((c) => c.seconds === 0)).toHaveLength(3);
+    expect(cells.at(-1)?.isToday).toBe(true);
+    expect(cells[0].isToday).toBe(false);
+  });
+
+  it("同一天多笔合并计时，条目数分开记", () => {
+    const cells = recentDays(
+      [entry("2026-11-06", 100, "甲"), entry("2026-11-06", 200, "乙")],
+      TODAY,
+      3,
+    );
+    const today = cells.at(-1)!;
+    expect(today.seconds).toBe(300);
+    expect(today.entries).toBe(2);
+  });
+
+  it("跨月与月初也能算对（按日历日退，不是按 86400000 毫秒退）", () => {
+    const cells = recentDays([entry("2026-11-01", 60)], new Date(2026, 10, 3), 4);
+    expect(cells.map((c) => c.date)).toEqual([
+      "2026-10-31",
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+    ]);
+  });
+
+  it("days 至少 1，传 0 或负数不崩", () => {
+    expect(recentDays([], TODAY, 0)).toHaveLength(1);
+    expect(recentDays([], TODAY, -3)).toHaveLength(1);
+    expect(recentDays([], TODAY)[0].date).toBe("2026-10-24"); // 默认 14 天
   });
 });
