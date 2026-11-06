@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { NoteColumn, Duration } from "@/lib/types";
 import { getRhythmLineCount, durationToBeats } from "@/lib/jianzi";
 import { JianziBlock } from "./jianzi-block";
@@ -126,6 +126,9 @@ function NoteColumnView({
 }) {
   const { jianzi } = note;
 
+  // 双谱联动高亮：悬停简谱↔减字互相反向强调，让"音高"与"指法"的对应一眼可见。
+  const [linkHover, setLinkHover] = useState<"jianpu" | "jianzi" | null>(null);
+
   // 播放时把当前音符列滚动进视野，长曲不跟丢（仅在浏览器支持 scrollIntoView 时）
   const columnRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -157,10 +160,26 @@ function NoteColumnView({
       </span>
 
       {/* ── 简谱区域 ── */}
-      <JianpuView note={note} />
+      <div
+        onMouseEnter={() => setLinkHover("jianpu")}
+        onMouseLeave={() => setLinkHover(null)}
+        className={`rounded transition-shadow ${
+          linkHover === "jianzi" ? "ring-1 ring-amber-400/60 bg-amber-50/40" : ""
+        }`}
+      >
+        <JianpuView note={note} />
+      </div>
 
       {/* ── 减字区域（忘机减字谱楷体渲染） ── */}
-      <JianziBlock state={jianzi} fontSize="24px" compact={compact} />
+      <div
+        onMouseEnter={() => setLinkHover("jianzi")}
+        onMouseLeave={() => setLinkHover(null)}
+        className={`rounded transition-shadow ${
+          linkHover === "jianpu" ? "ring-1 ring-amber-400/60 bg-amber-50/40" : ""
+        }`}
+      >
+        <JianziBlock state={jianzi} fontSize="24px" compact={compact} />
+      </div>
 
       {/* ── 节奏线区域 ── */}
       <RhythmView duration={note.duration} />

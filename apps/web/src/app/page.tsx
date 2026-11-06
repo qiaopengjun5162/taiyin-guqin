@@ -1560,6 +1560,11 @@ export default function Home() {
                   </button>
                 ))}
               </div>
+              <p className="mb-1 text-[9px] leading-relaxed tracking-wider text-amber-700/70">
+                提示：在「简谱转减字」里输入简谱（如{" "}
+                <code className="rounded bg-amber-900/10 px-1">5 6 1 2 | 3 5 6 -</code>
+                ），可一键生成多套减字谱候选并智能编排指法；也支持「减字码入谱」整段粘入。
+              </p>
               {inputTab === "jianpu" ? (
                 <JianpuTranslator
                   onSelect={(notes) => {
