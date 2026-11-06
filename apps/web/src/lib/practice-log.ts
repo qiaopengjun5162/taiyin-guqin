@@ -25,8 +25,8 @@ export interface PracticeEntry {
   note: string;
   /** 来自哪段录音（若有）。 */
   recordingId?: string;
-  /** 怎么来的：录音结束 / 手动记一笔 / 专注计时。 */
-  source: "recording" | "manual" | "timer";
+  /** 怎么来的：录音结束 / 手动记一笔 / 专注计时 / 跟弹判定通过。 */
+  source: "recording" | "manual" | "timer" | "judge";
 }
 
 /** 录音的元信息（不含音频本体，列表只读这份，避免把所有音频读进内存）。 */

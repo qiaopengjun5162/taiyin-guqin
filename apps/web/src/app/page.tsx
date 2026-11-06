@@ -8,6 +8,7 @@ import { JianziRecognizer } from "@/components/jianzi-recognizer";
 import { JianziSheetRecognizer } from "@/components/jianzi-sheet-recognizer";
 import { PracticePlayer } from "@/components/practice-player";
 import { PhrasePractice } from "@/components/phrase-practice";
+import { FollowPlayPanel } from "@/components/follow-play-panel";
 import { RecorderPanel } from "@/components/recorder-panel";
 import { PracticeLogPanel } from "@/components/practice-log-panel";
 import { TunerPanel } from "@/components/tuner-panel";
@@ -69,6 +70,7 @@ import {
   type PhraseProgress,
 } from "@/lib/practice-progress";
 import { useMetronome } from "@/lib/use-metronome";
+import { addEntry } from "@/lib/practice-log";
 import {
   CONCERT_PITCH_DEFAULT,
   CONCERT_PITCH_MAX,
@@ -691,6 +693,54 @@ export default function Home() {
     activePractice && activePractice.to > activePractice.from
       ? activePractice.to
       : null;
+
+  /**
+   * 跟弹判定通过：记这一句练到的档位。
+   *
+   * 只有一处与慢练那条路不同：慢练记「实际走的那一档」（可能被合练改过），
+   * 判定记的就是面板上选的那一档。但「只升不降」必须一致——否则判定一遍 0.6
+   * 会把已经练到 0.9 的句子打回 0.6，谱面上那根朱砂线会往回缩。
+   */
+  const handleFollowPass = useCallback(
+    (tempo: number) => {
+      if (practiceIndex === null) return;
+      const phrase = scorePhrases[practiceIndex];
+      if (!phrase) return;
+      const next = recordTempo(phraseProgress, phraseKey(phrase), tempo);
+      if (next === phraseProgress) return;
+      setPhraseProgress(next);
+      writeProgress(practiceProgressKey, next);
+    },
+    [practiceIndex, scorePhrases, phraseProgress, practiceProgressKey],
+  );
+
+  /** 判定通过顺手记一笔练琴，不然「练了多久」还要用户自己再填一遍。 */
+  const handleFollowLog = useCallback(
+    (seconds: number) => {
+      if (practiceIndex === null) return;
+      void addEntry({
+        scoreTitle,
+        seconds,
+        note: `跟弹 · 第 ${practiceIndex + 1} 句 · ${practiceTempo}×`,
+        source: "judge",
+      });
+    },
+    [practiceIndex, scoreTitle, practiceTempo],
+  );
+
+  /**
+   * 开始判定前先把会出声的都停掉。
+   *
+   * 不停就会把参考音录进麦克风，判定结果必然满分——等于自己给自己打分。
+   * 这件事不能只写在提示语里（那等于没写），必须在代码里保证。
+   */
+  const handleFollowBeforeStart = useCallback(() => {
+    stopPlayback();
+    if (metronomeRunning) stopMetronome();
+  }, [stopPlayback, metronomeRunning, stopMetronome]);
+
+  /** 跟弹时的高亮：单独一条通道，不与播放的 playingIndex 抢。 */
+  const [followHighlight, setFollowHighlight] = useState<number | null>(null);
 
   /** 保存曲谱到后端 */
   async function handleSave() {
@@ -1428,7 +1478,7 @@ export default function Home() {
         className="mt-8 w-full"
         style={{ maxWidth: `${WIDTH_MAX_REM[layoutPref.width]}rem` }}
       >
-        <ScoreView notes={score} beatsPerBar={beatsPerBar} layout={layoutPref.layout} density={layoutPref.density} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} onChangeDuration={handleChangeDuration} editingIndex={editingIndex} playingIndex={playingIndex} />
+        <ScoreView notes={score} beatsPerBar={beatsPerBar} layout={layoutPref.layout} density={layoutPref.density} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} onChangeDuration={handleChangeDuration} editingIndex={editingIndex} playingIndex={playingIndex ?? followHighlight} />
         {score.length === 0 && (
           <div className="mt-4 text-center">
             <p className="text-[11px] tracking-wider text-amber-700/40">
@@ -1563,6 +1613,20 @@ export default function Home() {
         onStart={handlePracticePhrase}
         onStop={handleStopPractice}
         onJoin={handlePracticeJoin}
+      />
+
+      {/* ── 跟弹判定：关掉参考音，只听你弹得准不准 ── */}
+      <FollowPlayPanel
+        notes={score}
+        phrase={practiceIndex !== null ? scorePhrases[practiceIndex] : undefined}
+        bpm={bpm}
+        tempo={practiceTempo}
+        concertPitch={concertPitch}
+        tuning={tuning}
+        onBeforeStart={handleFollowBeforeStart}
+        onPass={handleFollowPass}
+        onLog={handleFollowLog}
+        onHighlight={setFollowHighlight}
       />
 
       {/* ── 拍点高亮（节拍器/联动播放时显示，重拍为朱砂色） ── */}
