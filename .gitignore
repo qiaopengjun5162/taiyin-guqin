@@ -3,6 +3,10 @@ target
 .next
 dist
 *.wasm
+# WASM 产物已纳入版本控制：Vercel / Netlify 等稀疏检出平台无法现编 WASM，
+# 必须依赖仓库内预编译的 taiyin-core 产物（JS glue + 运行时二进制）。
+!apps/web/wasm/taiyin_core_bg.wasm
+!apps/web/public/wasm/taiyin_core_bg.wasm
 *.local
 .DS_Store
 .env

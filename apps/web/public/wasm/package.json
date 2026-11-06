@@ -1,0 +1,15 @@
+{
+  "name": "taiyin-core",
+  "type": "module",
+  "version": "0.2.0",
+  "files": [
+    "taiyin_core_bg.wasm",
+    "taiyin_core.js",
+    "taiyin_core.d.ts"
+  ],
+  "main": "taiyin_core.js",
+  "types": "taiyin_core.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

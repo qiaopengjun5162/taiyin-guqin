@@ -1,5 +1,24 @@
 # 更新日志
 
+## [0.39.9] - 2026-11-06
+
+### 修 Vercel 部署彻底跑通：提交预编译 WASM + 纯前端导出
+
+Vercel 对 `apps/web` 子项目是**稀疏检出**：只拉 `apps/web`，仓库根的 `scripts/`、`crates/`
+（WASM 源码）都不在构建环境。因此 `bash scripts/build-static.sh`（需现编 WASM）在 Vercel 上
+必然 127 失败——`scripts/` 与 `crates/` 根本不在。
+
+改为：把预编译好的 taiyin-core WASM 产物提交进仓库（`.gitignore` 加白名单例外，原 `*.wasm`
+全局忽略与两个 wasm 目录内层 `*` 忽略均已处理），Vercel 构建命令改为纯 `pnpm build`
+（只跑 `next build` 静态导出，WASM 用仓库里现成的）。首构建从「装 Rust 3–5 分钟」降到约 1 分钟。
+
+- `apps/web/wasm/`（JS glue + d.ts）供 `@/wasm/` 动态导入打包；
+- `apps/web/public/wasm/`（.wasm 二进制）运行时从 `/wasm/` 静态拉取。
+- `apps/web/vercel.json` buildCommand → `pnpm build`。
+- GitHub Pages 同样受益：CI 直接 `pnpm --filter web build`，用提交的 WASM，不再依赖构建机现编。
+
+> 更新 WASM：本地 `bash scripts/build-static.sh` 重生成后 `git add -f apps/web/wasm apps/web/public/wasm` 提交。
+
 ## [0.39.7] - 2026-11-06
 
 ### 修 Vercel 部署 basePath 双保险

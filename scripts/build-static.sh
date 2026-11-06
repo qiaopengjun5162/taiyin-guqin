@@ -7,11 +7,14 @@
 #
 # 各平台接线方式：
 #   仓库根部署（根 vercel.json / netlify.toml）：
-#     buildCommand    = bash scripts/build-static.sh
+#     buildCommand    = bash scripts/build-static.sh   （需完整仓库：crates/ 在，能现编 WASM）
 #     outputDirectory = apps/web/dist
-#   单项目导入 apps/web（apps/web/vercel.json，Vercel monorepo 推荐）：
-#     buildCommand    = bash ../scripts/build-static.sh   （cwd 是 apps/web，往上一级才是仓库根）
+#   单项目导入 apps/web（apps/web/vercel.json）：⚠️ Vercel 对 apps/web 子项目是稀疏检出，
+#     仓库根的 scripts/、crates/ 都不在构建环境，无法现编 WASM。因此该配置改用「已提交的
+#     预编译 WASM + 纯前端导出」：
+#     buildCommand    = pnpm build                      （只跑 next build，WASM 用仓库里现成的）
 #     outputDirectory = dist
+#     （WASM 产物已 git add -f 提交到 apps/web/wasm 与 apps/web/public/wasm，见 .gitignore 白名单）
 #   三处共用：
 #     installCommand  = pnpm install --frozen-lockfile --ignore-scripts
 #     BASE_PATH       = ""  （根路径部署；GitHub Pages 子路径走 pages.yml，显式传 /taiyin-guqin）
