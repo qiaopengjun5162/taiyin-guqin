@@ -1,5 +1,16 @@
 # 更新日志
 
+## [0.39.7] - 2026-11-06
+
+### 修 Vercel 部署 basePath 双保险
+
+`next.config.ts` 的 `BASE_PATH` 原先只靠 `BASE_PATH` 环境变量决定，未注入时退回 `/taiyin-guqin`
+子路径。Vercel 站挂在根域名，若配置文件里的 `BASE_PATH=""` 未被可靠注入，所有静态资源会去请求
+`/taiyin-guqin/_next/...` 而 404、整页打不开。
+
+改为：检测到 Vercel 自动注入的 `VERCEL` 变量时强制根路径 `""`，GitHub Pages（无 `VERCEL` 变量）
+仍退回 `/taiyin-guqin` 子路径。无论 `vercel.json` 的空串 env 是否生效，Vercel 部署都正确。
+
 ## [0.39.6] - 2026-11-06
 
 ### 修 Vercel monorepo 导入：单项目只部署前端

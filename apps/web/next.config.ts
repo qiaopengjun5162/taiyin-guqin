@@ -5,8 +5,13 @@ import type { NextConfig } from "next";
  * - GitHub Pages 项目页走子路径 `/taiyin-guqin`（默认值，CI 里显式传入）；
  * - Vercel / Netlify 部署到根路径时，把 `BASE_PATH` 设为空串即可。
  * 一处定义、三处引用：路由前缀、静态资源前缀、运行时读取的 WASM 路径。
+ *
+ * 双保险：Vercel 构建环境会自动注入 `VERCEL` 变量，一旦检测到就强制根路径（""），
+ * 避免配置文件里的空串 env 未被可靠注入时，静态资源跑去 `/taiyin-guqin/_next/...`
+ * 而 404、整页打不开。GitHub Pages 无 `VERCEL` 变量，退回子路径默认值。
  */
-const BASE_PATH = process.env.BASE_PATH ?? "/taiyin-guqin";
+const BASE_PATH =
+  process.env.BASE_PATH ?? (process.env.VERCEL ? "" : "/taiyin-guqin");
 
 const nextConfig: NextConfig = {
   // 静态导出：前端是客户端重应用，WASM + AudioContext 均在浏览器运行，
