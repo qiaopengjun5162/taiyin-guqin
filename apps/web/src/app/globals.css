@@ -390,6 +390,13 @@ input[type="range"]::-webkit-slider-thumb {
     break-inside: avoid;
   }
 
+  /* 小节换行 / 等宽小节：一个小节整体不跨页。音符列已经单独设了 avoid，
+     但只设音符会出现「一节的前半页尾、后半页首」——小节线跟着断，读谱会断句。 */
+  #score-area [data-bar-group] {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
   #score-area button {
     display: none !important;
   }

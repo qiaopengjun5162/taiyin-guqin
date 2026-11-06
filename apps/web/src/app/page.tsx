@@ -19,6 +19,19 @@ import { ExportFooter } from "@/components/export-footer";
 import { JianpuTranslator } from "@/components/jianpu-translator";
 import { JianziCodeImport } from "@/components/jianzi-code-import";
 import { useExportImage } from "@/lib/use-export-image";
+import {
+  DENSITY_OPTIONS,
+  LAYOUT_OPTIONS,
+  WIDTH_MAX_REM,
+  WIDTH_OPTIONS,
+  getLayoutPref,
+  getLayoutPrefServerSnapshot,
+  setLayoutPref,
+  subscribeLayoutPref,
+  type ScoreDensity,
+  type ScoreLayout,
+  type ScoreWidth,
+} from "@/lib/score-layout";
 import { scoreFingerprint, confirmDiscard } from "@/lib/unsaved-guard";
 import {
   clearDraft,
@@ -149,6 +162,13 @@ export default function Home() {
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [isExportingAudio, setIsExportingAudio] = useState(false);
   const [beatsPerBar, setBeatsPerBar] = useState(4);
+  // 谱面排版偏好（布局/疏密/行宽）存 localStorage：属于读谱习惯，不是谱子内容，
+  // 所以跟着人不跟着曲。用 useSyncExternalStore 读，避免 effect 里同步 setState。
+  const layoutPref = useSyncExternalStore(
+    subscribeLayoutPref,
+    getLayoutPref,
+    getLayoutPrefServerSnapshot,
+  );
   const [bpm, setBpm] = useState(120);
   // 基准音：古琴常整床偏低（丝弦尤甚），改 A4 频率即可让整谱跟着自己的琴走。
   // 同样用 useSyncExternalStore 读「仅浏览器可得」的 localStorage 值。
@@ -1261,9 +1281,77 @@ export default function Home() {
         </div>
       )}
 
+      {/* ── 谱面排版：布局 / 疏密 / 行宽（只影响显示与导出，不进打印稿） ── */}
+      {score.length > 0 && (
+        <div className="no-print mt-6 flex w-full max-w-xl flex-wrap items-center justify-end gap-1.5">
+          <span className="text-[10px] tracking-wider text-amber-600/50 mr-1">
+            谱面
+          </span>
+          {LAYOUT_OPTIONS.map((o) => {
+            const active = layoutPref.layout === o.id;
+            return (
+              <button
+                key={o.id}
+                onClick={() => setLayoutPref({ layout: o.id as ScoreLayout })}
+                aria-pressed={active}
+                title={o.hint}
+                className={`px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border transition-all ${
+                  active
+                    ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
+                    : "border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50"
+                }`}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+          <span className="text-[10px] tracking-wider text-amber-600/50">
+            密
+          </span>
+          <select
+            value={layoutPref.density}
+            onChange={(e) =>
+              setLayoutPref({ density: e.target.value as ScoreDensity })
+            }
+            aria-label="谱面疏密"
+            title="音符之间的间距"
+            className="px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 outline-none focus:border-amber-600/50"
+          >
+            {DENSITY_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-[10px] tracking-wider text-amber-600/50">
+            宽
+          </span>
+          <select
+            value={layoutPref.width}
+            onChange={(e) =>
+              setLayoutPref({ width: e.target.value as ScoreWidth })
+            }
+            aria-label="谱面行宽"
+            title="一行能放多少音；宽档一屏看得更多"
+            className="px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/20 bg-transparent text-amber-100/70 outline-none focus:border-amber-600/50"
+          >
+            {WIDTH_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* ── 乐谱流（导出截图目标） ── */}
-      <div id="score-area" ref={exportRef} className="mt-8 w-full max-w-xl">
-        <ScoreView notes={score} beatsPerBar={beatsPerBar} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} editingIndex={editingIndex} playingIndex={playingIndex} />
+      <div
+        id="score-area"
+        ref={exportRef}
+        className="mt-8 w-full"
+        style={{ maxWidth: `${WIDTH_MAX_REM[layoutPref.width]}rem` }}
+      >
+        <ScoreView notes={score} beatsPerBar={beatsPerBar} layout={layoutPref.layout} density={layoutPref.density} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} editingIndex={editingIndex} playingIndex={playingIndex} />
         {score.length === 0 && (
           <div className="mt-4 text-center">
             <p className="text-[11px] tracking-wider text-amber-700/40">

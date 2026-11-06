@@ -184,4 +184,147 @@ describe("ScoreView", () => {
       expect(onEdit).not.toHaveBeenCalled();
     });
   });
+
+  /**
+   * 三种排版共用同一份小节切分，差别只在"怎么把小节组装成行"。
+   * 这里钉的是组装方式本身——小节数错、或小节没成组（会被劈到两行），
+   * 界面不会报错，只会看起来"小节线飘了"。
+   */
+  describe("排版布局", () => {
+    // 4/4 下 10 个四分音符 = 3 节（4 + 4 + 2）
+    const tenNotes = Array.from({ length: 10 }, (_, i) =>
+      makeNote({ id: `n${i}` }),
+    );
+
+    it("默认是自然流式：内容拍平，不产生小节分组", () => {
+      const { container } = render(<ScoreView notes={tenNotes} />);
+      expect(
+        container.querySelector("[data-score-layout='flow']"),
+      ).toBeTruthy();
+      expect(container.querySelectorAll("[data-bar-group]")).toHaveLength(0);
+      expect(container.querySelectorAll("[data-note-column]")).toHaveLength(10);
+      // 3 节 → 2 根分隔线（最后一节后面不画）
+      expect(
+        container.querySelectorAll("[data-testid='bar-line']"),
+      ).toHaveLength(2);
+    });
+
+    it("小节换行：每节一个分组，组内音符不跨组", () => {
+      const { container } = render(
+        <ScoreView notes={tenNotes} layout="barline" />,
+      );
+      const groups = container.querySelectorAll("[data-bar-group]");
+      expect(groups).toHaveLength(3);
+      expect(
+        Array.from(groups).map(
+          (g) => g.querySelectorAll("[data-note-column]").length,
+        ),
+      ).toEqual([4, 4, 2]);
+      // 分组起点是全谱下标：0 / 4 / 8
+      expect(
+        Array.from(groups).map((g) => g.getAttribute("data-bar-start")),
+      ).toEqual(["0", "4", "8"]);
+    });
+
+    it("小节换行：整节不可拆（break-inside 由分组承载）", () => {
+      const { container } = render(
+        <ScoreView notes={tenNotes} layout="barline" />,
+      );
+      const group = container.querySelector<HTMLElement>("[data-bar-group]")!;
+      expect(group.style.breakInside).toBe("avoid");
+      // 成组靠 flex 容器把音符与小节线绑成一个不可拆的项
+      expect(group.className).toContain("flex");
+      expect(group.className).toContain("items-stretch");
+    });
+
+    it("等宽小节：列宽按最长的一节算，且小节自己撑满整列", () => {
+      const { container } = render(
+        <ScoreView notes={tenNotes} layout="equal" />,
+      );
+      const groups = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-bar-group]"),
+      );
+      expect(groups).toHaveLength(3);
+      // 每节都撑满 grid 列，宽度由列决定 → 各节等宽、右边缘齐
+      expect(groups.every((g) => g.style.width === "100%")).toBe(true);
+
+      // 最长节 4 音：4*72 + 3*12 gap + 16 小节线 = 340px 作为列宽下限
+      const shell = container.querySelector<HTMLElement>("[data-score-layout]")!;
+      expect(shell.style.gridTemplateColumns).toBe(
+        "repeat(auto-fill, minmax(340px, 1fr))",
+      );
+    });
+
+    it("等宽小节的音符在节内均匀铺开", () => {
+      const { container } = render(
+        <ScoreView notes={tenNotes} layout="equal" />,
+      );
+      const group = container.querySelector<HTMLElement>("[data-bar-group]")!;
+      expect(group.style.justifyContent).toBe("space-around");
+    });
+
+    it("等宽小节用 grid 让每行撑到页边，流式用 flex 顺排", () => {
+      const { container: equal } = render(
+        <ScoreView notes={tenNotes} layout="equal" />,
+      );
+      const equalShell =
+        equal.querySelector<HTMLElement>("[data-score-layout]")!;
+      expect(equalShell.style.display).toBe("grid");
+      // 不用 space-between：一行两节时会把剩余空间全塞进中间那个间隙
+      expect(equalShell.style.justifyContent).toBe("");
+
+      for (const layout of ["flow", "barline"] as const) {
+        const { container } = render(
+          <ScoreView notes={tenNotes} layout={layout} />,
+        );
+        const shell = container.querySelector<HTMLElement>("[data-score-layout]")!;
+        expect(shell.style.display).toBe("flex");
+        expect(shell.style.flexWrap).toBe("wrap");
+      }
+    });
+
+    it("小节成组后比容器还宽时自己滚，不把整页撑破", () => {
+      // 成组的大节无法像单个音符那样折行；不兜住就会出现整页横向滚动条
+      const { container: barline } = render(
+        <ScoreView notes={tenNotes} layout="barline" />,
+      );
+      expect(
+        barline.querySelector<HTMLElement>("[data-score-layout]")!.style
+          .overflowX,
+      ).toBe("auto");
+
+      const { container: equal } = render(
+        <ScoreView notes={tenNotes} layout="equal" />,
+      );
+      expect(
+        equal.querySelector<HTMLElement>("[data-score-layout]")!.style.overflowX,
+      ).toBe("auto");
+
+      // 流式本来就是逐个音符折行，不需要滚动容器
+      const { container: flow } = render(
+        <ScoreView notes={tenNotes} layout="flow" />,
+      );
+      expect(
+        flow.querySelector<HTMLElement>("[data-score-layout]")!.style.overflowX,
+      ).toBe("");
+    });
+
+    it("疏密档位改变列间距与内边距，不改音符宽度", () => {
+      const { container: compact } = render(
+        <ScoreView notes={tenNotes} density="compact" />,
+      );
+      const { container: loose } = render(
+        <ScoreView notes={tenNotes} density="loose" />,
+      );
+      const a = compact.querySelector<HTMLElement>("[data-score-layout]")!;
+      const b = loose.querySelector<HTMLElement>("[data-score-layout]")!;
+      expect(parseInt(a.style.gap, 10)).toBeLessThan(parseInt(b.style.gap, 10));
+      expect(parseInt(a.style.padding, 10)).toBeLessThan(
+        parseInt(b.style.padding, 10),
+      );
+      const noteA = compact.querySelector<HTMLElement>("[data-note-column]")!;
+      const noteB = loose.querySelector<HTMLElement>("[data-note-column]")!;
+      expect(noteA.style.width).toBe(noteB.style.width);
+    });
+  });
 });

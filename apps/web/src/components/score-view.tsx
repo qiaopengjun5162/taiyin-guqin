@@ -2,20 +2,42 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { NoteColumn, Duration } from "@/lib/types";
-import { getRhythmLineCount, durationToBeats } from "@/lib/jianzi";
+import { getRhythmLineCount } from "@/lib/jianzi";
+import {
+  groupIntoBars,
+  equalBarWidth,
+  NOTE_COLUMN_WIDTH,
+  type Bar,
+} from "@/lib/score-bars";
+import {
+  DENSITY_GAP,
+  DENSITY_PADDING,
+  type ScoreDensity,
+  type ScoreLayout,
+} from "@/lib/score-layout";
 import { JianziBlock } from "./jianzi-block";
 
 const SERIF_FONT =
   "var(--font-serif), 'Noto Serif SC', 'Songti SC', 'SimSun', 'STSong', serif";
 
+/** 小节线占位宽度（px）。等宽小节算「每行能放几节」时要把它算进去。 */
+const BAR_LINE_WIDTH = 16;
+
 /**
- * 乐谱流视图 —— 将复合音符列以 flex-wrap 流动排列，并按拍号插入小节线。
+ * 乐谱流视图 —— 三种排版：自然流式 / 小节换行 / 等宽小节。
+ *
+ * 三者的音符与减字渲染完全一致，差别只在「如何把小节组装成行」：
+ * - `flow`：所有音符拍平成一串，小节线跟着流走，一行满了就换（默认，最紧凑）。
+ * - `barline`：以小节为原子单位换行，一节不会被劈到两行。
+ * - `equal`：小节宽度统一，右边缘对齐成一条线。
  *
  * 减字部分使用忘机减字谱楷体渲染，通过 OpenType 组字自动完成传统布局。
  */
 export function ScoreView({
   notes,
   beatsPerBar = 4,
+  layout = "flow",
+  density = "normal",
   onRemove,
   onEdit,
   onSeekLyric,
@@ -24,6 +46,8 @@ export function ScoreView({
 }: {
   notes: NoteColumn[];
   beatsPerBar?: number;
+  layout?: ScoreLayout;
+  density?: ScoreDensity;
   onRemove?: (id: string) => void;
   onEdit?: (index: number) => void;
   onSeekLyric?: (index: number) => void;
@@ -38,53 +62,142 @@ export function ScoreView({
     );
   }
 
-  const elements: React.ReactNode[] = [];
-  let acc = 0;
+  const bars = groupIntoBars(notes, beatsPerBar);
+  const gap = DENSITY_GAP[density];
+  const pad = DENSITY_PADDING[density];
+  /**
+   * 等宽小节的列宽下限：按最长的一节算，**并加上小节线占位**。
+   * 少加这 16px 的表现是：音符刚好铺满后，小节线被挤到列外，右边缘就差一格。
+   */
+  const barWidth =
+    layout === "equal" ? equalBarWidth(bars, gap) + BAR_LINE_WIDTH : 0;
 
-  notes.forEach((note, index) => {
-    const noteBeats = durationToBeats(note.duration, note.jianpuDot);
+  /** 同一音色连排时收窄减字，让"同一种指法连着走"在视线上成组。 */
+  const isCompact = (index: number) =>
+    index > 0 &&
+    notes[index - 1].jianzi.toneType === notes[index].jianzi.toneType &&
+    notes[index].jianzi.toneType !== null;
 
-    // 当前音符会跨过小节边界时，先插入小节线并重置累计
-    if (acc > 0 && acc + noteBeats > beatsPerBar) {
-      elements.push(<BarLine key={`bar-before-${note.id}`} />);
-      acc = 0;
-    }
+  const renderColumn = (note: NoteColumn, index: number) => (
+    <NoteColumnView
+      key={note.id}
+      note={note}
+      index={index}
+      compact={isCompact(index)}
+      onRemove={onRemove}
+      onEdit={onEdit}
+      onSeekLyric={onSeekLyric}
+      isEditing={editingIndex === index}
+      isPlaying={playingIndex === index}
+    />
+  );
 
-    const prev = index > 0 ? notes[index - 1] : null;
-    const sameTone =
-      prev?.jianzi.toneType === note.jianzi.toneType &&
-      note.jianzi.toneType !== null;
+  const shell = (children: React.ReactNode) => (
+    <div
+      data-score-layout={layout}
+      className="rounded bg-[#f8f3eb] min-h-20"
+      style={{
+        fontFamily: SERIF_FONT,
+        padding: pad,
+        ...(layout === "equal" && barWidth > 0
+          ? {
+              /*
+               * 等宽小节用 grid 而不用 flex + space-between：
+               * space-between 会把一行剩下的空间全塞进「唯一的那个间隙」，
+               * 一行两节时中间出现一个大洞。grid 的 auto-fill 让列数由可用宽度决定、
+               * 每列等宽，剩余空间均摊进每一列——小节既等宽、右边缘齐、又不留洞。
+               */
+              display: "grid",
+              gridTemplateColumns: `repeat(auto-fill, minmax(${barWidth}px, 1fr))`,
+              columnGap: gap,
+              rowGap: 16,
+              overflowX: "auto",
+            }
+          : {
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+              gap,
+              justifyContent: "flex-start",
+              // 小节成组后是「不可拆」的原子块，比容器还宽时无法像音符那样折行。
+              // 让它自己横向滚动，而不是把整页撑出横向滚动条（手机上尤其明显）。
+              overflowX: layout === "barline" ? "auto" : undefined,
+            }),
+      }}
+    >
+      {children}
+    </div>
+  );
 
-    elements.push(
-      <NoteColumnView
-        key={note.id}
-        note={note}
-        index={index}
-        compact={sameTone}
-        onRemove={onRemove}
-        onEdit={onEdit}
-        onSeekLyric={onSeekLyric}
-        isEditing={editingIndex === index}
-        isPlaying={playingIndex === index}
-      />,
-    );
+  // ── 自然流式：拍平成一串，小节线是普通流元素 ──
+  if (layout === "flow") {
+    const flat: React.ReactNode[] = [];
+    bars.forEach((bar, barIndex) => {
+      // 最后一节后面不画线：谱尾多一根竖线不像谱，像表格没画完
+      if (barIndex > 0) flat.push(<BarLine key={`bar-${barIndex}`} />);
+      bar.notes.forEach((note, i) =>
+        flat.push(renderColumn(note, bar.startIndex + i)),
+      );
+    });
+    return shell(flat);
+  }
 
-    acc += noteBeats;
-    if (acc >= beatsPerBar) {
-      // 不是最后一音时，在当前音后插小节线
-      if (index < notes.length - 1) {
-        elements.push(<BarLine key={`bar-after-${note.id}`} />);
-      }
-      acc = 0;
-    }
-  });
+  // ── 小节换行 / 等宽小节：小节是原子单位，整节换行 ──
+  return shell(
+    bars.map((bar, barIndex) => (
+      <BarGroup
+        key={`bar-group-${barIndex}`}
+        bar={bar}
+        // 等宽档交给 grid 的列宽决定，bar 自己撑满整列——这样右边缘才齐到页边
+        fill={layout === "equal"}
+        gap={gap}
+        isLast={barIndex === bars.length - 1}
+        equal={layout === "equal"}
+      >
+        {bar.notes.map((note, i) => renderColumn(note, bar.startIndex + i))}
+      </BarGroup>
+    )),
+  );
+}
 
+/**
+ * 一个小节的渲染容器。
+ *
+ * 为什么小节线和音符要包在同一个 flex 项里：若把小节线做成同级的独立 flex 项，
+ * 换行时可能把小节线单独推到下一行行首，看起来像凭空多了一根线。包成一组，
+ * 它就是不可分割的整体，换行只会发生在两组之间。
+ */
+function BarGroup({
+  bar,
+  fill,
+  gap,
+  isLast,
+  equal,
+  children,
+}: {
+  bar: Bar;
+  fill?: boolean;
+  gap: number;
+  isLast: boolean;
+  equal: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div
-      className="flex flex-wrap gap-3 p-4 rounded bg-[#f8f3eb] min-h-20"
-      style={{ fontFamily: SERIF_FONT }}
+      data-bar-group
+      data-bar-start={bar.startIndex}
+      className="flex items-stretch"
+      style={{
+        gap,
+        width: fill ? "100%" : undefined,
+        // 等宽小节：音符在一个固定宽度的盒子里均匀铺开，右边缘才对得齐
+        justifyContent: equal ? "space-around" : "flex-start",
+        // 整节不被拆到两行；打印同理（见 globals.css 的 @media print）
+        breakInside: "avoid",
+      }}
     >
-      {elements}
+      {children}
+      {!isLast && <BarLine />}
     </div>
   );
 }
@@ -94,7 +207,8 @@ function BarLine() {
   return (
     <div
       data-testid="bar-line"
-      className="flex flex-col items-center justify-center w-4 self-stretch"
+      className="flex flex-col items-center justify-center self-stretch"
+      style={{ width: BAR_LINE_WIDTH }}
     >
       <div className="w-px h-full bg-amber-700/30" />
     </div>
@@ -145,13 +259,14 @@ function NoteColumnView({
       ref={columnRef}
       data-note-column
       data-playing={isPlaying || undefined}
-      className={`group flex flex-col items-center w-[72px] select-none cursor-pointer rounded pt-1 transition-all duration-150 hover:bg-amber-50/50 ${
+      className={`group flex flex-col items-center select-none cursor-pointer rounded pt-1 transition-all duration-150 hover:bg-amber-50/50 ${
         isPlaying
           ? "ring-1 ring-emerald-600/50 bg-emerald-50 shadow-sm shadow-emerald-500/10"
           : isEditing
             ? "ring-1 ring-amber-500/40 bg-amber-50 shadow-sm shadow-amber-500/10"
             : ""
       }`}
+      style={{ width: NOTE_COLUMN_WIDTH, flex: "0 0 auto" }}
       onClick={() => onEdit?.(index)}
     >
       {/* 序号 */}
