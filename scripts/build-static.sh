@@ -6,10 +6,15 @@
 # → 拷进 apps/web → next build 静态导出到 apps/web/dist。
 #
 # 各平台接线方式：
-#   installCommand  = pnpm install --frozen-lockfile --ignore-scripts
-#   buildCommand    = bash scripts/build-static.sh
-#   outputDirectory = apps/web/dist
-#   BASE_PATH       = ""  （根路径部署；GitHub Pages 子路径走 pages.yml，显式传 /taiyin-guqin）
+#   仓库根部署（根 vercel.json / netlify.toml）：
+#     buildCommand    = bash scripts/build-static.sh
+#     outputDirectory = apps/web/dist
+#   单项目导入 apps/web（apps/web/vercel.json，Vercel monorepo 推荐）：
+#     buildCommand    = bash ../scripts/build-static.sh   （cwd 是 apps/web，往上一级才是仓库根）
+#     outputDirectory = dist
+#   三处共用：
+#     installCommand  = pnpm install --frozen-lockfile --ignore-scripts
+#     BASE_PATH       = ""  （根路径部署；GitHub Pages 子路径走 pages.yml，显式传 /taiyin-guqin）
 #
 # 脚本对「已装工具链」的幂等：cargo/wasm-pack 存在时跳过安装步骤。
 set -euo pipefail
