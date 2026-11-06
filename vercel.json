@@ -2,9 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "pnpm install --frozen-lockfile --ignore-scripts",
-  "buildCommand": "cargo install wasm-pack --locked 2>/dev/null || true && cd crates/taiyin-core && wasm-pack build --target web && cd ../.. && rm -rf apps/web/wasm apps/web/public/wasm && cp -r crates/taiyin-core/pkg apps/web/wasm && cp -r crates/taiyin-core/pkg apps/web/public/wasm && cd apps/web && pnpm --filter web build",
+  "buildCommand": "bash scripts/build-static.sh",
   "outputDirectory": "apps/web/dist",
   "env": {
     "BASE_PATH": ""
-  }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

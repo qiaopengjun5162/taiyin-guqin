@@ -1,5 +1,22 @@
 # 更新日志
 
+## [0.39.5] - 2026-11-06
+
+### 抽出自包含静态构建脚本，Vercel / Netlify 免费托管开箱即用
+
+上一轮 `vercel.json` / `netlify.toml` 的构建命令只跑了 `cargo install wasm-pack`，
+没装 Rust 工具链本身——在 Vercel / Netlify 构建机上会直接失败（它们默认不带 Rust）。
+本版把构建抽成与 GitHub Pages 完全同款的脚本，三平台共用：
+
+- **新增 `scripts/build-static.sh`**：自动装 Rust（rustup，若缺失）+ wasm-pack（若缺失）
+  → 编译 `taiyin-core` WASM → 拷进 `apps/web` → `next build` 静态导出到 `apps/web/dist`。
+  工具链已存在时跳过安装步骤，幂等可重跑。
+- **重写 `vercel.json` / `netlify.toml`** 引用该脚本，`BASE_PATH=""` 走根路径；并加 SPA
+  兜底（Vercel `rewrites` / Netlify `[[redirects]]` 指向 `index.html`），未知路径回退首页、
+  已有静态资源优先，深链接刷新不 404。
+- 平台接线只需三处：`installCommand=pnpm install --frozen-lockfile --ignore-scripts`、
+  `buildCommand=bash scripts/build-static.sh`、`outputDirectory=apps/web/dist`。
+
 ## [0.39.4] - 2026-11-05
 
 ### 免费托管就绪：默认进纯前端模式，站能真正用起来

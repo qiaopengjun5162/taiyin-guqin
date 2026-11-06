@@ -1,7 +1,14 @@
 [build]
-command = "cargo install wasm-pack --locked 2>/dev/null || true && cd crates/taiyin-core && wasm-pack build --target web && cd ../.. && rm -rf apps/web/wasm apps/web/public/wasm && cp -r crates/taiyin-core/pkg apps/web/wasm && cp -r crates/taiyin-core/pkg apps/web/public/wasm && cd apps/web && pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter web build"
+command = "bash scripts/build-static.sh"
 publish = "apps/web/dist"
 
 [build.environment]
   BASE_PATH = ""
   NODE_VERSION = "22"
+
+# SPA 兜底：已存在的静态资源（/_next、/index.html 等）优先于重定向被直接服务，
+# 只有未知路径才回退到 index.html，保证深链接刷新不 404。
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
