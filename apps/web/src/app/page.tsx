@@ -1208,34 +1208,26 @@ export default function Home() {
 
   return (
     <main className="flex flex-col items-center min-h-dvh py-10 px-4">
-      {/* ── 品牌：朱砂印章（主视觉标识） ── */}
-      <div className="flex flex-col items-center gap-4">
-        {/* 朱砂印章 */}
-        <div className="relative flex items-center justify-center w-20 h-20 rounded-full border-[3px] border-[var(--vermillion)]/50 shadow-xl shadow-[var(--vermillion)]/5">
-          <span
-            className="text-3xl font-black tracking-[0.25em] text-[var(--vermillion)]/85 select-none ink-bleed font-calligraphy"
-          >
-            太音
-          </span>
+      {/* ── 品牌：国风科技主视觉顶栏 ── */}
+      <header className="ty-hero no-print mt-2 w-full max-w-xl flex items-center justify-between gap-4 px-5 py-3">
+        <div className="flex items-center gap-3.5">
+          <div className="ty-seal font-calligraphy">太音</div>
+          <div className="leading-tight">
+            <h1 className="ty-title">太音 · 古琴 AI 传习</h1>
+            <p className="ty-subtitle">减字谱智能拼装 · 非遗科技复活</p>
+          </div>
         </div>
-        <div className="text-center">
-          <h1
-            className="text-sm font-bold tracking-[0.4em] text-amber-100/80 leading-relaxed"
-            style={{ fontFamily: "var(--font-serif)" }}
-          >
-            古琴 · 减字谱 · 拼装键盘
-          </h1>
-          <p className="mt-1 text-[10px] tracking-[0.25em] text-amber-600/40">
-            TAIYIN GUQIN
-          </p>
+        <div className="ty-ai-badge" title="AI 驱动">
+          <span className="ty-ai-dot" />
+          AI
         </div>
-      </div>
+      </header>
 
       {/* ── 全局错误 / 中性提示 ── */}
       {/* ── 未保存草稿恢复提示（只在编辑区还空着时出现） ── */}
       {showDraftBanner && pendingDraft && (
-        <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/30 bg-[var(--paper)] shadow-sm">
-          <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+        <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/30 bg-[var(--paper)] shadow-sm">
+          <div className="ty-panel-accent" />
           <div className="flex items-center gap-2 px-3 py-2">
             <p className="flex-1 text-[11px] leading-relaxed tracking-wider text-stone-700">
               上次有未保存的草稿：《{pendingDraft.title}》· {pendingDraft.notes.length} 个音 ·{" "}
@@ -1259,18 +1251,18 @@ export default function Home() {
         </div>
       )}
       {errorMessage && (
-        <div className="no-print mt-4 w-full max-w-md px-3 py-2 rounded border border-red-400/30 bg-red-900/20 text-[11px] tracking-wider text-red-200/80">
+        <div className="no-print mt-4 w-full max-w-xl px-3 py-2 rounded border border-red-400/30 bg-red-900/20 text-[11px] tracking-wider text-red-200/80">
           {errorMessage}
         </div>
       )}
       {infoMessage && (
-        <div className="no-print mt-4 w-full max-w-md px-3 py-2 rounded border border-emerald-500/30 bg-emerald-900/20 text-[11px] tracking-wider text-emerald-200/80">
+        <div className="no-print mt-4 w-full max-w-xl px-3 py-2 rounded border border-emerald-500/30 bg-emerald-900/20 text-[11px] tracking-wider text-emerald-200/80">
           {infoMessage}
         </div>
       )}
 
       {/* ── 乐谱流（导出截图目标） ── */}
-      <div id="score-area" ref={exportRef} className="mt-8 w-full max-w-md">
+      <div id="score-area" ref={exportRef} className="mt-8 w-full max-w-xl">
         <ScoreView notes={score} beatsPerBar={beatsPerBar} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} editingIndex={editingIndex} playingIndex={playingIndex} />
         {score.length === 0 && (
           <div className="mt-4 text-center">
@@ -1322,9 +1314,16 @@ export default function Home() {
         onRedo={redo}
       />
 
-      {/* ── 导出选项（仅在有音符时显示） ── */}
-      {score.length > 0 && (
-        <div className="no-print mt-2 w-full max-w-md flex flex-wrap items-center justify-end gap-3">
+      {/* ── 演奏控制台 ── */}
+      <div className="ty-panel no-print mt-4 w-full max-w-xl p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="ty-section-title">演奏控制台</span>
+          <span className="ty-section-sub">速度 · 节拍 · 定弦 · 基准音</span>
+        </div>
+        <div className="ty-console">
+          {/* 导出选项（仅在有音符时显示） */}
+          {score.length > 0 && (
+        <div className="no-print w-full max-w-none flex flex-wrap items-center justify-end gap-3">
           <label className="flex items-center gap-1.5 text-[10px] tracking-wider text-amber-600/50 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -1339,7 +1338,7 @@ export default function Home() {
       )}
 
       {/* ── 拍号选择 + 播放 ── */}
-      <div className="no-print mt-2 w-full max-w-md flex flex-wrap items-center justify-end gap-2 gap-y-2">
+      <div className="no-print w-full max-w-none flex flex-wrap items-center justify-end gap-2 gap-y-2">
         <button
           onClick={toggleMetronome}
           aria-label={metronomeRunning ? "停止节拍器" : "启动节拍器"}
@@ -1403,7 +1402,7 @@ export default function Home() {
 
       {/* ── 拍点高亮（节拍器/联动播放时显示，重拍为朱砂色） ── */}
       {metronomeRunning && (
-        <div className="no-print mt-2 w-full max-w-md flex items-center justify-center gap-2" aria-hidden>
+        <div className="no-print w-full max-w-none flex items-center justify-center gap-2" aria-hidden>
           {Array.from({ length: beatsPerBar }, (_, i) => {
             const active = currentBeat === i;
             const isDown = i === 0;
@@ -1424,7 +1423,7 @@ export default function Home() {
       )}
 
       {/* ── 速度（BPM）调节 ── */}
-      <div className="no-print mt-2 w-full max-w-md flex items-center gap-3 py-1.5">
+      <div className="no-print w-full max-w-none flex items-center gap-3 py-1.5">
         <span className="text-[10px] tracking-wider text-amber-600/50 whitespace-nowrap">
           速度 {bpm} BPM
         </span>
@@ -1442,7 +1441,7 @@ export default function Home() {
 
       {/* ── 定弦（调式）：七根空弦各自的音高。同一组减字换定弦就换音高，
              所以它跟基准音是两个独立维度：定弦定弦间音程，基准音定整体高低。 ── */}
-      <div className="no-print mt-1 w-full max-w-md flex items-center gap-3 py-1.5">
+      <div className="no-print mt-1 w-full max-w-xl flex items-center gap-3 py-1.5">
         <span className="text-[10px] tracking-wider text-amber-600/50 whitespace-nowrap">
           定弦
         </span>
@@ -1465,7 +1464,7 @@ export default function Home() {
       </div>
 
       {/* ── 基准音（A4）调节：古琴常整床偏低，按自己琴上的实际音高设 ── */}
-      <div className="no-print mt-1 w-full max-w-md flex items-center gap-3 py-1.5">
+      <div className="no-print mt-1 w-full max-w-xl flex items-center gap-3 py-1.5">
         <span className="text-[10px] tracking-wider text-amber-600/50 whitespace-nowrap">
           基准音 {concertPitch} Hz
         </span>
@@ -1487,6 +1486,8 @@ export default function Home() {
         >
           标准
         </button>
+      </div>
+        </div>
       </div>
 
       {/* ── 社区后端设置（可选）：填了就能浏览 / 发布社区曲谱 ── */}
@@ -1517,10 +1518,10 @@ export default function Home() {
       {/* ── 主卡片 —— 宣纸质感 ── */}
       <div
         id="keyboard-area"
-        className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30"
+        className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel"
       >
         {/* 卡片顶部装饰线（朱砂色） */}
-        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+        <div className="ty-panel-accent" />
 
         <div className="p-5">
           {editingIndex !== null && (
@@ -1586,8 +1587,8 @@ export default function Home() {
       </div>
 
       {/* ── 减字谱 AI 识别（对标 udywang「琴与人的交互 1 号」） ── */}
-      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
-        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+        <div className="ty-panel-accent" />
         <div className="p-5">
           <button
             onClick={() => setShowRecognizer((v) => !v)}
@@ -1632,8 +1633,8 @@ export default function Home() {
       </div>
 
       {/* ── 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音） ── */}
-      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
-        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+        <div className="ty-panel-accent" />
         <div className="p-5">
           <button
             onClick={() => setShowBoard((v) => !v)}
@@ -1650,8 +1651,8 @@ export default function Home() {
       </div>
 
       {/* ── 调音 · 定弦（定弦决定减字反推的音高） ── */}
-      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
-        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+        <div className="ty-panel-accent" />
         <div className="p-5">
           <button
             onClick={() => setShowTuner((v) => !v)}
@@ -1668,8 +1669,8 @@ export default function Home() {
       </div>
 
       {/* ── 跟录音练琴（对标华夏古琴网的「古琴播放器」） ── */}
-      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
-        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+        <div className="ty-panel-accent" />
         <div className="p-5">
           <button
             onClick={() => setShowPractice((v) => !v)}
@@ -1686,8 +1687,8 @@ export default function Home() {
       </div>
 
       {/* ── 练琴记录（对标「古琴助手」的录音器 + 打卡 + 统计） ── */}
-      <div className="no-print mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
-        <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
+      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+        <div className="ty-panel-accent" />
         <div className="p-5">
           <button
             onClick={() => setShowPracticeLog((v) => !v)}

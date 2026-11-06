@@ -20,6 +20,10 @@
   --vermillion: #c23b22;
   --gold: #c9a96e;
   --string-gray: #8b8378;
+  /* 科技感新增：青碧（jade）辉光 */
+  --jade: #57e3d4;
+  --jade-deep: #2dd4bf;
+  --jade-glow: rgba(87, 227, 212, 0.5);
 }
 
 @theme inline {
@@ -31,7 +35,7 @@
   --font-calligraphy: "Ma Shan Zheng", "KaiTi", "STKaiti", serif;
 }
 
-/* ── 墨色渐变背景 + 暗弦纹 ── */
+/* ── 墨色渐变背景 + 暗弦纹（七弦） + 岳山意象 ── */
 body {
   background:
     /* 暗弦纹（七条 = 七弦） */
@@ -62,9 +66,44 @@ body {
   min-height: 100dvh;
 }
 
+/* ── 科技感装饰层 ①：极淡青碧网格（固定，置于内容之下） ── */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(87, 227, 212, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(87, 227, 212, 0.045) 1px, transparent 1px);
+  background-size: 42px 42px;
+  -webkit-mask-image: radial-gradient(ellipse 75% 55% at 50% 32%, #000 25%, transparent 82%);
+  mask-image: radial-gradient(ellipse 75% 55% at 50% 32%, #000 25%, transparent 82%);
+}
+
+/* ── 科技感装饰层 ②：流动辉光晕（青碧 + 金 + 朱砂，缓慢漂移） ── */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 30% at 14% 18%, rgba(87, 227, 212, 0.13), transparent 70%),
+    radial-gradient(34% 28% at 86% 24%, rgba(201, 169, 110, 0.13), transparent 70%),
+    radial-gradient(46% 36% at 50% 98%, rgba(194, 59, 34, 0.1), transparent 70%);
+  filter: blur(12px);
+  animation: ty-drift 20s ease-in-out infinite alternate;
+}
+
+@keyframes ty-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.85; }
+  100% { transform: translate3d(0, -2.5%, 0) scale(1.06); opacity: 1; }
+}
+
 /* ── 选择文本颜色 ── */
 ::selection {
-  background: rgba(184, 134, 11, 0.3);
+  background: rgba(87, 227, 212, 0.28);
   color: var(--paper);
 }
 
@@ -76,21 +115,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(201, 169, 110, 0.2);
+  background: rgba(87, 227, 212, 0.22);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(201, 169, 110, 0.4);
-}
-
-/* ── 按钮悬停墨染效果 ── */
-@keyframes ink-bleed {
-  0% {
-    box-shadow: inset 0 0 0 0 rgba(184, 134, 11, 0);
-  }
-  100% {
-    box-shadow: inset 0 0 0 0 rgba(184, 134, 11, 0);
-  }
+  background: rgba(87, 227, 212, 0.42);
 }
 
 /* ── 楷书字体工具类（品牌印章使用） ── */
@@ -105,7 +134,6 @@ body {
 
 /* ── 减字谱字符微调：对特定指法做字形压缩，还原古琴书写感 ── */
 .jianzi-char {
-  /* 抹（木）在减字谱中撇捺内敛，压缩宽度 */
   &.char-mu {
     transform: scaleX(0.78);
     display: inline-block;
@@ -128,6 +156,195 @@ body {
 
 .animate-stamp {
   animation: stamp 0.25s ease-out;
+}
+
+/* ============================================================
+   太音 · 国风科技设计系统（页面级组件样式）
+   ============================================================ */
+
+/* 卡片：宣纸底 + 青碧·金·朱砂渐变描边 + 柔光 + HUD 角标 + 入场 */
+.ty-panel {
+  position: relative;
+  border: 1px solid transparent;
+  border-image: linear-gradient(
+      135deg,
+      rgba(87, 227, 212, 0.55),
+      rgba(201, 169, 110, 0.5) 50%,
+      rgba(194, 59, 34, 0.5)
+    )
+    1;
+  box-shadow:
+    0 12px 34px -14px rgba(0, 0, 0, 0.55),
+    0 0 26px -10px rgba(87, 227, 212, 0.18);
+  animation: ty-rise 0.5s ease both;
+}
+.ty-panel::before,
+.ty-panel::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  border: 1.5px solid rgba(87, 227, 212, 0.5);
+}
+.ty-panel::before {
+  top: 7px;
+  left: 7px;
+  border-right: none;
+  border-bottom: none;
+  border-top-left-radius: 5px;
+}
+.ty-panel::after {
+  bottom: 7px;
+  right: 7px;
+  border-left: none;
+  border-top: none;
+  border-bottom-right-radius: 5px;
+}
+
+/* 卡片顶部装饰线（朱砂→青碧→金） */
+.ty-panel-accent {
+  height: 3px;
+  border-radius: 0.75rem 0.75rem 0 0;
+  background: linear-gradient(
+    90deg,
+    rgba(87, 227, 212, 0.6),
+    var(--vermillion) 50%,
+    rgba(201, 169, 110, 0.6)
+  );
+}
+
+@keyframes ty-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 面板标题（小标题用书法/衬线 + 青碧点缀） */
+.ty-section-title {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #5b534a;
+}
+.ty-section-sub {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: rgba(91, 83, 74, 0.55);
+}
+
+/* 演奏控制台：桌面双列栅格，移动端单列 */
+.ty-console {
+  display: grid;
+  gap: 0.7rem;
+}
+@media (min-width: 640px) {
+  .ty-console {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+/* ── 品牌顶栏（国风科技主视觉） ── */
+.ty-hero {
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid transparent;
+  border-image: linear-gradient(
+      100deg,
+      rgba(87, 227, 212, 0.5),
+      rgba(201, 169, 110, 0.45) 55%,
+      rgba(194, 59, 34, 0.5)
+    )
+    1;
+  background:
+    linear-gradient(180deg, rgba(28, 27, 26, 0.72), rgba(28, 27, 26, 0.55));
+  box-shadow:
+    0 10px 30px -16px rgba(0, 0, 0, 0.6),
+    0 0 26px -12px rgba(87, 227, 212, 0.22);
+  backdrop-filter: blur(6px);
+}
+.ty-seal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(194, 59, 34, 0.75);
+  box-shadow: 0 0 16px -2px rgba(194, 59, 34, 0.45);
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: rgba(194, 59, 34, 0.9);
+  background: rgba(245, 239, 230, 0.04);
+}
+.ty-title {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #f3e9d6;
+}
+.ty-subtitle {
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: rgba(87, 227, 212, 0.62);
+}
+.ty-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(87, 227, 212, 0.4);
+  background: rgba(87, 227, 212, 0.08);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--jade);
+  box-shadow: 0 0 14px -3px rgba(87, 227, 212, 0.5);
+}
+.ty-ai-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--jade);
+  box-shadow: 0 0 8px var(--jade);
+  animation: ty-pulse 1.8s ease-in-out infinite;
+}
+@keyframes ty-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+
+/* ── 表单控件：青碧辉光（科技感） ── */
+input[type="checkbox"],
+input[type="range"] {
+  accent-color: var(--jade);
+}
+input[type="range"] {
+  height: 6px;
+  border-radius: 999px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  box-shadow: 0 0 8px var(--jade-glow);
+}
+
+/* 尊重用户的「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  body::after,
+  .ty-panel,
+  .ty-ai-dot {
+    animation: none !important;
+  }
 }
 
 /* ── 打印/导出 PDF 样式 ── */
