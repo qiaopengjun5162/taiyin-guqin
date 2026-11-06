@@ -5,7 +5,8 @@
   "buildCommand": "bash scripts/build-static.sh",
   "outputDirectory": "apps/web/dist",
   "env": {
-    "BASE_PATH": ""
+    "BASE_PATH": "",
+    "PNPM_VERSION": "11"
   },
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }

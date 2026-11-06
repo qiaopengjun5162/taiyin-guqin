@@ -5,6 +5,7 @@ publish = "apps/web/dist"
 [build.environment]
   BASE_PATH = ""
   NODE_VERSION = "22"
+  PNPM_VERSION = "11"
 
 # SPA 兜底：已存在的静态资源（/_next、/index.html 等）优先于重定向被直接服务，
 # 只有未知路径才回退到 index.html，保证深链接刷新不 404。
