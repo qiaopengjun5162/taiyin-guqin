@@ -141,11 +141,21 @@ export function buildSchedule(
 ): ScheduledNote[] {
   const out: ScheduledNote[] = [];
   let cursor = 0;
+  // 同声（带合）两声是**同时**响的：成员音不能把时间轴往后推，
+  // 否则听感变成"弹一下、再弹一下"，而实际指法是带起与空弦同时发声。
+  let prevStart = 0;
+  let prevDuration = 0;
+
   for (const note of notes) {
     const beats = durationToBeats(note.duration, note.jianpuDot);
-    const duration = (beats * beatMs) / 1000;
+    const ownDuration = (beats * beatMs) / 1000;
+    const simultaneous =
+      note.lianmei?.kind === "同声" && note.lianmei.headId !== note.id;
+    const start = simultaneous ? prevStart : cursor;
+    const duration = simultaneous ? prevDuration : ownDuration;
+
     out.push({
-      start: cursor,
+      start,
       duration,
       freq: columnFrequency(note, concertPitch, tuning),
       toneType: note.jianzi.toneType,
@@ -153,7 +163,12 @@ export function buildSchedule(
       // 「急」被 pitchSlide 筛掉，音频按直音弹
       slide: pitchSlide(note.jianzi.slide ?? null),
     });
-    cursor += duration;
+
+    if (!simultaneous) {
+      prevStart = start;
+      prevDuration = duration;
+      cursor += duration;
+    }
   }
   return out;
 }

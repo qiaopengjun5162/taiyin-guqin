@@ -18,6 +18,16 @@ import { BackendSettings } from "@/components/backend-settings";
 import { ExportFooter } from "@/components/export-footer";
 import { JianpuTranslator } from "@/components/jianpu-translator";
 import { JianziCodeImport } from "@/components/jianzi-code-import";
+import {
+  clearLianmei,
+  lianmeiRelation,
+  linkLianmei,
+  normalizeLianmei,
+  relationFits,
+  LIANMEI_OPTIONS,
+  type LianmeiRelation,
+} from "@/lib/lianmei";
+import { jianziToFrequency } from "@/lib/jianzi-pitch";
 import { useExportImage } from "@/lib/use-export-image";
 import {
   DENSITY_OPTIONS,
@@ -524,9 +534,56 @@ export default function Home() {
     if (editingIndex === index) setEditingIndex(null);
   }
 
+  /**
+   * 把「正在编辑的这一个音」与它后面那个音标成一组联袂。
+   *
+   * 只允许相邻成组：联袂在谱面上就是两个挨着的字，隔着别的音去连，
+   * 谱面既画不出来、音乐上也讲不通。
+   */
+  function handleLinkLianmei(kind: (typeof LIANMEI_OPTIONS)[number]["kind"]) {
+    if (editingIndex === null) return;
+    commitScore((prev) =>
+      normalizeLianmei(linkLianmei(prev, editingIndex, kind)),
+    );
+  }
+
+  function handleClearLianmei() {
+    if (editingIndex === null) return;
+    commitScore((prev) => normalizeLianmei(clearLianmei(prev, editingIndex)));
+  }
+
+  /**
+   * 正在编辑的音与下一个音的音程关系。
+   *
+   * 四种联袂都要求两声同度（放合可八度），所以这里直接把关系摆出来——
+   * 不合的时候不禁用按钮，只是提示：古谱里确实有写法不规范的地方，
+   * 硬拦着不让标，用户只会觉得功能坏了。
+   */
+  const lianmeiRelationInfo: {
+    relation: LianmeiRelation;
+    description: string;
+  } | null = (() => {
+    if (editingIndex === null || editingIndex + 1 >= score.length) return null;
+    const ctx = { tuning, concertPitch };
+    const a = jianziToFrequency(score[editingIndex].jianzi, ctx);
+    const b = jianziToFrequency(score[editingIndex + 1].jianzi, ctx);
+    const relation = lianmeiRelation(a, b);
+    const description =
+      relation === "同度"
+        ? "两音同度，四种联袂都成立"
+        : relation === "八度"
+          ? "两音差八度，只合「放合」"
+          : a == null || b == null
+            ? "有一音推算不出音高（缺弦序或徽位），无法判断"
+            : "两音既不同度也不成八度，标了会与实际发声对不上";
+    return { relation, description };
+  })();
+
   function handleRemove(id: string) {
     const removedIdx = score.findIndex((n) => n.id === id);
-    commitScore((prev) => prev.filter((n) => n.id !== id));
+    // 删掉组首会让成员变成孤儿、删掉中间音会把组打断——都要顺手解组，
+    // 否则谱面上会留下一条连不起来的连音线。
+    commitScore((prev) => normalizeLianmei(prev.filter((n) => n.id !== id)));
     if (editingIndex === null) return;
     if (removedIdx === editingIndex) {
       setEditingIndex(null);
@@ -1633,16 +1690,73 @@ export default function Home() {
 
         <div className="p-5">
           {editingIndex !== null && (
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-[10px] tracking-wider text-amber-600/60">
-                正在编辑第 {editingIndex + 1} 音 · 确认后更新
-              </p>
-              <button
-                onClick={() => setEditingIndex(null)}
-                className="text-[10px] tracking-wider text-stone-400 hover:text-stone-600 transition-colors underline underline-offset-2"
-              >
-                取消编辑
-              </button>
+            <div className="mb-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] tracking-wider text-amber-600/60">
+                  正在编辑第 {editingIndex + 1} 音 · 确认后更新
+                </p>
+                <button
+                  onClick={() => setEditingIndex(null)}
+                  className="text-[10px] tracking-wider text-stone-400 hover:text-stone-600 transition-colors underline underline-offset-2"
+                >
+                  取消编辑
+                </button>
+              </div>
+
+              {/* ── 联袂指法：与后一个音成组 ── */}
+              {editingIndex + 1 < score.length && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[9px] tracking-wider text-rose-700/70">
+                    与后一音联袂
+                  </span>
+                  {LIANMEI_OPTIONS.map((o) => {
+                    const linked = score[editingIndex].lianmei;
+                    const isThisHead =
+                      linked?.kind === o.kind &&
+                      linked.headId === score[editingIndex].id;
+                    const fits =
+                      lianmeiRelationInfo &&
+                      relationFits(o.kind, lianmeiRelationInfo.relation);
+                    return (
+                      <button
+                        key={o.kind}
+                        onClick={() => handleLinkLianmei(o.kind)}
+                        aria-pressed={isThisHead}
+                        title={o.hint}
+                        className={`px-2 py-1 min-h-[32px] text-[10px] tracking-wider rounded border transition-all ${
+                          isThisHead
+                            ? "border-rose-500/60 bg-rose-100 text-rose-800"
+                            : fits
+                              ? "border-rose-400/30 text-rose-700/70 hover:border-rose-500/60"
+                              : "border-stone-400/30 text-stone-400"
+                        }`}
+                      >
+                        {o.kind}
+                      </button>
+                    );
+                  })}
+                  {score[editingIndex].lianmei && (
+                    <button
+                      onClick={handleClearLianmei}
+                      className="px-2 py-1 min-h-[32px] text-[10px] tracking-wider rounded border border-stone-400/30 text-stone-500 hover:text-stone-700 transition-all"
+                    >
+                      解组
+                    </button>
+                  )}
+                </div>
+              )}
+              {lianmeiRelationInfo && (
+                <p
+                  data-lianmei-relation
+                  className={`mt-1 text-[9px] tracking-wider ${
+                    lianmeiRelationInfo.relation === "不合"
+                      ? "text-rose-700/80"
+                      : "text-emerald-800/70"
+                  }`}
+                >
+                  {lianmeiRelationInfo.description}
+                </p>
+              )}
             </div>
           )}
 

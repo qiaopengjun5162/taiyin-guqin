@@ -76,6 +76,44 @@ describe("buildSchedule", () => {
     expect(schedule[0].duration).toBe(0.75);
   });
 
+  /**
+   * 同声（带合）是「左指带起的同时右弹空弦」，两声**同时**响。
+   * 若按普通音符排，听感会变成"弹一下、再弹一下"——指法明明是同时的。
+   */
+  it("同声两声同时起，且不把后面的音推后", () => {
+    const head = makeNote({ jianpuNumber: "5", duration: "四分" });
+    const member = makeNote({ jianpuNumber: "5", duration: "四分" });
+    const next = makeNote({ jianpuNumber: "6", duration: "四分" });
+    const schedule = buildSchedule(
+      [
+        { ...head, lianmei: { kind: "同声", headId: head.id } },
+        { ...member, lianmei: { kind: "同声", headId: head.id } },
+        next,
+      ],
+      500,
+    );
+    expect(schedule[0].start).toBe(0);
+    expect(schedule[1].start).toBe(0);
+    // 成员不占时间轴：第三个音仍在第一音之后整整一拍
+    expect(schedule[2].start).toBe(0.5);
+  });
+
+  it("分开/应合/放合 仍是先后发声（只有同声是同时）", () => {
+    for (const kind of ["分开", "应合", "放合"] as const) {
+      const head = makeNote({ jianpuNumber: "5", duration: "四分" });
+      const member = makeNote({ jianpuNumber: "5", duration: "四分" });
+      const schedule = buildSchedule(
+        [
+          { ...head, lianmei: { kind, headId: head.id } },
+          { ...member, lianmei: { kind, headId: head.id } },
+        ],
+        500,
+      );
+      expect(schedule[0].start).toBe(0);
+      expect(schedule[1].start).toBe(0.5);
+    }
+  });
+
   it("rests are silent but occupy time", () => {
     const notes = [
       makeNote({ jianpuNumber: "5" }),

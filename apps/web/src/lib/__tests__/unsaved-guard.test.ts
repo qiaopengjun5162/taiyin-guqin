@@ -76,4 +76,34 @@ describe("scoreFingerprint", () => {
     const b = scoreFingerprint("x", [makeNote({ id: "2", jianpuNumber: "6" }), makeNote({ id: "1" })], "zhengdiao");
     expect(a).not.toBe(b);
   });
+
+  /**
+   * 联袂关系也要进指纹：否则"只标了联袂"的谱会被判成没改过，
+   * 关页面不提示保存，标记静默丢失。
+   */
+  it("标注联袂会改变指纹", () => {
+    const plain = [makeNote({ id: "1" }), makeNote({ id: "2" })];
+    const linked = [
+      { ...plain[0], lianmei: { kind: "同声" as const, headId: "1" } },
+      { ...plain[1], lianmei: { kind: "同声" as const, headId: "1" } },
+    ];
+    expect(scoreFingerprint("x", linked, "zhengdiao")).not.toBe(
+      scoreFingerprint("x", plain, "zhengdiao"),
+    );
+  });
+
+  it("联袂按「离组首多远」记账，换一批 id 不会让指纹变", () => {
+    // 分享链接载入后列 id 会重新生成，指纹必须不受影响
+    const a = [
+      { ...makeNote({ id: "a" }), lianmei: { kind: "放合" as const, headId: "a" } },
+      { ...makeNote({ id: "b" }), lianmei: { kind: "放合" as const, headId: "a" } },
+    ];
+    const b = [
+      { ...makeNote({ id: "x" }), lianmei: { kind: "放合" as const, headId: "x" } },
+      { ...makeNote({ id: "y" }), lianmei: { kind: "放合" as const, headId: "x" } },
+    ];
+    expect(scoreFingerprint("x", b, "zhengdiao")).toBe(
+      scoreFingerprint("x", a, "zhengdiao"),
+    );
+  });
 });

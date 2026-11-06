@@ -103,6 +103,29 @@ export type Duration = "全" | "二分" | "四分" | "八分" | "十六分";
 export type JianpuOctave = "" | "·" | "··" | "," | ",,";
 
 /** 单个复合音符列 —— 简谱 + 减字 + 时值的垂直组合 */
+/**
+ * 联袂指法：两声以上成组、音高相同（放合可差八度）的左右手配合。
+ *
+ * 四种指法的结构并不一样，这里只承载"成组关系"，具体差异由库函数解释：
+ * - 分开：首尾同度，中间是走手虚音，整体占**一个**简谱位置
+ * - 同声：两声**同时**发声（左指带起 + 右弹空弦）
+ * - 应合：散音连着弹，左指走手去合，通常二声以上
+ * - 放合：相邻弦，同度**或八度**
+ */
+export type LianmeiKind = "分开" | "同声" | "应合" | "放合";
+
+/**
+ * 一条联袂关系。
+ *
+ * 组内每个音都带这个字段，靠 `headId` 归组；组首的 `headId` 等于自己的 id。
+ * 用 id 而不是下标，是因为删音/重排之后下标会整体前移，按下标存的组会散掉。
+ * 相邻性不在这里保证——由 `normalizeLianmei` 兜（中间插了别的音就解组）。
+ */
+export interface LianmeiLink {
+  kind: LianmeiKind;
+  headId: string;
+}
+
 export interface NoteColumn {
   id: string;
   jianpuNumber: JianpuNumber | null;
@@ -112,6 +135,8 @@ export interface NoteColumn {
   jianzi: JianziState;
   /** 歌词字（可选，按字对齐到音符下方；器乐段留空） */
   lyric?: string;
+  /** 联袂关系（可选）；不在任何联袂里就不设这个字段 */
+  lianmei?: LianmeiLink;
 }
 
 /** 默认简谱数字列表 */

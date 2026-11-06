@@ -507,4 +507,51 @@ describe("ScoreView", () => {
       expect(onEdit).toHaveBeenCalledWith(0);
     });
   });
+
+  /**
+   * 联袂呈现：组首要能看出是哪一种指法，并且与成员之间有一条连音线。
+   * 连音线用绝对定位画（不参与布局），否则组内各列的减字会比同排其它列低一截。
+   */
+  describe("联袂呈现", () => {
+    function linked(kind: "同声" | "分开" | "应合" | "放合"): NoteColumn[] {
+      const head = makeNote({ id: "h" });
+      const member = makeNote({ id: "m" });
+      return [
+        { ...head, lianmei: { kind, headId: "h" } },
+        { ...member, lianmei: { kind, headId: "h" } },
+        makeNote({ id: "z" }),
+      ];
+    }
+
+    it("组首与成员都带上联袂标记，第三音不受影响", () => {
+      const { container } = render(<ScoreView notes={linked("同声")} />);
+      const cols = container.querySelectorAll("[data-note-column]");
+      expect(cols[0].getAttribute("data-lianmei")).toBe("同声");
+      expect(cols[0].getAttribute("data-lianmei-role")).toBe("head");
+      expect(cols[1].getAttribute("data-lianmei-role")).toBe("member");
+      expect(cols[2].getAttribute("data-lianmei")).toBeNull();
+    });
+
+    it("组首挂出指法名，成员不挂（否则谱面到处是重复的字）", () => {
+      const { container } = render(<ScoreView notes={linked("放合")} />);
+      const cols = container.querySelectorAll("[data-note-column]");
+      expect(cols[0].textContent).toContain("放合");
+      expect(cols[1].textContent).not.toContain("放合");
+    });
+
+    it("连音线只画在组内，组外不画", () => {
+      const { container } = render(<ScoreView notes={linked("同声")} />);
+      const cols = container.querySelectorAll("[data-note-column]");
+      expect(cols[0].querySelector("[data-lianmei-tie]")).toBeTruthy();
+      expect(cols[1].querySelector("[data-lianmei-tie]")).toBeTruthy();
+      expect(cols[2].querySelector("[data-lianmei-tie]")).toBeNull();
+    });
+
+    it("没有联袂字段时不画任何东西", () => {
+      const { container } = render(<ScoreView notes={[makeNote()]} />);
+      const col = container.querySelector("[data-note-column]")!;
+      expect(col.getAttribute("data-lianmei")).toBeNull();
+      expect(col.querySelector("[data-lianmei-tie]")).toBeNull();
+    });
+  });
 });

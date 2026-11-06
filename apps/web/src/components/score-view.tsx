@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { NoteColumn, Duration } from "@/lib/types";
+import type { NoteColumn, Duration, LianmeiKind } from "@/lib/types";
 import { getRhythmLineCount } from "@/lib/jianzi";
 import {
   groupIntoBars,
@@ -21,6 +21,7 @@ import {
   durationLabel,
   type DurationValue,
 } from "@/lib/duration-drag";
+import { lianmeiRoleAt } from "@/lib/lianmei";
 import { JianziBlock } from "./jianzi-block";
 
 const SERIF_FONT =
@@ -87,21 +88,32 @@ export function ScoreView({
     notes[index - 1].jianzi.toneType === notes[index].jianzi.toneType &&
     notes[index].jianzi.toneType !== null;
 
-  const renderColumn = (note: NoteColumn, index: number) => (
-    <NoteColumnView
-      key={note.id}
-      note={note}
-      index={index}
-      compact={isCompact(index)}
-      onRemove={onRemove}
-      onEdit={onEdit}
-      onSeekLyric={onSeekLyric}
-      // 播放中禁止拖动：时值一变，正在跑的音符时间表就失效了，播放器会走音
-      onChangeDuration={playingIndex != null ? undefined : onChangeDuration}
-      isEditing={editingIndex === index}
-      isPlaying={playingIndex === index}
-    />
-  );
+  const renderColumn = (note: NoteColumn, index: number) => {
+    const role = lianmeiRoleAt(notes, index);
+    // 组尾：下一个音不在同一组里（或已到末尾）。连音线只画到组尾为止。
+    const next = notes[index + 1];
+    const isLastInGroup =
+      !role ||
+      !next?.lianmei ||
+      next.lianmei.headId !== note.lianmei?.headId;
+    return (
+      <NoteColumnView
+        key={note.id}
+        note={note}
+        index={index}
+        compact={isCompact(index)}
+        onRemove={onRemove}
+        onEdit={onEdit}
+        onSeekLyric={onSeekLyric}
+        // 播放中禁止拖动：时值一变，正在跑的音符时间表就失效了，播放器会走音
+        onChangeDuration={playingIndex != null ? undefined : onChangeDuration}
+        lianmei={role ? { ...role, isLast: isLastInGroup } : null}
+        tieGap={gap}
+        isEditing={editingIndex === index}
+        isPlaying={playingIndex === index}
+      />
+    );
+  };
 
   const shell = (children: React.ReactNode) => (
     <div
@@ -238,6 +250,8 @@ function NoteColumnView({
   onEdit,
   onSeekLyric,
   onChangeDuration,
+  lianmei,
+  tieGap,
   isEditing,
   isPlaying,
 }: {
@@ -248,6 +262,10 @@ function NoteColumnView({
   onEdit?: (index: number) => void;
   onSeekLyric?: (index: number) => void;
   onChangeDuration?: (index: number, value: DurationValue) => void;
+  /** 联袂角色（不在任何联袂里为 null）；`isLast` 决定连音线画到哪儿收尾 */
+  lianmei?: { kind: LianmeiKind; isHead: boolean; isLast: boolean } | null;
+  /** 列间距，连音线要跨过这段空隙才能连上 */
+  tieGap?: number;
   isEditing?: boolean;
   isPlaying?: boolean;
 }) {
@@ -297,6 +315,10 @@ function NoteColumnView({
       ref={columnRef}
       data-note-column
       data-dragging={dragPreview ? true : undefined}
+      data-lianmei={lianmei?.kind}
+      data-lianmei-role={
+        lianmei ? (lianmei.isHead ? "head" : "member") : undefined
+      }
       data-playing={isPlaying || undefined}
       className={`group flex flex-col items-center select-none rounded pt-1 transition-all duration-150 ${
         draggable ? "cursor-ew-resize" : "cursor-pointer"
@@ -357,35 +379,67 @@ function NoteColumnView({
         </span>
       )}
 
+      {/* 联袂指法名：挂在列首右上角。放在正常流里会让整列比同排其它列高出一截。 */}
+      {lianmei?.isHead && (
+        <span
+          data-lianmei-label
+          className="absolute top-[1px] right-0 px-0.5 rounded bg-rose-100 text-rose-700/90 text-[8px] leading-none"
+        >
+          {lianmei.kind}
+        </span>
+      )}
+
       {/* 序号 */}
       <span className="text-[8px] text-stone-400/40 mb-0.5 leading-none">
         {index + 1}
       </span>
 
-      {/* ── 简谱区域 ── */}
-      <div
-        onMouseEnter={() => setLinkHover("jianpu")}
-        onMouseLeave={() => setLinkHover(null)}
-        className={`rounded transition-shadow ${
-          linkHover === "jianzi" ? "ring-1 ring-amber-400/60 bg-amber-50/40" : ""
-        }`}
-      >
-        <JianpuView note={note} />
-      </div>
+      {/*
+       * 联袂连音线挂在这一块的下沿（简谱 + 减字 + 节奏），而不是整列的下沿：
+       * 整列下面还有歌词与删除按钮（触控区 44px），挂到列底会离音符很远，
+       * 看起来像页脚多了一根红线，而不是"这两个音连在一起"。
+       * 两端各向列间距里多伸半格，相邻两列伸出的部分拼成一条连续的线。
+       */}
+      <div className="relative flex w-full flex-col items-center">
+        {lianmei && (
+          <span
+            aria-hidden
+            data-lianmei-tie
+            className="absolute bg-rose-500/50"
+            style={{
+              bottom: -3,
+              height: 1.5,
+              left: lianmei.isHead ? 10 : -(tieGap ?? 12) / 2,
+              right: lianmei.isLast ? 10 : -(tieGap ?? 12) / 2,
+            }}
+          />
+        )}
 
-      {/* ── 减字区域（忘机减字谱楷体渲染） ── */}
-      <div
-        onMouseEnter={() => setLinkHover("jianzi")}
-        onMouseLeave={() => setLinkHover(null)}
-        className={`rounded transition-shadow ${
-          linkHover === "jianpu" ? "ring-1 ring-amber-400/60 bg-amber-50/40" : ""
-        }`}
-      >
-        <JianziBlock state={jianzi} fontSize="24px" compact={compact} />
-      </div>
+        {/* ── 简谱区域 ── */}
+        <div
+          onMouseEnter={() => setLinkHover("jianpu")}
+          onMouseLeave={() => setLinkHover(null)}
+          className={`rounded transition-shadow ${
+            linkHover === "jianzi" ? "ring-1 ring-amber-400/60 bg-amber-50/40" : ""
+          }`}
+        >
+          <JianpuView note={note} />
+        </div>
 
-      {/* ── 节奏线区域 ── */}
-      <RhythmView duration={note.duration} />
+        {/* ── 减字区域（忘机减字谱楷体渲染） ── */}
+        <div
+          onMouseEnter={() => setLinkHover("jianzi")}
+          onMouseLeave={() => setLinkHover(null)}
+          className={`rounded transition-shadow ${
+            linkHover === "jianpu" ? "ring-1 ring-amber-400/60 bg-amber-50/40" : ""
+          }`}
+        >
+          <JianziBlock state={jianzi} fontSize="24px" compact={compact} />
+        </div>
+
+        {/* ── 节奏线区域 ── */}
+        <RhythmView duration={note.duration} />
+      </div>
 
       {/* ── 歌词区域（按字对齐到音符下方；播放时高亮当前字） ── */}
       <div className="mt-0.5 min-h-[14px] flex items-center justify-center px-0.5">

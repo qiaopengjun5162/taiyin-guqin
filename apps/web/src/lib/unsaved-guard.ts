@@ -24,7 +24,10 @@ export function scoreFingerprint(
   notes: NoteColumn[],
   tuning: string,
 ): string {
-  const columns = notes.map((n) => [
+  // 联袂关系记「离组首多远」而不是组首的 id：id 不进指纹（见上面第 1 条），
+  // 分享链接换个 id 就会让刚载入的谱被判成已修改。
+  const indexById = new Map(notes.map((n, i) => [n.id, i]));
+  const columns = notes.map((n, i) => [
     n.jianpuNumber,
     n.jianpuOctave,
     n.jianpuDot ? 1 : 0,
@@ -38,6 +41,10 @@ export function scoreFingerprint(
     n.jianzi.rightAction,
     n.jianzi.stringNumber,
     n.lyric ?? "",
+    // 不列这一项的话，只标了联袂的谱会被判成"没改过"，关页面不提示、标记静默丢失
+    n.lianmei
+      ? `${n.lianmei.kind}|${i - (indexById.get(n.lianmei.headId) ?? i)}`
+      : "",
   ]);
   return JSON.stringify([title, tuning, columns]);
 }
