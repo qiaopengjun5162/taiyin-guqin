@@ -24,6 +24,20 @@ pub enum ApiStyle {
     OpenAi,
 }
 
+/// 共享 HTTP 客户端（整个进程一个，连接池复用）。
+///
+/// **必须带超时**：上游视觉模型网关挂住不回时，没有超时的请求会一直挂着，
+/// 占住请求上下文与连接；`translate` 限流只限制每秒**新进**几个，不回收旧请求，
+/// 于是慢上游会把并发缓慢堆起来。60 s 是一次多模态识别很宽松的上限，
+/// 10 s 建连超时负责把「DNS 卡住 / 端口不通」这种情况快速判死。
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .expect("reqwest client must build (rustls 后端初始化失败则服务无法工作)")
+}
+
 /// LLM 配置（注入 AppState）。
 #[derive(Clone)]
 pub struct LlmConfig {
@@ -60,7 +74,7 @@ impl Default for LlmConfig {
             api_key: None,
             model: DEFAULT_MODEL.into(),
             base_url: ANTHROPIC_URL.into(),
-            client: reqwest::Client::new(),
+            client: http_client(),
             api_style: ApiStyle::Anthropic,
             openai_api_key: None,
             openai_base_url: "https://api.deepseek.com/v1/chat/completions".into(),

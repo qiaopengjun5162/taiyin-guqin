@@ -101,24 +101,76 @@ impl TemplateMatch {
     }
 }
 
+/// 9 个字节的中值（第 5 小）。
+///
+/// 中值是**序统计量**：取哪个值与排序算法无关，所以这里的替换对输出是
+/// 字节级不变的（有属性测试对照 `sort_unstable()[4]` 钉住）。
+///
+/// 为什么不用 `sort_unstable()`：那是泛型 pdqsort 入口，每像素调用一次时
+/// 切片/比较器机器码摊下来是几十纳秒。更关键的是**不能有数据相关分支**——
+/// 第一版改成内联插入排序后，干净图上变快了，但噪声图上反而更慢：噪声让
+/// 每次 `while` 判断都近乎随机，一条 1200 万像素的图能跑出 600 ms（分支预测
+/// 惩罚，而不是比较次数）。所以这里用 **19 次比较的无分支网络**（`min`/`max`
+/// 编译成 `cmov`/`min` 指令），干净图与噪声图耗时都稳定。
+#[inline(always)]
+fn median9(mut v: [u8; 9]) -> u8 {
+    #[inline(always)]
+    fn ce(v: &mut [u8; 9], a: usize, b: usize) {
+        let (x, y) = (v[a], v[b]);
+        v[a] = x.min(y);
+        v[b] = x.max(y);
+    }
+    // 19 次比较的中值网络（比较对是固定常量，顺序无关正确性，靠测试兜底）。
+    ce(&mut v, 1, 2);
+    ce(&mut v, 4, 5);
+    ce(&mut v, 7, 8);
+    ce(&mut v, 0, 1);
+    ce(&mut v, 3, 4);
+    ce(&mut v, 6, 7);
+    ce(&mut v, 1, 2);
+    ce(&mut v, 4, 5);
+    ce(&mut v, 7, 8);
+    ce(&mut v, 0, 3);
+    ce(&mut v, 5, 8);
+    ce(&mut v, 4, 7);
+    ce(&mut v, 3, 6);
+    ce(&mut v, 1, 4);
+    ce(&mut v, 2, 5);
+    ce(&mut v, 4, 7);
+    ce(&mut v, 4, 2);
+    ce(&mut v, 6, 4);
+    ce(&mut v, 4, 2);
+    v[4]
+}
+
 /// 3x3 中值滤波（边缘钳位）：去掉椒盐噪声的孤立噪点，干净图上近乎恒等。
 /// 整页切分（`sheet_segment`）复用，Python 端 `median3_clamp` 同一公式。
+///
+/// 热路径：每像素 9 次邻域读取。行偏移预先算好、边缘用钳位下标，
+/// 避免在内层循环里对每次邻域访问做 i32 转换与 `clamp`。
 pub(crate) fn median3(width: usize, height: usize, src: &[u8]) -> Vec<u8> {
     let mut out = vec![0u8; width * height];
+    if width == 0 || height == 0 {
+        return out;
+    }
+    let last_x = width - 1;
+    let last_y = height - 1;
     for y in 0..height {
+        let r0 = y.saturating_sub(1) * width;
+        let r1 = y * width;
+        let r2 = (y + 1).min(last_y) * width;
+        let row0 = &src[r0..r0 + width];
+        let row1 = &src[r1..r1 + width];
+        let row2 = &src[r2..r2 + width];
+        let out_row = &mut out[r1..r1 + width];
         for x in 0..width {
-            let mut win = [0u8; 9];
-            let mut k = 0;
-            for dy in -1i32..=1 {
-                for dx in -1i32..=1 {
-                    let yy = (y as i32 + dy).clamp(0, height as i32 - 1) as usize;
-                    let xx = (x as i32 + dx).clamp(0, width as i32 - 1) as usize;
-                    win[k] = src[yy * width + xx];
-                    k += 1;
-                }
-            }
-            win.sort_unstable();
-            out[y * width + x] = win[4];
+            let x0 = x.saturating_sub(1);
+            let x2 = (x + 1).min(last_x);
+            // 顺序与「dy 外层、dx 内层」的朴素写法一致，便于和 Python 端逐行对照。
+            out_row[x] = median9([
+                row0[x0], row0[x], row0[x2], row1[x0], row1[x], row1[x2], row2[x0], row2[x],
+                row2[x2],
+            ]);
         }
     }
     out
@@ -325,6 +377,60 @@ mod tests {
         let out = median3(5, 5, &src);
         assert_eq!(out[2 * 5 + 2], 0);
         assert_eq!(out[3 * 5 + 2], 0);
+    }
+
+    /// 优化后的 `median3` 必须与朴素实现（钳位 + `sort_unstable()[4]`）**逐字节一致**。
+    ///
+    /// 这是本次性能优化的安全网：中值算法只能快，不能改结果——它下游连着
+    /// 归一化像素、模板距离、以及浏览器端 `jianzi-template.ts` 的同款实现。
+    #[test]
+    fn median3_matches_naive_reference_on_random_input() {
+        fn naive(width: usize, height: usize, src: &[u8]) -> Vec<u8> {
+            let mut out = vec![0u8; width * height];
+            for y in 0..height {
+                for x in 0..width {
+                    let mut win = [0u8; 9];
+                    let mut k = 0;
+                    for dy in -1i32..=1 {
+                        for dx in -1i32..=1 {
+                            let yy = (y as i32 + dy).clamp(0, height as i32 - 1) as usize;
+                            let xx = (x as i32 + dx).clamp(0, width as i32 - 1) as usize;
+                            win[k] = src[yy * width + xx];
+                            k += 1;
+                        }
+                    }
+                    win.sort_unstable();
+                    out[y * width + x] = win[4];
+                }
+            }
+            out
+        }
+
+        // 确定性伪随机（xorshift），避免引入 dev-dependency 与随机失败。
+        let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 24) as u8
+        };
+
+        // 覆盖：小尺寸（边界钳位占主导）、非方形、1 像素宽、值域极窄（大量相等）。
+        for (w, h) in [(1, 1), (1, 7), (7, 1), (2, 3), (5, 5), (8, 13), (17, 9)] {
+            for &level in &[2u8, 4, 255] {
+                let src: Vec<u8> = (0..w * h).map(|_| next() % level).collect();
+                assert_eq!(
+                    median3(w, h, &src),
+                    naive(w, h, &src),
+                    "median3 与朴素实现在 {w}x{h}、值域 {level} 上不一致"
+                );
+            }
+            // 全同值 / 单调序列（最容易暴露取错下标的实现）
+            let flat = vec![7u8; w * h];
+            assert_eq!(median3(w, h, &flat), naive(w, h, &flat));
+            let asc: Vec<u8> = (0..w * h).map(|i| (i % 256) as u8).collect();
+            assert_eq!(median3(w, h, &asc), naive(w, h, &asc));
+        }
     }
 
     #[test]

@@ -77,6 +77,32 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
         .is_ok()
 }
 
+/// 生成散列（**异步**版本，生产 handler 用这个）。
+///
+/// Argon2id 是**刻意慢**的 CPU 活：本机 p50 约 15 ms，1–2 vCPU 的 VPS 上更久。
+/// 直接在 async 函数里调用会占住 tokio 的 worker 线程——单核机器上 4 个并发
+/// 登录就能把唯一的工作线程按住近 60 ms，这期间连 `/health` 都回不了
+/// （`examples/perf_probe.rs` 可复现）。挪到 blocking 池后同一实验回落到底噪。
+pub async fn hash_password_async(password: String) -> AppResult<String> {
+    tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "password hash task failed to join");
+            AppError::ServiceUnavailable("口令处理失败，请稍后重试".into())
+        })?
+}
+
+/// 校验口令（**异步**版本）。join 失败按「不匹配」处理，与坏散列同语义。
+pub async fn verify_password_async(password: String, hash: String) -> bool {
+    match tokio::task::spawn_blocking(move || verify_password(&password, &hash)).await {
+        Ok(ok) => ok,
+        Err(e) => {
+            tracing::error!(error = %e, "password verify task failed to join");
+            false
+        }
+    }
+}
+
 /// 生成会话 token（base64url，可直接放进 `Authorization` 头）。
 pub fn generate_session_token() -> String {
     let mut bytes = [0u8; SESSION_TOKEN_BYTES];

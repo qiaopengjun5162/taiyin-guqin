@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Extension, Path, Query, State},
+    extract::{DefaultBodyLimit, Extension, Path, Query, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
     response::IntoResponse,
@@ -12,10 +12,7 @@ use std::sync::Arc;
 use tower_governor::{
     GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
 };
-use tower_http::{
-    cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer},
-    limit::RequestBodyLimitLayer,
-};
+use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use uuid::Uuid;
 
 use crate::accounts;
@@ -53,6 +50,12 @@ pub(crate) const DEFAULT_PAGE_SIZE: i64 = 50;
 pub(crate) const MAX_PAGE_SIZE: i64 = 200;
 /// 列表总条数的响应头。分页必须同时给出总数，否则「还有几首没显示」无从判断。
 pub(crate) const TOTAL_COUNT_HEADER: &str = "x-total-count";
+/// 请求体上限（字节）。**唯一来源**：`Json` 提取器也认这个值。
+///
+/// 5 MiB 是 base64 文本的尺寸，换算成原图约 3.7 MiB —— 一张 2000×1500 的
+/// 手机截图约 2–3 MiB，留出余量。注意它**约束不了像素数**：同样的字节数
+/// 可以解出上千万像素（见 `perf_probe` 的内存放大一节）。
+pub(crate) const MAX_BODY_BYTES: usize = 5 * 1024 * 1024;
 
 /// 构造 CORS 层。
 ///
@@ -224,7 +227,14 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .merge(auth_routes)
         .merge(me_route)
         .merge(translate_routes)
-        .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024)) // 5 MB
+        // 请求体上限**只有这一处**。之前用 tower-http 的 `RequestBodyLimitLayer::new(5MB)`
+        // 是无效配置：`Json` 提取器读的是 axum 自己的 `DefaultBodyLimit`（默认 2MB），
+        // 两者取小，于是 2.7MB 的手机截图（base64 后）直接被 413——而这类图正是
+        // 识别端点的主要输入。上限只保留一个来源，避免再出现「写的 5MB、实际 2MB」。
+        //
+        // 5MB 是 base64 文本的大小，换算成原图约 3.7MB；解码成 RGBA8 后可能到
+        // 数十 MB（像素数不受字节数约束），并发由 translate 限流（1/s，burst 5）兜住。
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(cors)
         .layer(Extension(publish_quota))
         .layer(Extension(admin_auth))
@@ -555,7 +565,8 @@ async fn admin_reset_password(
         }
         None => (accounts::generate_temporary_password(), true),
     };
-    let password_hash = accounts::hash_password(&password)?;
+    // 克隆一份送进 blocking 池：`password` 后面还要回显（临时口令只此一次）。
+    let password_hash = accounts::hash_password_async(password.clone()).await?;
 
     // 查无此人给 404：这是管理端，管理员需要知道是不是邮箱写错了
     //（不是登录接口，不必防账号枚举）。
@@ -653,7 +664,23 @@ async fn forgot_password(
                 ttl = accounts::RESET_TOKEN_TTL_MINUTES,
             ),
         };
-        if let Err(e) = mailer.mailer.send(mail).await {
+        // 发信**不等响应**，但只对走网络的后端这样处理。
+        //
+        // ① SMTP 往返可能是几秒（远端排队 / 超时重试），让用户干等没必要；
+        // ② 更要紧的是**耗时侧信道**——「注册过 → 花一次 SMTP 往返、没注册 → 立即返回」
+        //    的时间差本身就是账号枚举预言机。响应体与状态码已经做成一致，
+        //    耗时不能再留第二条线索。
+        // ③ `Log` / `Capture` 是本地即时后端（写日志 / 写内存），同步做完即可：
+        //    没有网络可等，行为也更可预期。
+        if mailer.mailer.is_remote() {
+            let backend = mailer.mailer.clone();
+            let to_for_log = email.clone();
+            tokio::spawn(async move {
+                if let Err(e) = backend.send(mail).await {
+                    tracing::error!(error = %e, to = %to_for_log, "找回口令邮件发送失败");
+                }
+            });
+        } else if let Err(e) = mailer.mailer.send(mail).await {
             tracing::error!(error = %e, to = %email, "找回口令邮件发送失败");
         }
     }
@@ -674,7 +701,7 @@ async fn reset_password_with_token(
     // 先验口令再消费令牌：口令太短就报错且令牌保持有效——
     // 用户改个口令重来即可，不该逼他重新收一遍信。
     accounts::validate_password(&req.new_password)?;
-    let password_hash = accounts::hash_password(&req.new_password)?;
+    let password_hash = accounts::hash_password_async(req.new_password.clone()).await?;
     let token_hash = accounts::hash_reset_token(req.token.trim());
     // 无效令牌的统一话术（查不到 / 过期 / 已用都用它，不给预言机）。
     const INVALID: &str = "链接无效或已过期，请重新申请找回";
@@ -1234,7 +1261,7 @@ async fn register(
     let email = accounts::normalize_email(&req.email)?;
     accounts::validate_password(&req.password)?;
     let display_name = accounts::normalize_display_name(req.display_name.as_deref())?;
-    let password_hash = accounts::hash_password(&req.password)?;
+    let password_hash = accounts::hash_password_async(req.password.clone()).await?;
 
     let inserted = sqlx::query_as::<_, User>(
         "INSERT INTO users (email, password_hash, display_name) \
@@ -1282,7 +1309,8 @@ async fn login(
     let Some(user) = user else {
         return Err(AppError::Unauthorized("邮箱或口令不对".into()));
     };
-    if !accounts::verify_password(&req.password, &user.password_hash) {
+    // 克隆散列串：`user` 后面还要整体借给 `public_user()`，不能把它部分移走。
+    if !accounts::verify_password_async(req.password, user.password_hash.clone()).await {
         return Err(AppError::Unauthorized("邮箱或口令不对".into()));
     }
 

@@ -126,6 +126,14 @@ impl Mailer {
         (Mailer::Capture(buf.clone()), CaptureHandle(buf))
     }
 
+    /// 是否「走网络」的后端。
+    ///
+    /// `Log` 与 `Capture` 都是本地即时后端（写日志 / 写内存），
+    /// 调用方可以同步等它们完成；只有 `Smtp` 会真的花掉一次网络往返。
+    pub fn is_remote(&self) -> bool {
+        matches!(self, Mailer::Smtp(_))
+    }
+
     /// 发一封信。失败只报错给调用方记日志，**不改变找回接口的对外响应**——
     /// 发信失败若让接口报 500，等于告诉旁人「这个邮箱注册过」。
     pub async fn send(&self, mail: OutgoingMail) -> anyhow::Result<()> {
