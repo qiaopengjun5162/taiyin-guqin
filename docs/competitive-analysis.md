@@ -306,14 +306,23 @@
    `worker.onMessage` 回调拿到的是 `{ message }` 而不是 `{ data }`。
    写 `self.onmessage` 会报 `Cannot set properties of undefined (setting 'onmessage')`。
 
-**复跑**（四个校验器都在 `apps/miniprogram-wasm-probe/scripts/`）：
+**复跑**（一个入口跑齐四个校验器，任意工作目录都行）：
 
 ```bash
-node scripts/verify-adapter.mjs           # 适配层 8 项：Node 里打真 wasm 二进制
-node scripts/verify-worker-transport.cjs   # 微信 Worker 传输层 8 项：模拟 worker/{message}
-node scripts/verify-guards.cjs             # 超时 / 错误广播的变异验证
-node scripts/lint-project.mjs              # 静态 18 项（含 workers 声明）
+node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
 ```
+
+`verify-all.mjs` 顺序执行并汇总退出码，坏一个就整体变红、指出是哪个：
+
+| 校验器 | 作用 |
+|---|---|
+| `scripts/verify-adapter.mjs` | 适配层 8 项：Node 里打真 wasm 二进制 |
+| `scripts/verify-worker-transport.cjs` | 微信 Worker 传输层 8 项：模拟 `worker` / `{message}` |
+| `scripts/verify-guards.cjs` | 超时 / 错误广播的兜底变异验证 |
+| `scripts/lint-project.mjs` | 静态 18 项（含 `workers` 声明） |
+
+⚠️ **CI 目前还没挂这个入口**（`.github/workflows/` 里没有探针 job），只在本地跑。
+将来挂只需在 build job 里加上面那一行命令；改动 `apps/miniprogram-wasm-probe/**` 时触发即可。
 
 模拟器复跑：CLI **不认 `touristappid`**（报「不存在此 AppID」），需把工程复制到临时目录、
 把 `project.config.json` 的 `appid` 换成自己账号下的**小程序测试号**，
@@ -394,11 +403,19 @@ node scripts/lint-project.mjs              # 静态 18 项（含 workers 声明�
 
 ### 9.5 对我们的直接动作建议
 
-1. **连打语法加"拼音直觉模式"**（最高优先）：映射层即可，不动底层。
-2. **把连打教程改成"一句话 + 两个例子 + 一条消歧"**，照它的写法。
-3. **接单故事**：把"古谱电子化"做成一个可展示的案例（哪怕用公开古谱自演）。
-4. **小程序 WASM 探针**（`apps/miniprogram-wasm-probe/`）已就绪，等微信开发者工具装好即验——
-   这决定 8.4 的红利能不能吃。火蜘蛛是 Windows-only，**我们跨到小程序就是它到不了的地方**。
+1. ~~连打语法加"拼音直觉模式"~~ → **已实现，无需再做**（2026-11-07 核实）。
+   `apps/web/src/lib/jianzi-rapid.ts` 文件头就是「借鉴火蜘蛛三条硬规则」：
+   部件拼音首字母按书写顺序、`s`/`ss`/`sss` 消歧三/四/十、不弹候选词；
+   `djg4 → 大九勾四`、`sg3 → 散勾三` 都有测试，键盘「连打」模式与速查表也已上线。
+   ⚠️ 此处曾误列为「最高优先待办」，接手前务必先核代码，别重复造轮子。
+2. **把连打教程改成"一句话 + 两个例子 + 一条消歧"**，照它的写法。（仍待办）
+   现在 `RAPID_CHEATSHEET` 是七行表格，火蜘蛛是一行话 + 两个例子。
+3. **接单故事**：把"古谱电子化"做成一个可展示的案例（哪怕用公开古谱自演）。（仍待办）
+4. ~~等微信开发者工具装好即验~~ → **已验完，PASS**（2026-11-07，见 8.5）：
+   开发者工具 2.02.2609250 / 基础库 3.17.5 上 `WXWebAssembly` 在 Worker 内加载并跑通
+   两个 Rust 导出函数，控制台零错误。火蜘蛛是 Windows-only，
+   **我们跨到小程序就是它到不了的地方**——这条从「待验证」变成「已证」。
+   ⚠️ 边界同 8.5：真机 iOS/Android、包体积、性能、低版本基础库仍未验。
 
 
 ## 十、一篇「打谱软件横评」+ 新同行「丝桐里」
