@@ -54,7 +54,7 @@ const FONT_DATA_URI = `data:font/ttf;base64,${readFileSync(FONT_PATH).toString("
 /** 减字「散勾三」：散音前缀 + 勾三合体，是字体里确定能成字的组合 */
 const GLYPH = "散勾三";
 
-function buildHtml({ size, glyphScale, ring }) {
+function buildHtml({ size, ring }) {
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 <style>
