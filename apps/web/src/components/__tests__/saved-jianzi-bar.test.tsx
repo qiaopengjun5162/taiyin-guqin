@@ -2,8 +2,13 @@
  * @vitest-environment jsdom
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+
+// 截图要真实排版，jsdom 里跑不动；整体替身，只验证按钮接线与传给导出的参数。
+const downloadJianziImage = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/jianzi-image", () => ({ downloadJianziImage }));
+
 import { SavedJianziBar } from "@/components/saved-jianzi-bar";
 import { __resetCustomJianziForTests, exportSaved, listSaved, saveJianzi } from "@/lib/custom-jianzi";
 import type { JianziState } from "@/lib/types";
@@ -140,5 +145,57 @@ describe("我的减字：重复保存 / 导出 / 导入整包", () => {
     expect(status).toHaveTextContent(/新增 1/);
     expect(status).toHaveTextContent(/合并 1/);
     expect(status).toHaveTextContent(/跳过 1/);
+  });
+});
+
+describe("我的减字：单字存图（笔记 / 课件配图）", () => {
+  beforeEach(() => {
+    downloadJianziImage.mockReset();
+    downloadJianziImage.mockResolvedValue(true);
+  });
+
+  it("每张卡片都有 PNG 与 SVG 两个入口", () => {
+    saveJianzi(anYin);
+    render(<SavedJianziBar current={empty} onPick={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "存为图片 大九勾四" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "存为矢量图 大九勾四" })).toBeInTheDocument();
+  });
+
+  it("点 PNG 把「字块」节点交给导出，不是整张卡片", async () => {
+    saveJianzi(anYin);
+    render(<SavedJianziBar current={empty} onPick={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "存为图片 大九勾四" }));
+    await waitFor(() => expect(downloadJianziImage).toHaveBeenCalledTimes(1));
+
+    const [node, label, format] = downloadJianziImage.mock.calls[0];
+    expect(node).toBeInstanceOf(HTMLElement);
+    expect(node.tagName).toBe("SPAN");
+    // 截图目标必须只是那个 28px 的字块：带上标签文字和按钮就贴不进课件了。
+    expect(node.className).toContain("h-7 w-7");
+    expect(label).toBe("大九勾四");
+    expect(format).toBe("png");
+    expect(await screen.findByRole("status")).toHaveTextContent(/已存成 PNG/);
+  });
+
+  it("SVG 入口传 svg 格式，提示也跟着变", async () => {
+    saveJianzi(anYin);
+    render(<SavedJianziBar current={empty} onPick={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "存为矢量图 大九勾四" }));
+    await waitFor(() => expect(downloadJianziImage).toHaveBeenCalledTimes(1));
+
+    expect(downloadJianziImage.mock.calls[0][2]).toBe("svg");
+    expect(await screen.findByRole("status")).toHaveTextContent(/已存成 SVG/);
+  });
+
+  it("导出失败时给明确提示，不静默", async () => {
+    downloadJianziImage.mockResolvedValue(false);
+    saveJianzi(anYin);
+    render(<SavedJianziBar current={empty} onPick={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "存为图片 大九勾四" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/存图失败/);
   });
 });

@@ -21,6 +21,7 @@ import {
   touchSaved,
   type SavedJianzi,
 } from "@/lib/custom-jianzi";
+import { downloadJianziImage, type JianziImageFormat } from "@/lib/jianzi-image";
 import type { JianziState } from "@/lib/types";
 
 interface Notice {
@@ -38,6 +39,8 @@ export function SavedJianziBar({
   const saved = useSyncExternalStore(subscribeSaved, getSavedSnapshot, getServerSavedSnapshot);
   const [notice, setNotice] = useState<Notice | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 每张卡片里「字块」那个节点：截图必须截它，不能连按钮和文字标签一起截进去。
+  const glyphRefs = useRef<Record<string, HTMLSpanElement | null>>({});
 
   const canSave = isComplete(current);
 
@@ -86,6 +89,20 @@ export function SavedJianziBar({
     });
   }
 
+  /** 把这一个减字存成图片：给笔记 / 课件 / 文章配图用，不必导出一整首谱。 */
+  async function handleSaveImage(item: SavedJianzi, format: JianziImageFormat) {
+    // ref 理论上一定挂上了；万一没有，交给 downloadJianziImage 统一判空并回 false，
+    // 失败提示走下面同一条路径，不另开一个平时跑不到的分支。
+    const node = glyphRefs.current[item.id] ?? null;
+    const ok = await downloadJianziImage(node, item.label, format);
+    setNotice({
+      text: ok
+        ? `已存成 ${format.toUpperCase()}，可直接贴进笔记或课件。`
+        : "存图失败，换个浏览器再试一次。",
+      tone: ok ? "ok" : "warn",
+    });
+  }
+
   return (
     <div className="w-full rounded border border-amber-700/25 bg-amber-50/50 p-2.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -130,7 +147,8 @@ export function SavedJianziBar({
 
       {saved.length === 0 ? (
         <p className="mt-1.5 text-[10px] leading-relaxed text-stone-500">
-          还没有存过。拼好一个字后点「存为常用」，下次一键填回；导出的 JSON 可以备份或给琴友。
+          还没有存过。拼好一个字后点「存为常用」，下次一键填回；卡片上的「图 / 矢」能把它存成图片，
+          直接贴进笔记或课件；导出的 JSON 可以备份或给琴友。
         </p>
       ) : (
         <div className="mt-2 flex flex-wrap gap-1.5">
@@ -145,10 +163,31 @@ export function SavedJianziBar({
                 title={`${item.label} · 用过 ${item.uses} 次`}
                 className="flex items-center gap-1 px-1.5 py-1 transition-colors hover:bg-amber-700/10"
               >
-                <span className="flex h-7 w-7 items-center justify-center">
+                <span
+                  ref={(el) => {
+                    glyphRefs.current[item.id] = el;
+                  }}
+                  className="flex h-7 w-7 items-center justify-center bg-[#f8f3eb]"
+                >
                   <JianziBlock state={item.state} fontSize="20px" />
                 </span>
                 <span className="max-w-[64px] truncate text-[10px] text-stone-700">{item.label}</span>
+              </button>
+              <button
+                onClick={() => void handleSaveImage(item, "png")}
+                aria-label={`存为图片 ${item.label}`}
+                title="存成 PNG 图片，可直接贴进笔记 / 课件"
+                className="border-l border-amber-700/20 px-1 text-[10px] text-stone-600 transition-colors hover:bg-amber-700/10 hover:text-amber-900"
+              >
+                图
+              </button>
+              <button
+                onClick={() => void handleSaveImage(item, "svg")}
+                aria-label={`存为矢量图 ${item.label}`}
+                title="存成 SVG 矢量图，放大不糊"
+                className="border-l border-amber-700/20 px-1 text-[10px] text-stone-600 transition-colors hover:bg-amber-700/10 hover:text-amber-900"
+              >
+                矢
               </button>
               <button
                 onClick={() => removeSaved(item.id)}
