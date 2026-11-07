@@ -37,7 +37,7 @@
     </view>
 
     <view class="content-card" wx:else>
-        <text class="section-title">{{statusText}}</text>
+        <text class="section-title">两次 WASM 调用结果</text>
         <text class="section-description">下面是 Worker 里跑 Rust 编排核心返回的原始 JSON。</text>
         <view class="feature-list">
             <view class="feature-item" wx:for="{{rows}}" wx:key="name">

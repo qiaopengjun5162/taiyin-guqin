@@ -271,9 +271,54 @@
 对照我们：`practice-progress.ts` 里"日课不是勋章"的红线不变，**商业化只能走赞赏/虚拟支付，
 不能走排行榜诱导**。而免费 AI 额度正好喂我们的识别/编排能力。
 
-**技术前提要先验证**：小程序对 WASM 支持有限，我们的简谱→减字编排核心在 Rust→WASM。
+**当时写：技术前提要先验证**：小程序对 WASM 支持有限，我们的简谱→减字编排核心在 Rust→WASM。
 要么走小程序的 WebAssembly 能力实测，要么把 `jianzi.ts` 那套 TS 逻辑下沉、WASM 只在网页端用。
-这是"要不要做小程序"的**唯一硬前置**，比商务问题更先。（→ 已做探针，见九.5）
+这是"要不要做小程序"的**唯一硬前置**，比商务问题更先。
+
+> **2026-11-07 更新：这个硬前置已消除**——开发者工具模拟器实测跑通，详见 8.5。
+> 保留上面这段是因为它记录了当时的决策依据，**不是当前结论**。
+
+### 8.5 WASM 可行性验证结论（2026-11-07 模拟器实测）
+
+**结论：微信小程序 Worker 里能加载并调用我们的 Rust/WASM 编排核心。**
+`apps/miniprogram-wasm-probe/` 在开发者工具 `2.02.2609250`、基础库 `3.17.5` 上跑出
+`verdict: PASS / 通过：WASM 在 Worker 里跑起来了`，控制台零错误。两个真导出函数都返回了
+与 Node 校验器一致的结果：
+
+| 调用 | 返回 |
+|---|---|
+| `get_jianzi_variant_groups` | 减字变体组 JSON（名指/食指/勾/挑…） |
+| `split_phrases_to_json` | `{"phrases":[{"end":3,"start":0},{"end":5,"start":4}]}`（句界闭区间） |
+
+**前提与边界**（别把 PASS 读成「小程序产品成了」）：
+
+- `WXWebAssembly` **只在 Worker 内**可用（基础库 ≥ 2.15.0），主线程没有标准 `WebAssembly`。
+- `.wasm` 必须放在 `workers/` 目录**之外**（该目录只打包 `.js`），探针放在 `/wasm/`。
+- 只证了「加载 + 调用 + 返回」，**没证**真机（iOS / Android 微信）、包体积、性能，
+  以及 9 个导出函数在低版本基础库上的行为。
+- 仍待决策：小程序端复用同一份 WASM，还是把轻量逻辑下沉。
+
+**两个只有真机编译才会暴露、静态校验原先挡不住的坑**（都已固化成自动检查）：
+
+1. `app.json` 必须声明 `"workers": "workers"`，否则 Worker 代码**根本不打包**，
+   报 `module 'workers/wasm-worker.js' is not defined`，主线程随后 12 秒超时 FAIL。
+2. 小程序 Worker **没有标准 Web Worker 的 `self`**，全局暴露的是 `worker`；
+   `worker.onMessage` 回调拿到的是 `{ message }` 而不是 `{ data }`。
+   写 `self.onmessage` 会报 `Cannot set properties of undefined (setting 'onmessage')`。
+
+**复跑**（四个校验器都在 `apps/miniprogram-wasm-probe/scripts/`）：
+
+```bash
+node scripts/verify-adapter.mjs           # 适配层 8 项：Node 里打真 wasm 二进制
+node scripts/verify-worker-transport.cjs   # 微信 Worker 传输层 8 项：模拟 worker/{message}
+node scripts/verify-guards.cjs             # 超时 / 错误广播的变异验证
+node scripts/lint-project.mjs              # 静态 18 项（含 workers 声明）
+```
+
+模拟器复跑：CLI **不认 `touristappid`**（报「不存在此 AppID」），需把工程复制到临时目录、
+把 `project.config.json` 的 `appid` 换成自己账号下的**小程序测试号**，
+再用 `cli open --project <dir>` 或工具内导入；页面大字 PASS / FAIL 即结论。
+仓库保留 `touristappid` 是刻意的——不把个人账号信息写进公开仓库。
 
 ## 九、参考「火蜘蛛减字谱输入法」（firespide.com）：同赛道最硬的同行
 

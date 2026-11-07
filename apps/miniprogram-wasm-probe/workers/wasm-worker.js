@@ -6,6 +6,18 @@
  */
 const api = require("./wasm-api.js");
 
+// ⚠️ 小程序 Worker 不是标准 Web Worker：没有 `self`。
+// 微信在 Worker 上下文里全局暴露的是 `worker`，用 worker.onMessage / worker.postMessage，
+// 且回调拿到的是 { message }，不是标准 Web Worker 的 { data }。
+// 写 self.onmessage 会在真机报 "Cannot set properties of undefined (setting 'onmessage')"。
+const workerGlobal =
+  typeof worker !== "undefined"
+    ? worker
+    : typeof self !== "undefined"
+      ? self
+      : null;
+if (!workerGlobal) throw new Error("找不到 Worker 全局对象（worker / self 都没有）");
+
 api.serve({
   wasmPath: "/wasm/taiyin_core_bg.wasm",
   instantiateFn: function (path, imports) {
@@ -18,12 +30,19 @@ api.serve({
     return WXWebAssembly.instantiate(path, imports);
   },
   postMessage: function (msg) {
-    // Worker 全局的 postMessage
-    self.postMessage(msg);
+    workerGlobal.postMessage(msg);
   },
   onMessage: function (handler) {
-    self.onmessage = function (e) {
-      handler(e);
-    };
+    if (typeof workerGlobal.onMessage === "function") {
+      // 小程序 Worker：回调参数是 { message }，转成适配层期望的 { data }
+      workerGlobal.onMessage(function (res) {
+        handler({ data: res && res.message !== undefined ? res.message : res });
+      });
+    } else {
+      // 标准 Web Worker（本地 Node 校验器等场景）
+      workerGlobal.onmessage = function (e) {
+        handler(e);
+      };
+    }
   },
 });

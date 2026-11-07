@@ -74,6 +74,39 @@ if (appJson) {
   }
 }
 
+// ── 2b. Worker 声明 ──
+// 这是真机编译才暴露过的坑：app.json 不写 workers，Worker 目录根本不会被打包，
+// 运行时报 "module 'workers/wasm-worker.js' is not defined"，主线程随后 12s 超时。
+console.log("== Worker 声明 ==");
+if (appJson) {
+  const pageSrc = (appJson.pages || [])
+    .map((p) => {
+      const f = join(root, `${p}.js`);
+      return existsSync(f) ? readFileSync(f, "utf8") : "";
+    })
+    .join("\n");
+  const entries = [...pageSrc.matchAll(/wx\.createWorker\(\s*["']([^"']+)["']/g)].map(
+    (m) => m[1],
+  );
+  if (entries.length > 0) {
+    const workerRoot =
+      typeof appJson.workers === "string" ? appJson.workers : appJson.workers?.path;
+    check(
+      "app.json 声明了 workers 目录（不声明则 Worker 代码不打包）",
+      typeof workerRoot === "string" && workerRoot.length > 0,
+      `workers=${JSON.stringify(appJson.workers)}`,
+    );
+    for (const entry of entries) {
+      const inside =
+        workerRoot && (entry === workerRoot || entry.startsWith(`${workerRoot}/`));
+      check(`Worker 入口 ${entry} 在声明的 workers 目录内`, !!inside);
+      check(`Worker 入口 ${entry} 文件存在`, existsSync(join(root, entry)));
+    }
+  } else {
+    check("页面未使用 wx.createWorker，跳过", true);
+  }
+}
+
 // ── 3. 浏览器 API 禁用 ──
 console.log("== 禁用浏览器 API ==");
 const jsFiles = [];
