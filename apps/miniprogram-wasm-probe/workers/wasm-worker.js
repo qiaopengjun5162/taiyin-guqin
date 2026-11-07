@@ -11,6 +11,10 @@ api.serve({
   instantiateFn: function (path, imports) {
     // WXWebAssembly.instantiate 与标准 WebAssembly.instantiate 类似，
     // 区别只在第一个参数是「代码包内字符串路径」而不是字节。
+    // 缺这个全局时不要让它变成 ReferenceError 把 Worker 打崩，给一句可诊断的话。
+    if (typeof WXWebAssembly === "undefined") {
+      throw new Error("WXWebAssembly 未定义：需在 Worker 内使用，且基础库 ≥ 2.15.0");
+    }
     return WXWebAssembly.instantiate(path, imports);
   },
   postMessage: function (msg) {

@@ -5,6 +5,24 @@
         <text class="subtitle">{{subtitle}}</text>
     </view>
 
+    <view class="verdict verdict-pending" wx:if="{{verdict === 'PENDING'}}">
+        <text class="verdict-label">RUNNING</text>
+        <text class="verdict-text">{{verdictText}}</text>
+        <text class="verdict-hint">{{phase}} · 超过 12 秒会自动判失败，不会一直转圈</text>
+    </view>
+
+    <view class="verdict verdict-pass" wx:elif="{{verdict === 'PASS'}}">
+        <text class="verdict-label">PASS</text>
+        <text class="verdict-text">{{verdictText}}</text>
+        <text class="verdict-hint">WXWebAssembly 在 Worker 内可加载并调用 Rust 编排核心</text>
+    </view>
+
+    <view class="verdict verdict-fail" wx:else>
+        <text class="verdict-label">FAIL</text>
+        <text class="verdict-text">{{verdictText}}</text>
+        <text class="verdict-hint">{{errorMsg}}</text>
+    </view>
+
     <view class="state-card" wx:if="{{viewState === 'loading'}}">
         <view class="spinner"></view>
         <text class="state-title">{{statusText}}</text>

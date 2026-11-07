@@ -27,15 +27,22 @@ function loadWasm(instantiateFn, wasmPath) {
   const imports = glue.__wbg_get_imports();
   glue.__wbg_init_memory(imports);
 
-  return Promise.resolve(instantiateFn(wasmPath, imports)).then((result) => {
-    if (!result || !result.instance) {
-      throw new Error("instantiate 未返回 instance（拿到的不是 {module, instance}）");
-    }
-    // finalize_init 内部会把 instance.exports 挂到胶水的模块级变量上，
-    // 再跑 __wbindgen_start。之后那 9 个函数才真正可用。
-    glue.__wbg_finalize_init(result.instance, result.module);
-    return glue;
-  });
+  // 必须以 Promise 链包住 instantiateFn：它在「WXWebAssembly 未定义」这类情况下
+  // 是**同步抛错**，直接写 Promise.resolve(instantiateFn(...)) 会让整个 Worker
+  // 脚本在 serve 注册监听之前就崩掉——症状是主线程永远等不到任何消息。
+  return Promise.resolve()
+    .then(function () {
+      return instantiateFn(wasmPath, imports);
+    })
+    .then((result) => {
+      if (!result || !result.instance) {
+        throw new Error("instantiate 未返回 instance（拿到的不是 {module, instance}）");
+      }
+      // finalize_init 内部会把 instance.exports 挂到胶水的模块级变量上，
+      // 再跑 __wbindgen_start。之后那 9 个函数才真正可用。
+      glue.__wbg_finalize_init(result.instance, result.module);
+      return glue;
+    });
 }
 
 /** 按名字调用胶水导出的函数；fn 不存在时报错而不是静默返回 undefined。 */
@@ -60,15 +67,24 @@ function call(fn, args) {
 function serve(opts) {
   const { wasmPath, postMessage, onMessage, instantiateFn } = opts;
   let ready = loadWasm(instantiateFn, wasmPath);
+  let initError = null;
 
-  // 初始化失败要让调用方拿到错误，不能吞掉——吞掉的症状是「点了没反应」
+  // 初始化失败要让调用方拿到错误，不能吞掉——吞掉的症状是「点了没反应」。
+  // 广播一条 id=null 给主线程做即时提示；同时把错误记下来，
+  // 保证**之后**发来的每个请求也能立刻拿到明确原因（广播可能早于请求到达）。
   ready.catch((e) => {
-    postMessage({ id: null, ok: false, error: `wasm 加载失败: ${e && e.message ? e.message : e}` });
+    initError = `wasm 加载失败: ${e && e.message ? e.message : e}`;
+    postMessage({ id: null, ok: false, error: initError });
   });
 
   onMessage(function (msg) {
     const data = msg && msg.data !== undefined ? msg.data : msg;
     if (!data || data.id === undefined) return;
+
+    if (initError) {
+      postMessage({ id: data.id, ok: false, error: initError });
+      return;
+    }
 
     ready.then(
       function () {

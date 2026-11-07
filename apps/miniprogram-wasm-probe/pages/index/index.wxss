@@ -30,6 +30,63 @@
     font-size: 28rpx;
 }
 
+.verdict {
+    box-sizing: border-box;
+    display: flex;
+    margin-bottom: 28rpx;
+    padding: 28rpx 32rpx;
+    border: 2rpx solid;
+    border-radius: 20rpx;
+    flex-direction: column;
+}
+
+.verdict-pending {
+    border-color: #cfe0ff;
+    background: #eef4ff;
+}
+
+.verdict-pass {
+    border-color: #b9e6c9;
+    background: #e8f7ee;
+}
+
+.verdict-fail {
+    border-color: #ffcfcc;
+    background: #fff0ef;
+}
+
+.verdict-label {
+    font-size: 46rpx;
+    font-weight: 700;
+    letter-spacing: 4rpx;
+}
+
+.verdict-pending .verdict-label {
+    color: #1769e0;
+}
+
+.verdict-pass .verdict-label {
+    color: #137a43;
+}
+
+.verdict-fail .verdict-label {
+    color: #c0342b;
+}
+
+.verdict-text {
+    margin-top: 8rpx;
+    color: #1f2329;
+    font-size: 28rpx;
+}
+
+.verdict-hint {
+    margin-top: 8rpx;
+    color: #646a73;
+    font-size: 24rpx;
+    line-height: 1.6;
+    word-break: break-all;
+}
+
 .state-card,
 .content-card,
 .demo-panel {
