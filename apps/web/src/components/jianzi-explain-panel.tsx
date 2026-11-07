@@ -4,6 +4,7 @@ import type { JianziState } from "@/lib/types";
 import { explainJianzi } from "@/lib/jianzi-explain";
 import { usePitchContext } from "@/lib/use-pitch-context";
 import { QinFingeringDiagram } from "./qin-fingering-diagram";
+import { JianziConcordance } from "./jianzi-concordance";
 
 /**
  * 减字释义面板 —— 把正在拼的谱字翻成人话。
@@ -42,6 +43,9 @@ export function JianziExplainPanel({ state }: { state: JianziState }) {
 
       {/* 会说还得会看：文字说的是「四弦九徽六分」，图上是那一点落在哪儿 */}
       <QinFingeringDiagram state={state} />
+
+      {/* 会看还要知道它在哪儿用过：这一字在曲库里的谱例，点一下当场试听 */}
+      {explanation.complete && <JianziConcordance state={state} />}
 
       {explanation.pitchHint && (
         <p className="mt-1.5 border-t border-amber-800/10 pt-1.5 text-[10px] tracking-wider text-stone-500">
