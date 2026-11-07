@@ -79,11 +79,23 @@ if (appJson) {
 // 运行时报 "module 'workers/wasm-worker.js' is not defined"，主线程随后 12s 超时。
 console.log("== Worker 声明 ==");
 if (appJson) {
+  // ⚠️ 必须把 lib/ 一起扫：Worker 创建已收进 lib/wasm-client.js，
+  // 只扫 pages 会让「app.json 没声明 workers」这条守卫静默失效（假绿）。
+  const scanDirs = [join(root, "pages"), join(root, "lib")];
   const pageSrc = (appJson.pages || [])
     .map((p) => {
       const f = join(root, `${p}.js`);
       return existsSync(f) ? readFileSync(f, "utf8") : "";
     })
+    .concat(
+      scanDirs
+        .filter((d) => existsSync(d))
+        .flatMap((d) =>
+          readdirSync(d)
+            .filter((n) => n.endsWith(".js"))
+            .map((n) => readFileSync(join(d, n), "utf8")),
+        ),
+    )
     .join("\n");
   const entries = [...pageSrc.matchAll(/wx\.createWorker\(\s*["']([^"']+)["']/g)].map(
     (m) => m[1],

@@ -1,9 +1,12 @@
 {
   "pages": [
+    "pages/home/home",
+    "pages/check-position/check-position",
+    "pages/record-char/record-char",
     "pages/index/index"
   ],
   "window": {
-    "navigationBarTitleText": "太音 · 小程序 WASM 探针",
+    "navigationBarTitleText": "太音 · 减字谱",
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f5f7fa",

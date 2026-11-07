@@ -1,0 +1,4 @@
+/* 查音位页只覆写少量必要样式，其余走 app.wxss */
+.cand-line {
+    font-size: 30rpx;
+}

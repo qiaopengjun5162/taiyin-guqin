@@ -1,0 +1,64 @@
+<view class="page">
+    <view class="hero">
+        <text class="eyebrow">记一个字</text>
+        <text class="title">把查到的位置留住，或解一串减字码</text>
+        <text class="subtitle">位置来自「查音位」页的「记下」；减字码形如 <text class="mono">ad9g4</text>、<text class="mono">sg3</text>、<text class="mono">ad9g4:8.</text>。</text>
+    </view>
+
+    <view class="card">
+        <view class="card-head">
+            <text class="section-title">记下的位置</text>
+            <text wx:if="{{recorded.length > 0}}" class="link" bindtap="clearRecorded">清空</text>
+        </view>
+
+        <view wx:if="{{recorded.length === 0}}" class="state-box">
+            <text class="state-text">还没有记下任何位置。</text>
+            <text class="state-text">去「查音位」敲一个音，点卡片右边的「记下」。</text>
+        </view>
+
+        <view wx:for="{{recorded}}" wx:key="key" class="cand">
+            <view class="cand-main">
+                <text class="cand-line">{{item.toneType}} · {{item.stringText}}{{item.huiText}}</text>
+                <text class="cand-sub">
+                    <text wx:if="{{item.leftFinger}}">{{item.leftFinger}}指 </text>{{item.rightAction}}
+                    <text wx:if="{{item.source}}"> · 来自简谱 {{item.source}}</text>
+                </text>
+            </view>
+        </view>
+    </view>
+
+    <view class="card">
+        <text class="section-title">解减字码</text>
+        <view class="input-row">
+            <input
+                class="code-input"
+                value="{{codeInput}}"
+                placeholder="ad9g4 sg3 ad9g4:8."
+                placeholder-class="code-placeholder"
+                confirm-type="done"
+                bindinput="onCodeInput"
+                bindconfirm="decode"
+            />
+            <button class="primary-button decode-button" loading="{{decoding}}" bindtap="decode">解</button>
+        </view>
+
+        <view wx:if="{{error}}" class="error-box code-error">{{error}}</view>
+
+        <block wx:if="{{hasResult}}">
+            <view class="divider"></view>
+            <text class="muted">{{resultLine}}</text>
+            <view wx:for="{{entries}}" wx:key="index" class="cand">
+                <view class="cand-main">
+                    <text class="cand-line mono">{{item.code}}</text>
+                    <text wx:if="{{item.failed}}" class="cand-error">{{item.error}}</text>
+                    <text wx:else class="cand-sub">{{item.stateText}}<text wx:if="{{item.tail}}"> · {{item.tail}}</text></text>
+                </view>
+            </view>
+        </block>
+    </view>
+
+    <view class="notice">
+        减字码是有损编码：一个码对应唯一的字，但同一个字可能不止一种写法。
+        所以这里只做「码 → 结构」，不反推码。
+    </view>
+</view>

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * 小程序 WASM 探针 —— 一键跑全部四个校验器。
+ * 小程序 WASM 探针 —— 一键跑全部六个校验器。
  *
- * 为什么要这一个入口：四个校验器分散在 scripts/ 下，本地和 CI 各写四行容易漏，
+ * 为什么要这一个入口：校验器分散在 scripts/ 下，本地和 CI 各写六行容易漏，
  * 漏掉一个就等于「改坏了没人知道」。以后挂 CI 只需一行：
  *   node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
  *
@@ -11,7 +11,8 @@
  *
  * 覆盖边界（别把这个脚本当成「小程序产品验证」）：
  * 它校验的是**本地可复现**的部分 —— 适配层逻辑、Worker 消息协议、兜底分支、
- * 工程静态约束。真机 iOS/Android、包体积、性能、低版本基础库仍需开发者工具实跑。
+ * 页面数据链路与行为、工程静态约束。真机 iOS/Android、包体积、性能、
+ * 低版本基础库、WXML 排版仍需开发者工具实跑。
  */
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -32,6 +33,14 @@ const checks = [
   {
     name: "兜底变异验证：三处静默失败",
     file: "scripts/verify-guards.cjs",
+  },
+  {
+    name: "页面数据链路：真 wasm 产出 → 映射渲染",
+    file: "scripts/verify-pages.mjs",
+  },
+  {
+    name: "页面行为：桩运行时跑真 wasm（点击/记录/解码）",
+    file: "scripts/verify-page-logic.cjs",
   },
   {
     name: "工程静态校验：编译期约束",

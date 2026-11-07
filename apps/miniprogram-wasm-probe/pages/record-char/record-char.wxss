@@ -1,0 +1,64 @@
+.card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.link {
+    color: #1769e0;
+    font-size: 24rpx;
+}
+
+.state-text {
+    white-space: pre-wrap;
+}
+
+.mono {
+    padding: 0 6rpx;
+    border-radius: 6rpx;
+    background: #f2f3f5;
+    font-family: Menlo, Consolas, monospace;
+    font-size: 24rpx;
+}
+
+.input-row {
+    display: flex;
+    margin-top: 24rpx;
+    align-items: center;
+}
+
+.code-input {
+    box-sizing: border-box;
+    height: 80rpx;
+    padding: 0 24rpx;
+    border: 2rpx solid #dfe3e8;
+    border-radius: 12rpx;
+    background: #fbfcfd;
+    font-family: Menlo, Consolas, monospace;
+    font-size: 28rpx;
+    flex: 1;
+}
+
+.code-placeholder {
+    color: #a8b0bb;
+    font-family: Menlo, Consolas, monospace;
+}
+
+.decode-button {
+    width: 120rpx;
+    height: 80rpx;
+    margin: 0 0 0 16rpx;
+    font-size: 28rpx;
+    line-height: 80rpx;
+}
+
+.code-error {
+    margin-top: 20rpx;
+}
+
+.cand-error {
+    margin-top: 8rpx;
+    color: #c0342b;
+    font-size: 22rpx;
+    line-height: 1.6;
+}

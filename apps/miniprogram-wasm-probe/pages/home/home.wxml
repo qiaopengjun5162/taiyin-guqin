@@ -1,0 +1,36 @@
+<view class="page">
+    <view class="hero">
+        <text class="eyebrow">太音 · 小程序轻用版</text>
+        <text class="title">不开电脑，也能查音位、记一个字</text>
+        <text class="subtitle">七弦十三徽的算路全在小程序本地跑（Rust 编译成 WASM），不联网、不上传、不用装字体。</text>
+    </view>
+
+    <view class="entry" bindtap="goCheckPosition">
+        <view class="entry-head">
+            <text class="entry-kicker">查音位</text>
+            <text class="entry-arrow">→</text>
+        </view>
+        <text class="entry-title">敲一个简谱音，列出它能在哪弹</text>
+        <text class="entry-desc">选 1–7、八度、调式，直接把七弦十三徽上的所有落点摊开——按音、泛音、散音一起给。</text>
+    </view>
+
+    <view class="entry" bindtap="goRecordChar">
+        <view class="entry-head">
+            <text class="entry-kicker">记一个字</text>
+            <text class="entry-arrow">→</text>
+        </view>
+        <text class="entry-title">记下刚才查到的位置，或解一串减字码</text>
+        <text class="entry-desc">查音位时点「记下」的会攒在这里；也可以直接输减字码（如 <text class="mono">ad9g4</text>）看它到底是什么意思。</text>
+    </view>
+
+    <view wx:if="{{recordedCount > 0}}" class="notice">已经记下 {{recordedCount}} 个位置，在「记一个字」里看。</view>
+
+    <view class="probe-link" bindtap="goProbe">
+        <text class="muted">WASM 自检面板（开发用）</text>
+    </view>
+
+    <view class="notice">
+        这一版是轻用入口：只做「查」和「记」，不放整谱编辑、播放、导出。
+        完整能力在网页版（开浏览器即用）。
+    </view>
+</view>

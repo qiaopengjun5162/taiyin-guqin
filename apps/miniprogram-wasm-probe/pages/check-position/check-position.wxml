@@ -1,0 +1,75 @@
+<view class="page">
+    <view class="hero">
+        <text class="eyebrow">查音位</text>
+        <text class="title">这个音，能在哪弹？</text>
+        <text class="subtitle">选一个简谱音，下面把七弦十三徽上的所有落点摊开，按舒适度排序。</text>
+    </view>
+
+    <view class="card">
+        <text class="section-title">简谱音</text>
+        <view class="chip-row">
+            <view
+                wx:for="{{numbers}}"
+                wx:key="*this"
+                class="chip {{item === number ? 'chip-active' : ''}}"
+                data-value="{{item}}"
+                bindtap="pickNumber"
+            >{{item}}</view>
+        </view>
+
+        <text class="chip-label">八度</text>
+        <view class="chip-row">
+            <view
+                wx:for="{{octaves}}"
+                wx:key="value"
+                class="chip {{item.value === octave ? 'chip-active' : ''}}"
+                data-value="{{item.value}}"
+                bindtap="pickOctave"
+            >{{item.label}}</view>
+        </view>
+
+        <text class="chip-label">定弦</text>
+        <view class="chip-row">
+            <view
+                wx:for="{{tunings}}"
+                wx:key="value"
+                class="chip {{item.value === tuning ? 'chip-active' : ''}}"
+                data-value="{{item.value}}"
+                bindtap="pickTuning"
+            >{{item.label}}</view>
+        </view>
+    </view>
+
+    <view class="card">
+        <view wx:if="{{loading}}" class="state-box">
+            <view class="spinner"></view>
+            <text class="state-text">正在算落点…</text>
+        </view>
+
+        <view wx:elif="{{error}}" class="error-box">{{error}}</view>
+
+        <block wx:else>
+            <text class="section-title">{{summary}}</text>
+            <view class="divider"></view>
+            <view wx:for="{{candidates}}" wx:key="key" class="cand">
+                <view class="cand-main">
+                    <text class="cand-line">{{item.toneType}} · {{item.stringText}}{{item.huiText}}</text>
+                    <text class="cand-sub">
+                        <text wx:if="{{item.leftFinger}}">{{item.leftFinger}}指 </text>{{item.rightAction}}
+                        <text class="cand-score"> · 舒适度 {{item.score}}</text>
+                    </text>
+                </view>
+                <button
+                    class="record-button {{item.recorded ? 'record-button-done' : ''}}"
+                    data-index="{{item.index}}"
+                    bindtap="recordCandidate"
+                >{{item.recorded ? '已记下' : '记下'}}</button>
+            </view>
+        </block>
+    </view>
+
+    <view class="notice">
+        小程序版只给结构（哪根弦、哪个徽、哪根手指），不渲染减字字形——
+        减字字体依赖私有 PUA 映射，画不出来时不硬画。要看字形请用网页版。
+    </view>
+</view>
