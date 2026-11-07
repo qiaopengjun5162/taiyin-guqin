@@ -4,16 +4,18 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
-**太音 · 古琴减字谱 AI 传习平台**
+**太音 · 古琴减字谱传习平台**
 
-手机端古琴减字谱拼装输入法 + AI 简谱翻译 + 琴友社区。用 Rust WASM 做核心引擎，Next.js 做前端，将千年减字谱带入数字时代。
+手机端古琴减字谱拼装输入法 + 简谱翻译 + 琴友社区。用 Rust WASM 做核心引擎，Next.js 做前端，将千年减字谱带入数字时代。
+
+> **想先知道「这是什么」，读 [`docs/overview.md`](docs/overview.md)** —— 定位、目标、进度、上线计划、AI 与 Web3 的边界，都在那一份里。
 
 ---
 
 ## ✨ 功能特性
 
 - **减字谱拼装输入**：移动端友好的减字键盘，支持单音 / 序列输入，双层渲染（OpenType GSUB 字体 + SVG 四象限降级）覆盖泛音、打摘等特殊指法。
-- **AI 减字谱识别**：上传减字谱图片，由 Claude 多模态识别为减字文本 —— 支持**单字识别 + 试听**与**整页批量识别**（按网格坐标排布成谱）。
+- **减字谱识别**：上传减字谱图片，按**模板匹配**识别为减字文本（257 个部件模板，字高 72px 逐字 100%、48px 97.6%、24px 59.5%）——支持**单字识别 + 试听**与**整页批量识别**（按网格坐标排布成谱）。⚠️ 这**不是 AI 识别**：实测让大模型直接认减字准确率为 0%，可用路径是模板匹配；LLM 只做候选择优的兜底。
 - **误读校正**：单字与整页均支持**逐字 / 逐格校正**，直接在可编辑框改错，试听与简谱实时跟随校正结果。
 - **由减字反推简谱音高**：识别出的减字自动反推简谱音高（散音取空弦、按音按徽位比例、泛音取谐波），音域扩至 **±2 八度**，覆盖古琴低音区与高音区。
 - **整段导入与诊断**：校正后一键导入为可整段播放 / 导出的曲谱；导入带**诊断**，明确区分「可导入 / 待校正 / 空格」，不再静默丢弃无法解析的减字。
@@ -40,9 +42,9 @@
 | --- | --- | --- |
 | **核心库** | Rust + serde | GuqinNote/GuqinScore 数据结构，WASM 编译 |
 | **后端** | Axum (Rust) | 社区 API、AI 翻译转发、积分记账 |
-| **前端** | Next.js 16 + React 19 | H5 网页，后续可封装为小程序 |
+| **前端** | Next.js 16 + React 19 | H5 网页（可离线 PWA）；另有原生微信小程序壳 `apps/miniprogram-wasm-probe`（未发布） |
 | **样式** | Tailwind CSS 4 + shadcn/ui | 减字键盘 CSS 拼装渲染 |
-| **AI** | Anthropic Claude 多模态 (Rust) | 减字谱图片识别（`/api/v1/jianzi/recognize`、`/recognize-sheet`）+ `/api/v1/translate/select` 简谱序列候选择优 |
+| **AI** | OpenAI 兼容接口（Rust，可选） | 只做**候选择优与兜底**（`/api/v1/translate/select` 等），不是主路径；识别主路径是模板匹配 |
 
 ## 🚀 快速开始
 
@@ -95,7 +97,7 @@ GuqinNote {
 | `POST /api/v1/jianzi/recognize` | 单字识别，返回减字文本 |
 | `POST /api/v1/jianzi/recognize-sheet` | 整页识别，返回按行列排布（`{row, col, glyph, confidence}`）的减字网格 |
 
-> ⚠️ 后端需配置 `ANTHROPIC_API_KEY` 才能调用 Claude；未配置时接口返回 `503`。
+> ⚠️ 识别主路径是**模板匹配**（不需要任何 key，浏览器内即可跑）；配置了 LLM key 时才有候选择优兜底。
 > **静态前端（如 GitHub Pages）必须设置构建期环境变量 `NEXT_PUBLIC_API_URL` 指向已部署的后端**，否则识别请求会打到 `localhost:3001`。
 
 ## 🔧 常用命令
