@@ -7,10 +7,11 @@
  * 单测只能靠模拟真实点击路径。这里按用户实际成谱的顺序走：
  * 选音色 → 选指法/徽位/弦序 → 确认 → 校验吐出的 NoteColumn。
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, fireEvent, screen, act } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { JianzipuKeyboard } from "../jianzipu-keyboard";
+import { __resetCustomJianziForTests } from "@/lib/custom-jianzi";
 import type { NoteColumn } from "@/lib/types";
 
 /** 按分区标题定位按键组（同名文案如"散"在音色/节奏里各有一个，不能全局找）。 */
@@ -505,5 +506,58 @@ describe("JianzipuKeyboard", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     expect(input.value).toBe("");
     expect(onAppend).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 轻用场景闭环：最快的录字方式是连打，而连打「打满即入谱、输入框立刻清空」。
+ * 若「我的减字」只挂在预览区（连打时不渲染），或者拿不到刚打完的那个字，
+ * 「敲一个字 → 存成 PNG 贴笔记」这条路就是断的，对外文案也会变成虚假宣传。
+ */
+describe("JianzipuKeyboard · 连打存图闭环", () => {
+  // __reset... 会通知 useSyncExternalStore 的订阅者，组件还挂载时要用 act 包住，
+  // 否则 React 报「update was not wrapped in act」的噪声（不影响断言，但会污染输出）。
+  beforeEach(() => {
+    act(() => {
+      window.localStorage.clear();
+      __resetCustomJianziForTests();
+    });
+  });
+
+  afterEach(() => {
+    act(() => {
+      window.localStorage.clear();
+      __resetCustomJianziForTests();
+    });
+  });
+
+  it("连打模式也有「我的减字」，且刚打完的字能存成图 / 矢", () => {
+    const { container } = render(<JianzipuKeyboard />);
+    fireEvent.click(screen.getByRole("button", { name: "连打" }));
+
+    // 原先这块挂在预览区里，连打模式下整块消失 → 存图入口根本看不见
+    expect(screen.getByText(/我的减字/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "存为常用" }) as HTMLButtonElement).disabled).toBe(true);
+
+    const input = container.querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "g4" } });
+
+    // 打满即入谱，但字必须留在「我的减字」里，否则「存为常用」永远点不动
+    expect((screen.getByRole("button", { name: "存为常用" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "存为常用" }));
+
+    expect(screen.getByRole("button", { name: /存为图片/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /存为矢量图/ })).toBeTruthy();
+  });
+
+  it("连打教程给一句话 + 两个例子 + 一条消歧，不摆七行表", () => {
+    render(<JianzipuKeyboard />);
+    fireEvent.click(screen.getByRole("button", { name: "连打" }));
+
+    expect(screen.getByText(/按书写顺序打，打满自动成字/)).toBeTruthy();
+    expect(screen.getByText(/分位要带 f/)).toBeTruthy();
+    expect(screen.getByPlaceholderText("例：g4 · sg3")).toBeTruthy();
+    // 完整规则仍可查，但不挤在首屏
+    expect(screen.getByText(/连打速查表/)).toBeTruthy();
   });
 });

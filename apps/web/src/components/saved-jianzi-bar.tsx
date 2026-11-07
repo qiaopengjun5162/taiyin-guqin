@@ -146,8 +146,8 @@ export function SavedJianziBar({
       </div>
 
       {saved.length === 0 ? (
-        <p className="mt-1.5 text-[10px] leading-relaxed text-stone-500">
-          还没有存过。拼好一个字后点「存为常用」，下次一键填回；卡片上的「图 / 矢」能把它存成图片，
+        <p className="mt-1.5 text-[10px] leading-relaxed text-stone-600">
+          还没有存过。敲好或拼好一个字后点「存为常用」，卡片上的「图 / 矢」就能存成 PNG / SVG，
           直接贴进笔记或课件；导出的 JSON 可以备份或给琴友。
         </p>
       ) : (

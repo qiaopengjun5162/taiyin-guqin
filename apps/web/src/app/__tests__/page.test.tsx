@@ -94,4 +94,26 @@ describe("Home（主页面冒烟）", () => {
     expect(screen.getByLabelText("播放")).toBeTruthy();
     expect(screen.queryByLabelText("停止播放")).toBeNull();
   });
+
+  it("空谱给出「只想记一个字」的轻用入口，开始打谱后收起", async () => {
+    const { container } = render(<Home />);
+
+    // 冷启动是最需要「原来只要记一个字」这句话的时刻
+    expect(container.querySelector('section[aria-label="只想记一个字"]')).not.toBeNull();
+    expect(screen.getByText("只想记一个字？不必打整首谱")).toBeTruthy();
+    // jsdom 没有 scrollIntoView：点这个按钮不该抛 TypeError
+    expect(() => fireEvent.click(screen.getByRole("button", { name: "去敲一个字" }))).not.toThrow();
+
+    fireEvent.click(screen.getByRole("button", { name: "沧海一声笑" }));
+    await waitFor(() => {
+      expect(container.querySelector('section[aria-label="只想记一个字"]')).toBeNull();
+    });
+  });
+
+  it("轻用引导卡在整谱导出靶子之外", () => {
+    const { container } = render(<Home />);
+    const scoreArea = container.querySelector("#score-area");
+    expect(scoreArea).not.toBeNull();
+    expect(scoreArea?.querySelector('section[aria-label="只想记一个字"]')).toBeNull();
+  });
 });

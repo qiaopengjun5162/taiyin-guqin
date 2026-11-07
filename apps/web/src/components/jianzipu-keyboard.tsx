@@ -47,6 +47,9 @@ type Section =
 const SLIDE_ONLY = DEFAULT_KEYBOARD.slides.filter((s) => s !== "急");
 const URGENT_ONLY = DEFAULT_KEYBOARD.slides.filter((s) => s === "急");
 
+/** 连打模式还没敲出字时，「我的减字」的 current 用这个空状态（模块级，别每次渲染新建）。 */
+const EMPTY_JIANZI: JianziState = createEmptyState();
+
 /**
  * 减字键盘主组件。
  *
@@ -86,6 +89,15 @@ export function JianzipuKeyboard({
   const [inputMode, setInputMode] = useState<"point" | "pinyin" | "rapid">(
     "point",
   );
+  /**
+   * 连打刚打完的那个字。
+   *
+   * 连打是「打满即入谱」，输入框立刻清空，主 state 里并没有「正在拼的字」。
+   * 但「我的减字」要靠 current 才知道能存什么——若不给它这个字，
+   * 连打模式下「存为常用 / 图 / 矢」永远点不动，
+   * 「敲一个字 → 存成 PNG 贴笔记」这条轻用路径就断了。
+   */
+  const [lastRapid, setLastRapid] = useState<JianziState | null>(null);
   const [pinyinText, setPinyinText] = useState(() => {
     if (defaultNote) return jianziToText(defaultNote.jianzi);
     return "";
@@ -178,13 +190,6 @@ export function JianzipuKeyboard({
         <div className="flex w-full flex-col items-center gap-2">
           <JianzipuPreview state={state} />
           <JianziExplainPanel state={state} />
-          <SavedJianziBar
-            current={state}
-            onPick={(picked) => {
-              setState({ ...picked });
-              setPinyinText(jianziToText(picked));
-            }}
-          />
         </div>
       )}
 
@@ -195,6 +200,9 @@ export function JianzipuKeyboard({
             toneType={state.toneType ?? "散"}
             onToneType={(t) => handleSelect("toneType", t)}
             onCommit={(jianzi) => {
+              // 入谱的同时记住这个字：连打没有「编辑态预览」，
+              // 少了这一步「我的减字」就永远没有可存的字。
+              setLastRapid(jianzi);
               onAppend?.({
                 id: defaultNote?.id ?? crypto.randomUUID(),
                 jianpuNumber: defaultNote?.jianpuNumber ?? null,
@@ -415,6 +423,22 @@ export function JianzipuKeyboard({
           {!isComplete(state) && <MissingFields state={state} />}
         </>
       )}
+
+      {/* ── 我的减字：三种录入模式都要能存图 ──
+          原先这块只挂在「预览区」里，连打模式下整块不渲染；
+          而连打又是最快的录字方式，于是「敲一个字 → 存成 PNG 贴笔记」
+          这条最高频的轻用路径是断的。现在统一放在输入区之后：
+          连打用「刚打完的那个字」，点选 / 拼音用正在拼的字。 */}
+      <SavedJianziBar
+        current={inputMode === "rapid" ? (lastRapid ?? EMPTY_JIANZI) : state}
+        onPick={(picked) => {
+          setState({ ...picked });
+          setPinyinText(jianziToText(picked));
+          setLastRapid(picked);
+          // 连打没有编辑态预览，填回要看得见就切回点选
+          if (inputMode === "rapid") setInputMode("point");
+        }}
+      />
     </div>
   );
 }
@@ -683,7 +707,7 @@ function RapidInput({
             }
           }}
           placeholder={
-            toneType === "散" ? "例：g4 · sg3 · mt6" : "例：d9g4 · d9f6cg4 · ad13g4"
+            toneType === "散" ? "例：g4 · sg3" : "例：d9g4 · ad9f6cg4"
           }
           className="w-full px-3 py-2 text-base tracking-[0.3em] text-center rounded border border-stone-300/50 bg-[#f8f3eb] text-stone-800 placeholder:text-stone-400/40 placeholder:tracking-normal outline-none focus:border-amber-600/40 focus:ring-1 focus:ring-amber-600/20 transition-all"
         />
@@ -691,8 +715,10 @@ function RapidInput({
         {/* 已识别槽位 */}
         <div className="flex flex-wrap items-center justify-center gap-1.5 min-h-[26px]">
           {parsed.tokens.length === 0 ? (
-            <span className="text-[11px] tracking-[0.15em] text-stone-400">
-              按减字书写顺序打，打满自动成字（音色可写 s/f/a）
+            /* 上手引导刻意只有一句话 + 一条消歧（两个例子在 placeholder 里）。
+               完整规则折在下面的速查表，别一上来就摆七行表吓人。 */
+            <span className="text-center text-[11px] leading-relaxed tracking-[0.05em] text-stone-500">
+              按书写顺序打，打满自动成字（音色可写 s/f/a）。分位要带 f，如 f6；裸数字是徽位。
             </span>
           ) : (
             parsed.tokens.map((t, i) => (

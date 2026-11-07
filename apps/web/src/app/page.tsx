@@ -499,6 +499,18 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleSpace);
   }, [isPlaying, handlePlay, handleStop]);
 
+  /**
+   * 轻用卡的「去敲一个字」：滚到键盘区。
+   * jsdom 不实现 scrollIntoView，typeof 挡一下（与 score-view 同一写法），
+   * 否则测试环境点一下就抛 TypeError。
+   */
+  function jumpToKeyboard() {
+    const el = document.getElementById("keyboard-area");
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
+  }
+
   /** 点击乐谱流音符 → 键盘回填数据 + 滚动到键盘区 */
   function handleEdit(index: number) {
     setEditingIndex(index);
@@ -1523,6 +1535,42 @@ export default function Home() {
         )}
         {score.length > 0 && <ExportFooter title={scoreTitle} tuning={tuningLabel} />}
       </div>
+
+      {/*
+       * ── 轻用场景引导：只在空谱时出现 ──
+       * 放在 #score-area 之外：那一块是整谱导出截图的靶子，写进来会被一起截进 PNG。
+       * 内容对应的能力是真的闭环（连打敲完的字也能「存为常用 → 图 / 矢」），
+       * 不是宣传话术；有音符以后收起，不占正在打谱的人的屏幕。
+       */}
+      {score.length === 0 && (
+        <section
+          aria-label="只想记一个字"
+          className="no-print mt-5 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm"
+        >
+          <div className="ty-panel-accent" />
+          <div className="p-4">
+            <p className="text-[11px] tracking-wider text-amber-800">
+              只想记一个字？不必打整首谱
+            </p>
+            <ul className="mt-2 space-y-1 text-[10px] leading-relaxed text-stone-700">
+              <li>· 课后记下老师所授的一处指法</li>
+              <li>· 备课、批改时在课件里标一个减字</li>
+              <li>· 写文章、发视频时配一张准确的减字图</li>
+            </ul>
+            <p className="mt-2 text-[10px] leading-relaxed text-stone-700">
+              在下面敲一个减字 →「存为常用」→ 点卡片上的「图 / 矢」，即得 PNG / SVG，
+              贴进笔记或课件。网页打开即用，不用装字体、不用装输入法。
+            </p>
+            <button
+              type="button"
+              onClick={jumpToKeyboard}
+              className="mt-3 min-h-[36px] rounded border border-amber-700/40 px-3 text-[10px] tracking-wider text-amber-900 transition-colors hover:bg-amber-700/10"
+            >
+              去敲一个字
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* ── 工具栏：标题 + 保存 / 加载 / 导出 ── */}
       <SaveLoadToolbar
