@@ -28,7 +28,6 @@ const OUT_FILE = join(OUT_DIR, "pitch-card.png");
 const PAPER = "#f5efe6";
 const INK = "#1c1b1a";
 const ZHU = "#c23b22";
-const GOLD = "#c9a96e";
 const MUTED = "#6b6560";
 const FAINT = "#a89e90";
 
