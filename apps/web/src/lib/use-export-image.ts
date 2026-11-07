@@ -31,6 +31,12 @@ export function useExportImage({ containerRef, title, timeout = 15_000 }: UseExp
           setIsExporting(false);
         }, timeout);
 
+        // ⚠️ 必须先等字体：减字靠项目自带的 @font-face 显示，字体没加载完时
+        // html-to-image 会把「大九勾四」画成四个普通汉字，**不报任何错**，
+        // 导出的 PNG/SVG 拿去贴课件或发文章就是错的。与单字导出同一道保护。
+        // jsdom / 老浏览器没有 fonts API，可选链兜住，不能因此让导出整体失败。
+        if (document.fonts?.ready) await document.fonts.ready;
+
         // html-to-image 的 toPng/toSvg 入参一致，仅返回格式不同
         const render = format === "svg" ? toSvg : toPng;
         const extension = format === "svg" ? "svg" : "png";

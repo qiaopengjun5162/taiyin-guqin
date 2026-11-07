@@ -37,6 +37,8 @@ describe("useExportImage", () => {
       revokeObjectURL: vi.fn(),
     });
     HTMLAnchorElement.prototype.click = vi.fn();
+    // 默认让「等字体」空转（jsdom 没有真字体）；时序测试自己注入可控 Promise
+    Object.defineProperty(document, "fonts", { configurable: true, value: undefined });
 
     // 生产代码不把 <a> 挂到 DOM，故通过 createElement spy 捕获以断言
     const orig = document.createElement.bind(document);
@@ -117,5 +119,68 @@ describe("useExportImage", () => {
     });
 
     expect(toPng).not.toHaveBeenCalled();
+  });
+
+  it("字体没加载完绝不开画：否则减字会静默变成普通汉字", async () => {
+    const { container } = setupContainer();
+    let resolveFonts!: () => void;
+    const fontsReady = new Promise<void>((resolve) => {
+      resolveFonts = resolve;
+    });
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: { ready: fontsReady },
+    });
+
+    const ref = { current: container } as React.RefObject<HTMLElement | null>;
+    const { result } = renderHook(() => useExportImage({ containerRef: ref }));
+
+    let exportDone!: Promise<void>;
+    await act(async () => {
+      exportDone = result.current.exportPng();
+      // 让 exportImage 的同步部分跑完，停在 await document.fonts.ready
+      await Promise.resolve();
+    });
+
+    expect(toPng).not.toHaveBeenCalled();
+    expect(toSvg).not.toHaveBeenCalled();
+    expect(capturedLink).toBeNull();
+
+    resolveFonts();
+    await act(async () => {
+      await exportDone;
+    });
+
+    expect(toPng).toHaveBeenCalledTimes(1);
+    expect(capturedLink).not.toBeNull();
+  });
+
+  it("SVG 导出同样等字体（两条路径口径一致）", async () => {
+    const { container } = setupContainer();
+    let resolveFonts!: () => void;
+    const fontsReady = new Promise<void>((resolve) => {
+      resolveFonts = resolve;
+    });
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: { ready: fontsReady },
+    });
+
+    const ref = { current: container } as React.RefObject<HTMLElement | null>;
+    const { result } = renderHook(() => useExportImage({ containerRef: ref }));
+
+    let exportDone!: Promise<void>;
+    await act(async () => {
+      exportDone = result.current.exportSvg();
+      await Promise.resolve();
+    });
+
+    expect(toSvg).not.toHaveBeenCalled();
+
+    resolveFonts();
+    await act(async () => {
+      await exportDone;
+    });
+    expect(toSvg).toHaveBeenCalledTimes(1);
   });
 });

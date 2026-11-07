@@ -35,7 +35,8 @@ export function jianziImageFilename(label: string, format: JianziImageFormat): s
  *
  * ⚠️ 必须先等 `document.fonts.ready`：减字靠项目自带的 @font-face 字体显示，
  * 字体没加载完时 html-to-image 会把「大九勾四」渲染成四个普通汉字，
- * **不报任何错**，图拿去贴到课件里就是错的。整首谱截图同理，但这次不改动它。
+ * **不报任何错**，图拿去贴到课件里就是错的。
+ * 整谱导出（`useExportImage`）已同步补上同一道等待，两条导出路径口径一致。
  */
 export async function downloadJianziImage(
   node: HTMLElement | null,
