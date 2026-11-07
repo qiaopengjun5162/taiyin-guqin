@@ -102,7 +102,9 @@ describe("JianziConcordance", () => {
     localCreateScore("良宵引", [note({ ...RARE }), note({ ...RARE })]);
     render(<JianziConcordance state={RARE} />);
 
-    expect(await screen.findByText("良宵引")).toBeInTheDocument();
+    // findAll 而不是 find：这一首里有两处，标题会出现两行。
+    // （用 findByText 会报「found multiple elements」，不是没渲染。）
+    expect(await screen.findAllByText("良宵引")).toHaveLength(2);
     expect(screen.getByText("谱中见过")).toBeInTheDocument();
     expect(screen.getByText(/2 处 · 1 首/)).toBeInTheDocument();
     expect(screen.getAllByText("第 1 句")).toHaveLength(2);
@@ -144,7 +146,8 @@ describe("JianziConcordance", () => {
     );
     render(<JianziConcordance state={RARE} />);
 
-    expect(await screen.findByText("长曲")).toBeInTheDocument();
+    // 10 处里只列 8 行（MAX_ROWS），标题也就出现 8 次；剩下 2 处折成一行文字。
+    expect(await screen.findAllByText("长曲")).toHaveLength(8);
     expect(screen.getByText(/另有 2 处/)).toBeInTheDocument();
   });
 

@@ -130,6 +130,40 @@ const STRING_CHARS = new Set(["一", "二", "三", "四", "五", "六", "七"]);
 const SLIDE_CHARS = new Set(["绰", "注", "急"]);
 
 /**
+ * 右手指法名，**按最长优先排列**，散音与按/泛音共用一份。
+ *
+ * 顺序即正确性：`勾剔` 必须排在 `勾` 前面，否则「散勾剔二」只吃掉一个「勾」，
+ * 剩下的「剔二」既不是弦序也不是指法，整条就废了。
+ * 曾经散音分支自己维护一份只有单指法的表，于是 `散勾剔二` 这类谱本常见写法
+ * 解析出一个**缺弦序的半残状态**——识别面板按「非 null 即成功」统计，把它算成解析成功，
+ * 到了播放时才因为没有弦序而静默不出声。合并成一份表就是为了不再出现第二份。
+ *
+ * 全字（勾）与偏旁（勹）并存的原因：键盘存偏旁，粘贴传统谱本存全字。
+ */
+const RIGHT_ACTION_NAMES = [
+  "勾剔",
+  "抹挑",
+  "打摘",
+  "抹勾",
+  "仰托",
+  "勾",
+  "挑",
+  "抹",
+  "劈",
+  "托",
+  "剔",
+  "打",
+  "摘",
+  "乇",
+  "尸",
+  "木",
+  "乚",
+  "勹",
+  "丁",
+  "倽",
+];
+
+/**
  * 装饰记号只存在于按音：散音是空弦、泛音要虚按徽位，都滑不动 / 谈不上急弹。
  * （实测字体里「散急勾四」也连不成整字，散成 1.33em。）
  */
@@ -170,23 +204,14 @@ export function parseJianziText(text: string): JianziState | null {
 
   // 散音：只需要右手指法 + 弦序
   if (result.toneType === "散") {
-    for (const name of [
-      "勾",
-      "挑",
-      "抹",
-      "劈",
-      "托",
-      "剔",
-      "打",
-      "摘",
-      "乇",
-      "尸",
-      "木",
-      "乚",
-      "勹",
-      "丁",
-      "倽",
-    ]) {
+    /*
+     * 散音不吃走手音/急弹（`canHaveSlide` 的判定），但粘贴来的谱本里常带一个「绰」。
+     * 这里**丢掉记号继续解析**，不因为多一个记号整条失败：
+     * 旧代码不丢也不解析，直接返回一个「没指法没弦」的空壳，比失败更糟。
+     */
+    remaining = [...remaining].filter((ch) => !SLIDE_CHARS.has(ch)).join("").trim();
+
+    for (const name of RIGHT_ACTION_NAMES) {
       if (remaining.startsWith(name)) {
         result.rightAction = name;
         remaining = remaining.slice(name.length);
@@ -197,7 +222,9 @@ export function parseJianziText(text: string): JianziState | null {
     if (remaining && STRING_CHARS.has(remaining)) {
       result.stringNumber = remaining;
     }
-    return result;
+    // 必须和按/泛音一样过 isComplete：上面那两条 if 都不成立时，
+    // 返回的是一个「有指法没弦」的半残对象，调用方（识别面板）会当成解析成功。
+    return isComplete(result) ? result : null;
   }
 
   // 2. 左手指法
@@ -257,29 +284,7 @@ export function parseJianziText(text: string): JianziState | null {
   if (result.toneType === "泛") result.slide = null;
 
   // 5. 右手指法
-  const allActions = [
-    "勾剔",
-    "抹挑",
-    "打摘",
-    "抹勾",
-    "仰托",
-    "勾",
-    "挑",
-    "抹",
-    "劈",
-    "托",
-    "剔",
-    "打",
-    "摘",
-    "乇",
-    "尸",
-    "木",
-    "乚",
-    "勹",
-    "丁",
-    "倽",
-  ];
-  for (const name of allActions) {
+  for (const name of RIGHT_ACTION_NAMES) {
     if (remaining.startsWith(name)) {
       result.rightAction = name;
       remaining = remaining.slice(name.length);

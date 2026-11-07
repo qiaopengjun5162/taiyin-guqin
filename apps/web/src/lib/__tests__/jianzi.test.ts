@@ -412,3 +412,48 @@ describe("durationToBeats", () => {
     expect(durationToBeats("八分", true)).toBe(0.75);
   });
 });
+
+describe("parseJianziText：散音分支的收口", () => {
+  /*
+   * 这三条钉的是一个真出过的 bug：散音分支当年自己维护一份「只有单指法」的表，
+   * 于是谱本里常见的「散勾剔二」只吃掉一个「勾」，剩下「剔二」对不上，
+   * 最后**返回一个缺弦序的半残对象**（不是 null）。识别面板按「非 null 即成功」统计，
+   * 就把它算成解析成功，直到播放时才因为没弦序静默不出声。
+   */
+  it("parses 散音 + 复合指法 散勾剔二", () => {
+    const r = parseJianziText("散勾剔二");
+    expect(r).not.toBeNull();
+    expect(r!.toneType).toBe("散");
+    expect(r!.rightAction).toBe("勾剔");
+    expect(r!.stringNumber).toBe("二");
+  });
+
+  it("parses 散抹挑一 / 散打摘四", () => {
+    expect(parseJianziText("散抹挑一")!.rightAction).toBe("抹挑");
+    expect(parseJianziText("散打摘四")!.rightAction).toBe("打摘");
+  });
+
+  it("缺弦序时返回 null，而不是缺弦的半残对象", () => {
+    expect(parseJianziText("散勾")).toBeNull();
+    expect(parseJianziText("散")).toBeNull();
+  });
+
+  it("键盘造得出的散音复合指法，序列化后必须能读回来", () => {
+    const state: JianziState = {
+      ...createEmptyState(),
+      toneType: "散",
+      rightAction: "勾剔",
+      stringNumber: "二",
+    };
+    const text = jianziToText(state);
+    const back = parseJianziText(text);
+    expect(back).not.toBeNull();
+    expect(back!.toneType).toBe("散");
+    expect(back!.stringNumber).toBe("二");
+    /*
+     * rightAction 比「同一个指法」而不是比字符串：状态存偏旁（勹），
+     * 序列化按字形表换成全字（勾），往返本来就是有损的写法归一。
+     */
+    expect(back!.rightAction).toBe("勾剔");
+  });
+});
