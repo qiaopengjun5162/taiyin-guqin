@@ -1,0 +1,36 @@
+name: Miniprogram WASM Probe
+
+# 独立的探针校验 job：不改动 build.yml，也不用装 pnpm 依赖。
+# verify-all.mjs 只用 Node 内置模块，四个校验器读的都是仓库里已提交的文件
+# （含用 git add -f 强制提交的 wasm/taiyin_core_bg.wasm），checkout 后即可跑。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/miniprogram-wasm-probe/**"
+      - ".github/workflows/miniprogram-probe.yml"
+  pull_request:
+    paths:
+      - "apps/miniprogram-wasm-probe/**"
+      - ".github/workflows/miniprogram-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 四个校验器（适配层 / Worker 传输层 / 兜底变异 / 静态约束）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 边界：这里只验「本地可复现」的部分。真机 iOS/Android、包体积、性能、
+      # 低版本基础库仍需开发者工具实跑（见 docs/competitive-analysis.md 8.5）。
+      - name: 跑齐四个校验器
+        run: node apps/miniprogram-wasm-probe/scripts/verify-all.mjs

@@ -321,8 +321,10 @@ node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
 | `scripts/verify-guards.cjs` | 超时 / 错误广播的兜底变异验证 |
 | `scripts/lint-project.mjs` | 静态 18 项（含 `workers` 声明） |
 
-⚠️ **CI 目前还没挂这个入口**（`.github/workflows/` 里没有探针 job），只在本地跑。
-将来挂只需在 build job 里加上面那一行命令；改动 `apps/miniprogram-wasm-probe/**` 时触发即可。
+**CI 已挂**（2026-11-07）：`.github/workflows/miniprogram-probe.yml` 是**独立 job**，
+push / PR 改动 `apps/miniprogram-wasm-probe/**` 或该 workflow 自身时触发，
+`workflow_dispatch` 也能手动跑。它不改动 `build.yml`、不装任何依赖，只跑上面那一行；
+纯 Node 内置模块，checkout 后即可执行（wasm 二进制已随仓库提交）。
 
 模拟器复跑：CLI **不认 `touristappid`**（报「不存在此 AppID」），需把工程复制到临时目录、
 把 `project.config.json` 的 `appid` 换成自己账号下的**小程序测试号**，
