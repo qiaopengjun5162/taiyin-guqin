@@ -23,10 +23,10 @@ export const dynamic = "force-static";
 
 export function buildManifest(basePath: string): MetadataRoute.Manifest {
   return {
-    name: "太音 · 古琴AI传习平台",
+    name: "太音 · 古琴打谱工具",
     short_name: "太音",
     description:
-      "减字谱输入、简谱转减字、整页识别、指法编排与出声——打开就用，不用装任何软件。",
+      "把看不懂的古琴老谱变成能弹的曲子：识谱、简谱转减字、指法编排与出声——打开就用，不用装任何软件。",
     lang: "zh-CN",
     dir: "ltr",
     start_url: `${basePath}/`,

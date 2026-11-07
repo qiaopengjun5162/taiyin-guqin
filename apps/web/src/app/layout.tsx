@@ -35,8 +35,9 @@ const maShanZheng = Ma_Shan_Zheng({
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export const metadata: Metadata = {
-  title: "太音 · 古琴AI传习平台",
-  description: "古琴减字谱输入法 | AI 简谱翻译 | 琴友社区 — 用科技复活非遗文化",
+  title: "太音 · 古琴打谱工具",
+  description:
+    "把看不懂的古琴老谱，变成能弹的曲子。拍照识谱、简谱转减字、打谱出声——打开网页就能用，不用装软件。",
   applicationName: "太音",
   // iOS「添加到主屏」读的是 apple-mobile-web-app-* 这组标签，
   // 不加的话从主屏打开会带上 Safari 地址栏，不像 App。

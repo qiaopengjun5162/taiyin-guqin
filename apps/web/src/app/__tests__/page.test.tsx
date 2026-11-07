@@ -49,8 +49,8 @@ describe("Home（主页面冒烟）", () => {
     render(<Home />);
 
     expect(screen.getByText("太音")).toBeTruthy();
-    expect(screen.getByText("太音 · 古琴 AI 传习")).toBeTruthy();
-    expect(screen.getByText("减字谱智能拼装 · 非遗科技复活")).toBeTruthy();
+    expect(screen.getByText("太音 · 古琴打谱")).toBeTruthy();
+    expect(screen.getByText("把看不懂的老谱，变成能弹的曲子")).toBeTruthy();
     // 核心控件是「能用」的最小证据：没有播放/节拍器/BPM，页面就只是张图。
     expect(screen.getByLabelText("播放")).toBeTruthy();
     expect(screen.getByLabelText("启动节拍器")).toBeTruthy();
@@ -93,6 +93,23 @@ describe("Home（主页面冒烟）", () => {
 
     expect(screen.getByLabelText("播放")).toBeTruthy();
     expect(screen.queryByLabelText("停止播放")).toBeNull();
+  });
+
+  it("空谱给出「太音是什么」介绍区，载入示例后收起", async () => {
+    const { container } = render(<Home />);
+
+    // 新访客第一眼要看见定位：打谱工具 + 三类入口
+    expect(container.querySelector('section[aria-label="太音是什么"]')).not.toBeNull();
+    expect(screen.getByText("太音是什么")).toBeTruthy();
+    expect(screen.getByText("古琴打谱工具")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "先听一首《沧海一声笑》" })).toBeTruthy();
+
+    // 「先听一首」直接载入示例——听懂比读懂快；载入后介绍区收起，不挡打谱
+    fireEvent.click(screen.getByRole("button", { name: "先听一首《沧海一声笑》" }));
+    await waitFor(() => {
+      expect(container.querySelector('section[aria-label="太音是什么"]')).toBeNull();
+      expect(container.querySelectorAll("[data-note-column]").length).toBeGreaterThan(0);
+    });
   });
 
   it("空谱给出「只想记一个字」的轻用入口，开始打谱后收起", async () => {

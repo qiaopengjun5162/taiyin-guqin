@@ -142,13 +142,13 @@ describe("主页折叠面板", () => {
     expect(screen.queryByTestId("tuner")).not.toBeInTheDocument();
     expect(screen.queryByTestId("practice")).not.toBeInTheDocument();
     expect(screen.queryByTestId("recorder")).not.toBeInTheDocument();
-    expect(screen.getByText(/用 AI 识别减字图片/)).toBeInTheDocument();
+    expect(screen.getByText(/识别减字图片/)).toBeInTheDocument();
   });
 
-  it("点开 AI 识别：默认单字，可切整页，再点收起", () => {
+  it("点开识别：默认单字，可切整页，再点收起", () => {
     render(<Home />);
 
-    fireEvent.click(screen.getByText(/用 AI 识别减字图片/));
+    fireEvent.click(screen.getByText(/识别减字图片/));
     expect(screen.getByTestId("recognizer-single")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("整页"));
@@ -158,7 +158,7 @@ describe("主页折叠面板", () => {
     fireEvent.click(screen.getByText("单字"));
     expect(screen.getByTestId("recognizer-single")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("收起 AI 识别"));
+    fireEvent.click(screen.getByText("收起识别"));
     expect(screen.queryByTestId("recognizer-single")).not.toBeInTheDocument();
   });
 

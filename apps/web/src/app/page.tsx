@@ -1396,15 +1396,70 @@ export default function Home() {
         <div className="flex items-center gap-3.5">
           <div className="ty-seal font-calligraphy">太音</div>
           <div className="leading-tight">
-            <h1 className="ty-title">太音 · 古琴 AI 传习</h1>
-            <p className="ty-subtitle">减字谱智能拼装 · 非遗科技复活</p>
+            {/* 对外口径 = 「古琴打谱」（对仗「AI 释谱」：释谱是看懂，打谱是弹出）。
+                改这行先同步 page.test.tsx 的断言与 docs/pitch.md 档 1。 */}
+            <h1 className="ty-title">太音 · 古琴打谱</h1>
+            <p className="ty-subtitle">把看不懂的老谱，变成能弹的曲子</p>
           </div>
         </div>
-        <div className="ty-ai-badge" title="AI 驱动">
+        {/* 免安装是真卖点；「AI 驱动」是超口径（识别是模板匹配，AI 只做候选择优兜底），已撤下 */}
+        <div className="ty-ai-badge" title="打开网页就能用，不用装任何软件">
           <span className="ty-ai-dot" />
-          AI
+          免安装
         </div>
       </header>
+
+      {/*
+       * ── 「太音是什么」介绍区：只在空谱时出现 ──
+       * 新访客第一眼要知道这是打谱工具、从哪条路进（会弹 / 不会 / 在学三入口，
+       * 对应 docs/competitive-analysis.md 16.4）；开始打谱后自动收起，不挡老手。
+       * 「先听一首」直接载入示例——听懂比读懂快。放 #score-area 之外，免得进导出截图。
+       */}
+      {score.length === 0 && (
+        <section
+          aria-label="太音是什么"
+          className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm"
+        >
+          <div className="ty-panel-accent" />
+          <div className="p-4">
+            <p className="text-[11px] tracking-wider text-amber-800">太音是什么</p>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-stone-700">
+              <b className="font-medium text-amber-900">古琴打谱工具</b>
+              ——把看不懂的老谱，变成能弹的曲子。不用装软件、不用装字体，打开网页就能用。
+            </p>
+            <ul className="mt-2 space-y-1 text-[10px] leading-relaxed text-stone-700">
+              <li>
+                · <b className="font-medium text-amber-900">你还不会弹，手里有老谱</b>
+                ：传整页照片，逐字校对，出来能弹能听的谱
+              </li>
+              <li>
+                · <b className="font-medium text-amber-900">你会弹，想打谱</b>
+                ：敲键盘或传简谱，自动排指法，出图、出声、出码
+              </li>
+              <li>
+                · <b className="font-medium text-amber-900">你已经在学</b>
+                ：逐句慢练、节拍器、调音器、日课
+              </li>
+            </ul>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleLoadExample("canghaixiaoxiao")}
+                className="min-h-[36px] rounded border border-amber-700/40 px-3 text-[10px] tracking-wider text-amber-900 transition-colors hover:bg-amber-700/10"
+              >
+                先听一首《沧海一声笑》
+              </button>
+              <button
+                type="button"
+                onClick={jumpToKeyboard}
+                className="min-h-[36px] rounded border border-amber-700/25 px-3 text-[10px] tracking-wider text-stone-600 transition-colors hover:text-amber-900 hover:border-amber-700/40"
+              >
+                直接开始打谱
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── 全局错误 / 中性提示 ── */}
       {/* ── 未保存草稿恢复提示（只在编辑区还空着时出现） ── */}
@@ -1949,7 +2004,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── 减字谱 AI 识别（对标 udywang「琴与人的交互 1 号」） ── */}
+      {/* ── 减字谱识别（模板匹配主路径；「AI 识别」是超口径，按钮文案不说 AI） ── */}
       <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
         <div className="ty-panel-accent" />
         <div className="p-5">
@@ -1957,7 +2012,7 @@ export default function Home() {
             onClick={() => setShowRecognizer((v) => !v)}
             className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
           >
-            {showRecognizer ? "收起 AI 识别" : "＋ 用 AI 识别减字图片"}
+            {showRecognizer ? "收起识别" : "＋ 识别减字图片"}
           </button>
           {showRecognizer && (
             <div className="mt-3">
