@@ -683,6 +683,8 @@ function RapidInput({
             <JianziExplainPanel state={parsed.state} />
           </>
         )}
+        {/* 教程的两个例子就写在 placeholder 里：占位符颜色必须够深，
+            否则「一句话 + 两个例子」实际只给了一句话。 */}
         <input
           ref={inputRef}
           autoFocus
@@ -709,7 +711,7 @@ function RapidInput({
           placeholder={
             toneType === "散" ? "例：g4 · sg3" : "例：d9g4 · ad9f6cg4"
           }
-          className="w-full px-3 py-2 text-base tracking-[0.3em] text-center rounded border border-stone-300/50 bg-[#f8f3eb] text-stone-800 placeholder:text-stone-400/40 placeholder:tracking-normal outline-none focus:border-amber-600/40 focus:ring-1 focus:ring-amber-600/20 transition-all"
+          className="w-full px-3 py-2 text-base tracking-[0.3em] text-center rounded border border-stone-300/50 bg-[#f8f3eb] text-stone-800 placeholder:text-stone-500/80 placeholder:tracking-normal outline-none focus:border-amber-600/40 focus:ring-1 focus:ring-amber-600/20 transition-all"
         />
 
         {/* 已识别槽位 */}
