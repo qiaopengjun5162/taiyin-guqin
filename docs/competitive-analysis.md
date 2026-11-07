@@ -584,7 +584,8 @@ push / PR 改动 `apps/miniprogram-wasm-probe/**` 或该 workflow 自身时触�
 > 那些给他装输入法、重启、绑 Office 的桌面工具给不了的，正是我们的代际差。
 >
 > 证据：官网「简谱转减字 → 单音 → 查音位」输入简谱 `1`，当场返回 **134 个位置**（每根弦×每徽位），
-> 每张卡片是减字合体字 +「弦·徽位」标注，可点录入 / 试听。截图见 `docs/assets/chayinwei-demo.png`。
+> 每张卡片是减字合体字 +「弦·徽位」标注，可点录入 / 试听。截图见 `docs/assets/chayinwei-demo.png`；
+> 对外可直接用带标题的配图 `docs/assets/chayinwei-banner.png`，或干净面板图 `docs/assets/chayinwei-card.png`。
 
 ## 十二、上线通稿背后的渠道、时间线与键盘设计
 
