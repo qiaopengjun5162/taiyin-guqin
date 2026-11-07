@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Noto_Serif_SC, Ma_Shan_Zheng } from "next/font/google";
+import { PwaRegister } from "@/components/pwa-register";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -26,9 +27,43 @@ const maShanZheng = Ma_Shan_Zheng({
   display: "swap",
 });
 
+/**
+ * 站点部署根（构建期内联）。下面多处要用，提前声明避免顺序陷阱。
+ * - GitHub Pages：`/taiyin-guqin`
+ * - Vercel / 根部署：`""`
+ */
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export const metadata: Metadata = {
   title: "太音 · 古琴AI传习平台",
   description: "古琴减字谱输入法 | AI 简谱翻译 | 琴友社区 — 用科技复活非遗文化",
+  applicationName: "太音",
+  // iOS「添加到主屏」读的是 apple-mobile-web-app-* 这组标签，
+  // 不加的话从主屏打开会带上 Safari 地址栏，不像 App。
+  appleWebApp: {
+    capable: true,
+    title: "太音",
+    statusBarStyle: "default",
+  },
+  // Next 16 只输出标准化的 `mobile-web-app-capable`；iOS 15.4 以前不认 manifest 的
+  // display:standalone，只认这个带 apple- 前缀的老名字。补一份，老机器从主屏打开
+  // 才不会带 Safari 地址栏。
+  other: {
+    "apple-mobile-web-app-capable": "yes",
+  },
+  icons: {
+    icon: [
+      { url: `${BASE_PATH}/icons/icon-192.png`, sizes: "192x192", type: "image/png" },
+      { url: `${BASE_PATH}/icons/icon-512.png`, sizes: "512x512", type: "image/png" },
+    ],
+    apple: `${BASE_PATH}/icons/apple-touch-icon.png`,
+  },
+};
+
+export const viewport: Viewport = {
+  // 与 manifest 的 theme_color、图标底色一致：状态栏和图标不会两个颜色
+  themeColor: "#1c1b1a",
+  colorScheme: "light",
 };
 
 /**
@@ -43,7 +78,6 @@ export const metadata: Metadata = {
  * `NEXT_PUBLIC_BASE_PATH` 由 next.config.ts 的 `env` 在构建期内联，
  * 与 basePath / assetPrefix 同源，三处不会走偏。
  */
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 /**
  * 字体族名用**原名**而不是自取别名。
  *
@@ -69,6 +103,8 @@ export default function RootLayout({
         <style dangerouslySetInnerHTML={{ __html: JIANZI_FONT_CSS }} />
       </head>
       <body className="min-h-dvh flex flex-col">
+        {/* 只负责注册 Service Worker，不渲染任何内容（见 components/pwa-register.tsx） */}
+        <PwaRegister />
         {/* 墨迹晕染 SVG 滤镜（全局不可见，供 ink-bleed 类引用） */}
         <svg xmlns="http://www.w3.org/2000/svg" className="hidden" aria-hidden>
           <filter id="inkbleed">
