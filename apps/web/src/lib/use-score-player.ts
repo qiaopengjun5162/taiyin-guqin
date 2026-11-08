@@ -104,6 +104,10 @@ export function useScorePlayer(
     async (startIndex: number = 0, practice?: PracticeRange) => {
       if (playingRef.current || notes.length === 0) return;
       if (startIndex < 0 || startIndex >= notes.length) return;
+      // 没有音频输出设备、老 WebView、测试环境（jsdom）：播不了就安静地不播。
+      // 首页「先听一首」会在载入示例后自动起播，缺这层 guard 会直接抛 ReferenceError，
+      // 把「看一眼示例」这种最轻的动作也带崩。录音模块同样是这个写法。
+      if (typeof AudioContext === "undefined") return;
       const endIndex = practice?.endIndex ?? notes.length - 1;
       // 区间越界一律不播：宁可什么都不发生，也不要播到别的句去
       if (endIndex < startIndex || endIndex >= notes.length) return;

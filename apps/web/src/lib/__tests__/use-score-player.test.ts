@@ -98,6 +98,20 @@ describe("useScorePlayer", () => {
     expect(startMock).not.toHaveBeenCalled();
   });
 
+  it("没有 AudioContext 时静默跳过：不抛错、不起播、不动状态", async () => {
+    // 首页「先听一首」会在载入示例后自动起播；jsdom / 无音频设备的 WebView
+    // 走到 play() 不该抛 ReferenceError 把整个页面动作带崩。
+    vi.unstubAllGlobals();
+    expect(typeof AudioContext).toBe("undefined");
+    const { result } = renderHook(() => useScorePlayer([makeNote()]));
+
+    await act(async () => {
+      await expect(result.current.play()).resolves.toBeUndefined();
+    });
+    expect(result.current.isPlaying).toBe(false);
+    expect(startMock).not.toHaveBeenCalled();
+  });
+
   it("advances playingIndex per note and resets on stop", async () => {
     vi.useFakeTimers();
     try {

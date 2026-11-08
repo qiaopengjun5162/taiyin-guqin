@@ -42,6 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe("Home（主页面冒烟）", () => {
@@ -104,12 +105,47 @@ describe("Home（主页面冒烟）", () => {
     expect(screen.getByText("古琴打谱工具")).toBeTruthy();
     expect(screen.getByRole("button", { name: "先听一首《沧海一声笑》" })).toBeTruthy();
 
-    // 「先听一首」直接载入示例——听懂比读懂快；载入后介绍区收起，不挡打谱
+    // 「先听一首」载入示例并自动出声；载入后介绍区收起，不挡打谱
     fireEvent.click(screen.getByRole("button", { name: "先听一首《沧海一声笑》" }));
     await waitFor(() => {
       expect(container.querySelector('section[aria-label="太音是什么"]')).toBeNull();
       expect(container.querySelectorAll("[data-note-column]").length).toBeGreaterThan(0);
     });
+  });
+
+  it("「先听一首」真的起播，不是只把谱摆出来", async () => {
+    // 走查抓到的断点：按钮叫「先听一首」，点完却只有谱面、播放键还停在「播放」。
+    // 这里给个假音频设备，断言点一次就进入播放态并真的排程了声音。
+    const start = vi.fn();
+    class FakeAudioContext {
+      sampleRate = 44100;
+      currentTime = 0;
+      state: AudioContextState = "running";
+      destination = {};
+      createBuffer(_ch: number, len: number) {
+        return { getChannelData: () => new Float32Array(len) } as unknown as AudioBuffer;
+      }
+      createBufferSource() {
+        return {
+          buffer: null,
+          connect: vi.fn(),
+          start,
+          stop: vi.fn(),
+        } as unknown as AudioBufferSourceNode;
+      }
+      resume() {
+        return Promise.resolve();
+      }
+      close() {
+        return Promise.resolve();
+      }
+    }
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "先听一首《沧海一声笑》" }));
+    await waitFor(() => expect(screen.getByLabelText("停止播放")).toBeTruthy());
+    expect(start).toHaveBeenCalled();
   });
 
   it("空谱给出「只想记一个字」的轻用入口，开始打谱后收起", async () => {

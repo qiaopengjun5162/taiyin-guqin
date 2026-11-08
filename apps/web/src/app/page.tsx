@@ -288,6 +288,12 @@ export default function Home() {
   const infoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 分享链接只自动加载一次（防 StrictMode 双跑 / 重渲染重复拉取） */
   const sharedLoadedRef = useRef(false);
+  /**
+   * 「先听一首」的自动起播标记。play() 闭包吃的是当前渲染的 score，
+   * 点按钮时空谱还没换掉，必须等下一次渲染再播，故用 ref 跨一次提交传话。
+   * 载入成功才置位：下拉选示例 / 被「未保存」确认拦下都不该跟着响。
+   */
+  const autoPlayPendingRef = useRef(false);
 
   /**
    * 未保存保护：曲谱只活在内存里（没有自动草稿），载入别的谱会直接覆盖，
@@ -1301,12 +1307,12 @@ export default function Home() {
     }
   }
 
-  /** 加载预置示例曲谱 */
-  function handleLoadExample(id: string) {
+  /** 加载预置示例曲谱；返回是否真的换了谱（供「先听一首」决定是否自动起播） */
+  function handleLoadExample(id: string): boolean {
     const example = findExampleScore(id);
-    if (!example) return;
+    if (!example) return false;
     // 示例下拉就在工具栏上，误点一下就会把正在录的谱整首换掉
-    if (isDirty && !confirmDiscard()) return;
+    if (isDirty && !confirmDiscard()) return false;
     commitScore(() => example.notes);
     commitScoreTitle(example.title);
     setCurrentScoreId(null);
@@ -1314,7 +1320,27 @@ export default function Home() {
     setSavedFingerprint(scoreFingerprint(example.title, example.notes, tuning));
     // 载入示例是明确的内容选择，旧草稿一并作废
     clearDraft();
+    return true;
   }
+
+  /**
+   * 「先听一首」：载入示例后自动出声。
+   * 名字承诺的是「听」，只把谱摆出来等于少给一半——新访客点一下就该听见琴声，
+   * 这也是「打谱工具能出声」最省解释的一次演示。
+   */
+  function handleListenExample() {
+    if (handleLoadExample("canghaixiaoxiao")) autoPlayPendingRef.current = true;
+  }
+
+  // 等 score 提交完的下一次渲染再播：此刻 useScorePlayer 已用新谱重建 play()。
+  // 直接调 play() 而不走 handlePlay()：后者默认联动节拍器（linkMetronome=true），
+  // 一点「先听一首」就谱也响、拍子也响，那是练琴，不是给新访客听一首曲子。
+  // 有 ref 守着，score 后续再变（打字、切定弦）都不会莫名其妙自己响。
+  useEffect(() => {
+    if (!autoPlayPendingRef.current || score.length === 0) return;
+    autoPlayPendingRef.current = false;
+    void play();
+  }, [score, play]);
 
   /**
    * 导出纯文本对照谱。
@@ -1413,7 +1439,7 @@ export default function Home() {
        * ── 「太音是什么」介绍区：只在空谱时出现 ──
        * 新访客第一眼要知道这是打谱工具、从哪条路进（会弹 / 不会 / 在学三入口，
        * 对应 docs/competitive-analysis.md 16.4）；开始打谱后自动收起，不挡老手。
-       * 「先听一首」直接载入示例——听懂比读懂快。放 #score-area 之外，免得进导出截图。
+       * 「先听一首」载入示例并自动出声——听懂比读懂快。放 #score-area 之外，免得进导出截图。
        */}
       {score.length === 0 && (
         <section
@@ -1444,7 +1470,7 @@ export default function Home() {
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => handleLoadExample("canghaixiaoxiao")}
+                onClick={handleListenExample}
                 className="min-h-[36px] rounded border border-amber-700/40 px-3 text-[10px] tracking-wider text-amber-900 transition-colors hover:bg-amber-700/10"
               >
                 先听一首《沧海一声笑》
