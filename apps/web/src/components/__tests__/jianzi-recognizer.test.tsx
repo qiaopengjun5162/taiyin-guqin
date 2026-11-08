@@ -181,7 +181,9 @@ describe("JianziRecognizer", () => {
   });
 
   it("识别成功但算不出音高时给出解释并禁用试听", async () => {
-    // 「散勾」缺弦序：解析得出减字，但无法反推频率
+    // 「散勾」缺弦序。散音解析 bug 修好后 parseJianziText 会直接判不完整、
+    // 返回 null（不再给一个缺弦序的半残对象）。此时组件不能把试听按钮悄悄
+    // 藏掉让用户纳闷「明明认出来了怎么没声」，而要解释 + 留一个灰按钮。
     vi.mocked(recognizeJianzi).mockResolvedValue({
       method: "llm",
       glyph: "散勾",

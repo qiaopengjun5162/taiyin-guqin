@@ -69,8 +69,8 @@ const LOW_CONFIDENCE = 0.2;
  *   对本项目字体渲染的干净电子谱面/清晰截图可识别；拍照、手写、扫描件
  *   的光照与笔画粘连超出该算法适用范围，请用后端模型或「连打」录入。
  *
- * 试听采用「正调七弦空弦音 + 识别音色」近似（徽位精确音高留待后续），
- * 仅用于建立"这个减字听起来是什么弦"的直觉。
+ * 试听按识别出的减字经 `jianziToFrequency` 精确推算（含当前定弦与基准音），
+ * 用的是同一个反推入口，不另做近似；拼不成谱字时按钮置灰并说明原因。
  */
 export function JianziRecognizer() {
   // 反推音高依赖当前定弦与基准音：蕤宾调五弦、慢角调三弦各差一个半音
@@ -132,14 +132,24 @@ export function JianziRecognizer() {
     }
   }
 
+  // 试听判据只算一次：按钮 disabled、音高说明、合成共用，免得出现
+  // 「按钮能点、下面却写着算不出音高」的自相矛盾。
+  const previewFreq = state
+    ? jianziToFrequency(state, { tuning, concertPitch })
+    : null;
+  const previewJianpu = state
+    ? jianziToJianpu(state, { tuning, concertPitch })
+    : null;
+  const canListen = previewFreq != null && previewJianpu != null;
+  // 当前真正展示的字（校正优先）。校正框清空时不该还留着试听按钮。
+  const currentText = (edit ?? glyph ?? "").trim();
+
   function handlePlay() {
-    if (!state) return;
-    const freq = jianziToFrequency(state, { tuning, concertPitch });
-    if (freq == null) return;
+    if (!state || previewFreq == null) return;
     const ctx = ctxRef.current ??= new AudioContext();
     if (ctx.state === "suspended") void ctx.resume();
     const tone = state.toneType === "散" ? "散" : state.toneType === "泛" ? "泛" : "按";
-    schedulePluck(ctx, freq, ctx.currentTime + 0.05, 1.2, tone);
+    schedulePluck(ctx, previewFreq, ctx.currentTime + 0.05, 1.2, tone);
   }
 
   // 校正：用户直接改字（含 AI 漏识补录），实时重解析并反推音高
@@ -199,11 +209,11 @@ export function JianziRecognizer() {
                 </span>
               )}
             </div>
-            {state && (
+            {currentText !== "" && (
               <button
                 onClick={handlePlay}
-                disabled={jianziToFrequency(state, { tuning, concertPitch }) == null}
-                title="试听（按减字精确推算音高）"
+                disabled={!canListen}
+                title={canListen ? "试听（按减字精确推算音高）" : "信息不全，暂不能试听"}
                 className="px-2 py-1 text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-400 hover:text-stone-200 hover:border-amber-600/50 disabled:opacity-40 transition-all"
               >
                 试听
@@ -252,22 +262,21 @@ export function JianziRecognizer() {
                 {explanation}
               </p>
             )}
-            {state && (() => {
-              const jp = jianziToJianpu(state, { tuning, concertPitch });
-              const freq = jianziToFrequency(state, { tuning, concertPitch });
-              if (!jp || freq == null) {
-                return (
-                  <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
-                    暂无法推算音高（按/泛音需给出徽位）
-                  </p>
-                );
-              }
-              return (
-                <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
-                  试听为「{state.stringNumber}弦」{state.toneType}音 · 约简谱 {jp.number}{jp.octave}（{freq.toFixed(1)}Hz · {tuningName}推定）
-                </p>
-              );
-            })()}
+            {currentText !== "" && !state && (
+              <p className="mt-1 text-[10px] leading-relaxed tracking-wider text-amber-700/40">
+                暂无法推算音高（这个字还拼不成可弹的谱字，请在上方补全弦序、徽位）
+              </p>
+            )}
+            {state && !canListen && (
+              <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
+                暂无法推算音高（按/泛音需给出徽位）
+              </p>
+            )}
+            {state && canListen && (
+              <p className="mt-1 text-[10px] tracking-wider text-amber-700/40">
+                试听为「{state.stringNumber}弦」{state.toneType}音 · 约简谱 {previewJianpu.number}{previewJianpu.octave}（{previewFreq.toFixed(1)}Hz · {tuningName}推定）
+              </p>
+            )}
           </div>
         </div>
       )}
