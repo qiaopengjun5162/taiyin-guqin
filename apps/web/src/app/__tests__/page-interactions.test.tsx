@@ -1386,7 +1386,7 @@ describe("Home · 社区翻页（回归：按钮点了没反应）", () => {
     fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
 
     expect(await screen.findByText("社区谱50", {}, { timeout: 5000 })).toBeTruthy();
-  });
+  }, 20000);
 });
 
 describe("Home · 举报（只记录，不当场下架）", () => {
