@@ -42,11 +42,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Install binaryen (wasm-opt)
-        # wasm-pack 找不到本机 wasm-opt 时会去 GitHub Releases 下载 binaryen，
-        # 该下载偶发失败（2026-11-08 Pages 部署就是这么红的）。apt 预装后
-        # wasm-pack 直接用 /usr/bin/wasm-opt，不再联网。
-        run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: Install binaryen (wasm-opt, pinned v130)
+        # wasm-pack 本机找不到 wasm-opt 时会自己去 GitHub Releases 下载 binaryen，
+        # 该下载偶发失败（2026-11-08 Pages 部署红过一次）。但 apt 的 binaryen 是 108，
+        # 旧 wasm-opt 会把 externref 表优化坏（table.grow 失败 → wasm 起不来，
+        # 当天 verify-wasm 就是在这上面红的）。所以显式装**固定版本** version_130
+        # （与 wasm-pack 默认一致），curl 带重试，兼顾确定性与网络容错。
+        run: |
+          curl -fsSL --retry 5 --retry-delay 5 -o /tmp/binaryen.tar.gz \
+            https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz
+          tar -xzf /tmp/binaryen.tar.gz -C /tmp
+          sudo install /tmp/binaryen-version_130/bin/wasm-opt /usr/local/bin/wasm-opt
+          wasm-opt --version
 
       - name: Build WASM
         run: |
@@ -56,6 +63,10 @@ jobs:
           rm -rf apps/web/wasm apps/web/public/wasm
           cp -r crates/taiyin-core/pkg apps/web/wasm
           cp -r crates/taiyin-core/pkg apps/web/public/wasm
+
+      - name: Verify WASM contract
+        # 闸门：坏 wasm（如旧 wasm-opt 弄坏 externref 表）宁可不部署，也不能静默上线
+        run: node scripts/verify-wasm.mjs
 
       - name: Build frontend
         # 后端地址在**构建期**注入，而不是让每个访客自己去设置面板里填。
