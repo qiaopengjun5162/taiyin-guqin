@@ -360,6 +360,94 @@ python3 sheet_eval.py http-check                            # 同批图打真实
 `--report out.html` 会生成一份 HTML 报告（汇总 + 逐样本明细 + 置信度分桶），
 模板在 `report_template.html`，可自由改样式。
 
+## 真谱怎么验（2026-11-08 新增闸门）
+
+### 先接受一个事实：这不是「拿张照片跑一遍」就完事的活
+
+现用识别是**闭集最近邻**：模板库只有本项目字体渲染的字形
+（实测 **257 个模板 / 385 个规范减字文本**），识别 = 找 L2 距离最近的那个模板。
+所以真谱照片拿来之前，有个**不用照片就能算**的问题：
+
+> 谱上的字，有多少根本不在模板库里？
+
+闭集方法对库外字**必然认不出**——它只能从库里挑一个最近的，而且 margin 不会
+告诉你「这个字我压根没见过」。库外字占三成，准确率天花板就是 70%，跑再多照片
+也改不了。所以 `verify-real-score.py` 把「模板库覆盖率」放第一指标，准确率第二。
+
+`robust` 实测（同一字体渲染后加扰动，42 条，seed=42）：
+
+```
+条件            命中 / 42   命中率   平均margin
+none            42        100.0%   22.5478
+shift           42        100.0%   22.5478
+noise-0.5       42        100.0%   22.4128
+noise-1         41         97.6%   21.6773
+noise-2         41         97.6%   15.7987
+blur-1          42        100.0%   22.2384
+blur-2          42        100.0%   21.8538
+scale-0.7       42        100.0%   20.3140
+scale-1.4       42        100.0%   20.7792
+```
+
+⚠️ **这张表证明的是「对轻微退化的鲁棒性」，不是「跨分布泛化」。**
+所有样本仍是同一字体渲染后加噪声/位移/模糊/缩放，训练=测试分布。真实老谱的
+异体字、别本刻工、手写体、笔画断裂、污渍、透视都不在覆盖内；
+`template_match.py` 的文档也明确写了「拍照/扫描件不在适用范围内」。
+
+### 三步走
+
+```bash
+cd tools/eval-jianzi
+PY=~/.workbuddy/binaries/python/envs/default/bin/python
+
+# 0) 先确认脚本没写错（内置变异验证，不依赖任何文件）
+$PY verify-real-score.py --self-test
+
+# 1) 拿到谱后：复制模板，逐格填人工判读的真值
+cp annotations/real_score_template.json annotations/my_real_score.json
+#    image 指向切好的单字图；整页先用网页端「整页识别」切格或手工切
+#    metadata 照实填（来源 / 拍摄条件 / 退化类型 / 谁核的真值）
+
+# 2) 不用照片先看上限
+$PY verify-real-score.py --annotations annotations/my_real_score.json --vocab-only
+
+# 3) 跑识别 + 出报告
+$PY verify-real-score.py --annotations annotations/my_real_score.json \
+    --report /tmp/real-score.json
+```
+
+**真值铁律**：`ground_truth_glyph` 必须人工判读核对，不能拿机器输出当真值，
+否则测的是「模型同意自己」，不是准确率。
+
+### 指标怎么读
+
+| 指标 | 含义 |
+|---|---|
+| `coverage_pct` / `ceiling_pct` | 库内字占比 = 闭集方法的**理论准确率上限**，不用照片就能算 |
+| `out_of_vocab_truths` | 库外字清单 → 这些要么补模板，要么换方法，跑照片没用 |
+| `exact_match_pct` | 可计分样本里逐字正确的比例 |
+| `effective_accuracy_pct` | 分母是全部格子（含库外、含未计分），最接近「用户实际体感」 |
+
+### 结论（要写进对外口径）
+
+- 别再说「拿一张真谱跑一遍 / 2 天」。跑出来大概率是**确认方法不适用**，不是「验证通过」。
+- 真谱要能认，前提是**扩模板库**（收异体字、别本字形）或换方法；那是另一件工程活，
+  不是一次验证。
+- 在拿到真谱数字之前，对外一律说：「真实老谱照片的准确率一次都没测过。」
+
+### 本机环境坑
+
+系统 `python3` **没装 numpy**，`template_match.py` 和本脚本都会
+`ModuleNotFoundError: No module named 'numpy'`。必须用受管 venv：
+
+```bash
+/Users/qiaopengjun/.workbuddy/binaries/python/envs/default/bin/python   # numpy 2.5.1 + Pillow
+```
+
+`magick` 在 `/opt/homebrew/bin/magick`（渲染模板用，已装）。
+
+---
+
 ## 现在能做什么 / 还差什么
 
 - ✅ 计分逻辑、报告、离线自测**现已完整可用**（见上面的 `--offline` / `--self-check`）。
@@ -374,9 +462,9 @@ python3 sheet_eval.py http-check                            # 同批图打真实
   全对、真 app 比例处逐格 99%，双端 851/851 格一致）；均已接入后端
   `/api/v1/jianzi/recognize` 与 `/api/v1/jianzi/recognize-sheet`（`RECOGNIZE_MODE=auto`
   模板优先、LLM 兜底），见上「模板匹配」「整页识别」两节。
-- ⏳ **手写/扫描件真图**：字体渲染的图是「电子谱面」分布，真实拍照/手写会有噪声、
-  笔画粘连、光照差异，需另收一批人工标注的真实图片来测泛化（模板匹配不适用，
-  走 LLM 或未来的微调模型）。
+- ⏳ **手写/扫描件真图**：见上「真谱怎么验」——现有模板匹配是**闭集方法**，
+  对库外字必然认不出，扰动鲁棒性 ≠ 跨分布泛化。要真能认，得先扩模板库或换方法，
+  不是「拿张照片跑一遍」。照片 + 人工真值到齐后按该节三步走量出边界。
 - 🔧 **可选扩展**：把「由减字反推简谱音高」接进评分，增加「音高匹配率」指标。
   ⚠️ 注意：`taiyin_core` **暂无** jianzi→jianpu 转换逻辑，前端 `jianzi-pitch.ts` 是唯一实现。
   若给后端加 `/api/v1/jianzi/to-jianpu` 端点，需**先把转换逻辑抽到共享层**（如 `taiyin_core`），
