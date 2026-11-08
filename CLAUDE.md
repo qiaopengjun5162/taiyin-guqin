@@ -347,7 +347,14 @@ export https_proxy=http://127.0.0.1:7890
 - 需要 `DATABASE_URL` 的后端集成测试交给 CI（build.yml 的 postgres 服务）；本地用 `just ci` 跑全量（需先 `just docker-up`）。
 
 ### Definition of Done
-- CI 全绿（build.yml `rust` + `web`）。
+- CI 全绿（build.yml `rust` + `web`）。**不是「部署成功」**——`Deploy to GitHub Pages` 与 `build` 并行，
+  Pages 能用旧产物成功，曾经连着四轮把 `build` 的红盖住（2026-11-07~08）。
+  推完必须按 headSha 逐个核被触发的 workflow，或跑 `node scripts/verify-publish.mjs`（见下）。
+- 对外发布 / 群发文章前跑一次发布前自检：
+  `VERCEL_PROXY=http://127.0.0.1:7890 node scripts/verify-publish.mjs --browser`。
+  它一次核完：本地已推远程、工作区干净、当前提交 CI 全绿、Pages/Vercel 两个试玩链接
+  是新门面且文案同源、`--browser` 还会真点一次「先听一首」确认出声。
+  `--offline` 只跑本地项，`--self-test` 是闸门自身的变异验证。退出码 1 = 有 FAIL。
 - 至少 1 approval；`crates/taiyin-core/` 与后端安全文件（`auth.rs`/`config.rs`/`main.rs`/`routes.rs`）需 `.github/CODEOWNERS` 指定 reviewer 批准。
 - 提交信息符合 Conventional Commits；用户可见变更同步文档。
 
