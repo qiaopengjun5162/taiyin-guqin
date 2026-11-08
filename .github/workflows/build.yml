@@ -89,8 +89,8 @@ jobs:
         uses: taiki-e/install-action@nextest
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: "Generate coverage (gate: lines >= 70%)"
-        run: cargo llvm-cov nextest --lib --fail-under-lines 70 --lcov --output-path lcov.info
+      - name: "Generate coverage (gate: lines >= 75%)"
+        run: cargo llvm-cov nextest --lib --fail-under-lines 75 --lcov --output-path lcov.info
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4

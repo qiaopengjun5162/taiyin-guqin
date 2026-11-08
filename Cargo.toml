@@ -1,3 +1,15 @@
 [workspace]
 members = ["crates/taiyin-core", "crates/taiyin-server"]
 resolver = "2"
+
+# 发布体积 / 构建时间折中：thin LTO 全局开，strip 掉符号。
+# panic 语义保持 unwind（axum 靠它隔离单请求 panic，不许改 abort）。
+[profile.release]
+lto = "thin"
+strip = true
+
+# WASM 首载体积优先，只对 taiyin-core 收紧；
+# taiyin-server 保持默认 opt-level=3（模板匹配是像素热循环，不为体积牺牲速度）。
+[profile.release.package.taiyin-core]
+opt-level = "z"
+codegen-units = 1

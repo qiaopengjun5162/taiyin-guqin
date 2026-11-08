@@ -55,3 +55,80 @@ impl IntoResponse for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+
+    async fn unpack(err: AppError) -> (StatusCode, serde_json::Value) {
+        let resp = err.into_response();
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    #[tokio::test]
+    async fn database_error_maps_to_500_without_leaking_details() {
+        let db = sqlx::Error::RowNotFound;
+        let (status, body) = unpack(AppError::Database(db)).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        // 对外只给固定文案，不把 SQL/连接串细节带出去
+        assert_eq!(body, serde_json::json!({"error": "Internal server error"}));
+    }
+
+    #[tokio::test]
+    async fn not_found_maps_to_404() {
+        let (status, body) = unpack(AppError::NotFound).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body, serde_json::json!({"error": "Not found"}));
+    }
+
+    #[tokio::test]
+    async fn client_errors_carry_their_messages() {
+        // JSON body 给裸消息（状态码已表达语义）；Display 的前缀只用于日志
+        let cases = [
+            (
+                AppError::Validation("bad input".into()),
+                StatusCode::BAD_REQUEST,
+                "bad input",
+            ),
+            (
+                AppError::Forbidden("not yours".into()),
+                StatusCode::FORBIDDEN,
+                "not yours",
+            ),
+            (
+                AppError::Unauthorized("login first".into()),
+                StatusCode::UNAUTHORIZED,
+                "login first",
+            ),
+            (
+                AppError::Conflict("email taken".into()),
+                StatusCode::CONFLICT,
+                "email taken",
+            ),
+            (
+                AppError::ServiceUnavailable("try later".into()),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "try later",
+            ),
+        ];
+        for (err, want_status, want_msg) in cases {
+            assert!(
+                err.to_string().ends_with(want_msg),
+                "Display 尾部应含原始消息，方便日志检索"
+            );
+            let (status, body) = unpack(err).await;
+            assert_eq!(status, want_status);
+            assert_eq!(body, serde_json::json!({"error": want_msg}));
+        }
+    }
+
+    #[test]
+    fn app_error_is_send_so_handlers_can_await_across_it() {
+        fn assert_send<T: Send>() {}
+        assert_send::<AppError>();
+        assert_send::<AppResult<u8>>();
+    }
+}

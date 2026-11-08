@@ -55,8 +55,8 @@ fn runs(flags: &[bool], min_run: usize, gap_tol: usize) -> Vec<(usize, usize)> {
     for (i, &f) in flags.iter().enumerate() {
         if f && start.is_none() {
             start = Some(i);
-        } else if !f && start.is_some() {
-            raw.push((start.take().unwrap(), i));
+        } else if !f && let Some(s) = start.take() {
+            raw.push((s, i));
         }
     }
     if let Some(s) = start {
