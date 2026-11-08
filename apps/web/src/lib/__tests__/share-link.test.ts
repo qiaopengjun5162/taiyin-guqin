@@ -48,4 +48,14 @@ describe("buildScoreShareUrl", () => {
     const url = buildScoreShareUrl("abc");
     expect(url).toMatch(/score=abc/);
   });
+
+  it("显式传空 href：不猜 window，直接给相对链接", () => {
+    // jsdom 下 window 存在，只有注入空串才能真的走到「无 base」分支
+    expect(buildScoreShareUrl("abc", "")).toBe("?score=abc");
+  });
+
+  it("href 是解析不了的垃圾时，也不抛错，退化为相对链接", () => {
+    // 兜底路径用 encodeURIComponent（%20），不是 URLSearchParams 的 +
+    expect(buildScoreShareUrl("a b", "::::not a url::::")).toBe("?score=a%20b");
+  });
 });
