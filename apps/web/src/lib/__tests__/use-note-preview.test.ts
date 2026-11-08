@@ -22,6 +22,7 @@ vi.mock("../jianzi", () => ({ pitchSlide }));
 
 import { useNotePreview } from "../use-note-preview";
 import type { JianziState } from "../types";
+import type { TuningId } from "../tuning";
 
 /** 构造过的实例，用来断言「一个 hook 只建一个 AudioContext」。 */
 const created: FakeAudioContext[] = [];
@@ -106,9 +107,10 @@ describe("useNotePreview", () => {
 
   it("定弦或基准音变了会换新回调（重新计入依赖）", () => {
     jianziToFrequency.mockReturnValue(440);
-    const { result, rerender } = renderHook(({ t, p }) => useNotePreview(t, p), {
-      initialProps: { t: "zhengdiao" as const, p: 440 },
-    });
+    const { result, rerender } = renderHook(
+      ({ t, p }: { t: TuningId; p: number }) => useNotePreview(t, p),
+      { initialProps: { t: "zhengdiao" as TuningId, p: 440 } },
+    );
     const first = result.current;
     rerender({ t: "zhengdiao", p: 440 });
     expect(result.current).toBe(first);
