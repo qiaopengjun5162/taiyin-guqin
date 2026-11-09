@@ -285,9 +285,10 @@ describe("JianziRecognizer", () => {
     expect(recognizeJianzi).not.toHaveBeenCalled();
     expect(screen.getAllByText(/本机模板匹配/).length).toBeGreaterThan(0);
     expect(screen.getByText(/命中 sm_7\.6/)).toBeTruthy();
-    // 纠正后的文案：本机模板匹配可识别「完整减字」（电子谱面/清晰截图），
-    // 而非「只认部件」；拍照/手写/扫描件不支持。
-    expect(screen.getByText(/可识别本项目字体渲染的完整减字/)).toBeTruthy();
+    // 2026-11-09 判定更正：模板索引 257 模板 / 385 文本里 0 条标准完整减字，
+    // 全是复合指法符号。旧文案「可识别完整减字」已被证伪（内置曲 27 字 → 0/27），
+    // 现改为如实说明覆盖范围；见 docs/articles/material/2026-11-09-真谱适用性判定…。
+    expect(screen.getByText(/标准完整减字.*尚不能识别/)).toBeTruthy();
     expect(screen.getByText(/拍照、手写、扫描件暂不支持/)).toBeTruthy();
     expect(screen.getByText("减字谱识别（本机模板匹配）")).toBeTruthy();
   });

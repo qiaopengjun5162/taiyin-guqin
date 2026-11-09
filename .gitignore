@@ -13,6 +13,9 @@ dist
 .env.local
 .claude
 .workbuddy/
+# Python 评估脚本运行产生的字节码缓存
+__pycache__/
+*.pyc
 
 
 # ts-rs 自动测试可能写出的默认 bindings 目录（真实生成物在 apps/web/src/lib/generated/）

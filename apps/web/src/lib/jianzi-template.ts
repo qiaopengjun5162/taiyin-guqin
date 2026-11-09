@@ -20,7 +20,12 @@ export const TEMPLATE_SIZE = 64;
 /** 一个模板字形 */
 export interface TemplateEntry {
   name: string;
-  /** 等价文本写法，[0] 是规范文本（如「大九勾四」） */
+  /**
+   * 等价文本写法，[0] 是规范文本。
+   * ⚠️ 例子「大九勾四」是**设计意图**，不是当前生产索引内容：2026-11-09 判定
+   * 257 模板 / 385 文本里 0 条标准完整减字，全是复合指法符号与部件。
+   * 见 docs/articles/material/2026-11-09-真谱适用性判定-识别结构性失效.md。
+   */
   truths: string[];
   /** 64×64 灰度，0..255 */
   pixels: Uint8Array;
