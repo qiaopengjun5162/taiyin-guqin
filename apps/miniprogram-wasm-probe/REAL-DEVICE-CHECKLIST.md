@@ -19,48 +19,48 @@
 | 需要 | 说明 |
 |---|---|
 | 微信开发者工具（桌面版，已登录） | 要开 GUI，命令行不行 |
-| 一个**真的**小程序 AppID | 仓库里是 `touristappid`（游客号），真机预览过不了校验 |
+| 一个**真的**小程序 AppID | 形如 `wx` + 16 位十六进制。仓库里是 `touristappid`（游客号），真机预览过不了校验 |
 | 一台真手机（iOS 或 Android，装了微信） | 最好两台都试；至少一台 |
 | 手机和电脑能连上 | 扫码预览即可，不用同一 WiFi 也行 |
 
 ---
 
-## 三、第 0 步：先跑预检（1 分钟，电脑上有终端就行）
+## 三、第 0 步：先跑自动校验（1 分钟，电脑上有终端就行）
 
 ```bash
 cd /Users/qiaopengjun/Code/Rust/taiyin-guqin
-node apps/miniprogram-wasm-probe/scripts/precheck-real-device.mjs
+just verify-probe          # 等价于 node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
 ```
 
-**看到 `FAIL 0` 就往下走。** 现在应当看到 `PASS 5 / WARN 2 / FAIL 0`，
-两个 WARN 都是已知且允许的（游客号、没固定基础库版本）。
+**看到「全部 7 个校验器通过」再往下走。** 其中第 7 项是真机前静态预检，
+应当报 `汇总：PASS 9 / WARN 2 / FAIL 0`——两个 WARN 都是已知且允许的
+（仓库刻意留游客号、没固定基础库版本）。
 
-再跑一次六合一逻辑校验，确认代码没被改坏：
-
-```bash
-node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
-```
-
-**看到「全部 6 个校验器通过」即可。**
+> 这一项还会检查**探针里的 wasm 是不是当前核心产出的那一份**。
+> 2026-11-09 之前这里漂移过：探针停留在四天前的二进制（276,675 B vs 231,388 B），
+> 差点拿旧代码去真机上验。现在不一致会直接报红，重建用 `just rebuild-probe-wasm`。
 
 ---
 
-## 四、第 1 步：做一份临时副本，换上真 AppID
+## 四、第 1 步：一条命令生成副本（换真 AppID）
 
 ⚠️ **不要直接改仓库里的 `project.config.json`。** 仓库刻意保留游客号，真 AppID 不进 git。
 
 ```bash
-cp -R apps/miniprogram-wasm-probe /tmp/taiyin-probe-realdevice
+node apps/miniprogram-wasm-probe/scripts/prepare-realdevice-copy.mjs --appid wx你的十六位
+# 或：just probe-copy wx你的十六位
 ```
 
-然后用文本编辑器打开 `/tmp/taiyin-probe-realdevice/project.config.json`，
-把 `"appid": "touristappid"` 里的 `touristappid` 换成真 AppID，保存。
+它会做四件事：复制到 `/tmp/taiyin-probe-realdevice`、把 AppID 写进副本、
+把工程名改成 `taiyin-realdevice`（免得开发者工具复用旧缓存）、
+然后在副本里自跑一遍严格预检。
 
-改完在副本上跑一次严格预检，应当变成 `FAIL 0`：
+**末行出现 `PREPARED /tmp/taiyin-probe-realdevice` 且上面是 `FAIL 0` 就算过。**
 
-```bash
-node /tmp/taiyin-probe-realdevice/scripts/precheck-real-device.mjs --strict
-```
+> 脚本会先检查「探针 wasm 是否跟上了核心重建」。不一致就不复制，
+> 提示你先跑 `just rebuild-probe-wasm`——否则真机验的是旧二进制。
+>
+> 想覆盖上一次的副本要加 `--force`；不加会拒绝，因为旧副本可能缺目录、缺新页面。
 
 ---
 
@@ -68,7 +68,7 @@ node /tmp/taiyin-probe-realdevice/scripts/precheck-real-device.mjs --strict
 
 | 步 | 点什么 | 看到什么算对 |
 |---|---|---|
-| 2 | 微信开发者工具 →「导入项目」→ 目录选 `/tmp/taiyin-probe-realdevice` → 填真 AppID → 确定 | 编译不报错，模拟器出首页 |
+| 2 | 微信开发者工具 →「导入项目」→ 目录选 `/tmp/taiyin-probe-realdevice` → 确认 | 编译不报错，模拟器出首页 |
 | 3 | 模拟器里点开首页，依次点「查音位」「记一个字」「WASM 自检面板」三个入口 | 页面能切、有内容、控制台没有红色报错 |
 | 4 | 点右上角「预览」→ 手机微信扫码 | 手机上打开小程序，不白屏、不闪退 |
 
@@ -84,11 +84,19 @@ node /tmp/taiyin-probe-realdevice/scripts/precheck-real-device.mjs --strict
 | 1 | 打开首页 | 「查音位」「记一个字」「WASM 自检面板」3 个入口都在、文字不重叠、不溢出小屏 | 白屏 / 布局错位 / 字被裁 |
 | 2 | 进「WASM 自检面板」，或「查音位」里选一个音 | 出结果（不为空、不是「加载失败」） | 一直转圈 / 报 `WXWebAssembly` 相关错 |
 | 3 | 连续点 5 次 | 每次都有结果、不卡死 | 第 2 次起无响应或崩 |
-| 4 | 切到后台再切回来 | 状态还在、能继续点 | 重新初始化失败 / 白屏 |
+| 4 | 切到后台停十几秒，再切回来，**然后点一下** | **记录现象即可，见下方说明** | —— |
 | 5 | 换个页面再回来 | 正常 | 卡死或报错 |
 
 **第 2 项最关键**：iOS 和 Android 对 `WXWebAssembly` 的支持不一样，
 而且微信规定它**只能在 Worker 里用**——这项过了，探针才算真机成立。
+
+> **第 4 项为什么不判「过 / 坏」**：探针页面只有 `onLoad` / `onUnload`，
+> **没有 `onShow` 重探测**。微信在切后台后可能回收 Worker，切回来点一下
+> 就会一直转圈直到 12 秒超时、然后显示 FAIL。这是**当前实现的已知行为**，不是真机缺陷。
+> 所以这一项只记录三件事：
+> ① 切回来后原本的结果还在吗？② 点一下是立刻出结果，还是转圈后 12 秒超时？
+> ③ 如果是超时，点「重新探测」能不能恢复？
+> 这三个答案决定后面要不要补 `onShow` 自动重建 Worker——**别在这一项上判红**。
 
 ---
 
@@ -99,10 +107,12 @@ node /tmp/taiyin-probe-realdevice/scripts/precheck-real-device.mjs --strict
 手机型号 / 系统版本：
 微信版本：
 基础库版本（开发者工具「详情 → 本地设置」里看）：
+探针 wasm sha256（副本预检输出里那行 d5db3c17… 开头，前 12 位就够）：
+主包体积（同上，形如 296.8 KB）：
 第 1 项：过 / 坏（现象：    ）
 第 2 项：过 / 坏（现象：    ）
 第 3 项：过 / 坏（现象：    ）
-第 4 项：过 / 坏（现象：    ）
+第 4 项：现象记录（结果还在？点击立刻出还是 12 秒超时？重新探测能恢复吗？）
 第 5 项：过 / 坏（现象：    ）
 控制台有没有红字：有 / 无（贴报错：
 其他：
@@ -113,8 +123,13 @@ node /tmp/taiyin-probe-realdevice/scripts/precheck-real-device.mjs --strict
 ## 八、已知边界（别把「过」当成「成了」）
 
 - 只证「加载 + 调用 + 返回」，**没验**包体积真机表现、性能、内存、低版本基础库。
-- 基础库版本现在没固定，真机会用最新的；要补测低版本，得在开发者工具里手动切基础库再跑一遍第 5 步。
+- 基础库版本现在没固定（`project.config.json` 里刻意不写 `libVersion`）——它只决定
+  开发者工具编译目标，真机用的是手机微信自带的基础库；写死会给「已验证低版本」的假信号。
+  要补测低版本，得在开发者工具里手动切基础库再跑一遍第 5 步。
 - 探针只有 4 个页面，**不是产品**。真机过了也只是「可行性成立」，离发布还差完整小程序。
+- 9 个导出函数里，探针页面只实际调了 4 个
+  （`get_jianzi_variant_groups` / `split_phrases_to_json` / `translate_jianpu_to_jianzi` / `decode_jianzi_batch`）。
+  其余 5 个只有 Node 侧校验覆盖，真机未触达。
 
 ---
 
@@ -122,7 +137,8 @@ node /tmp/taiyin-probe-realdevice/scripts/precheck-real-device.mjs --strict
 
 | 现象 | 原因 | 怎么办 |
 |---|---|---|
-| 预览提示 AppID 无效 | 用了 `touristappid` | 回到第 1 步，用 /tmp 副本换真 AppID |
+| 预览提示 AppID 无效 | 用了 `touristappid` | 回到第 1 步，用脚本生成副本换真 AppID |
 | 手机上一直加载中 | Worker 没起来 / WASM 路径不对 | 看控制台；`app.json` 必须声明 `"workers": "workers"`（已声明） |
 | 模拟器能跑、手机不行 | 真机 `WXWebAssembly` 差异 | 记下机型 + 基础库版本，这是本次要抓的重点 |
 | 导入项目报「不是小程序项目」 | 目录选错 | 要选到含 `app.json` 的那一层 |
+| 切后台回来点不动、12 秒后 FAIL | 已知行为：没有 `onShow` 重探测 | 点「重新探测」；把现象记进回执第 4 项 |

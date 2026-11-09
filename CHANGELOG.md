@@ -2,6 +2,43 @@
 
 ## [Unreleased] - 2026-11-09
 
+### 小程序探针：产物漂移修复 + 真机验证准备脚本化
+
+出门第四道门（真机）之前，先修掉一个会让结论失效的问题：**探针里的 WASM 是旧二进制**。
+
+- **漂移事实**：探针 `wasm/taiyin_core_bg.wasm` 停在 2026-11-06 那份
+  （276,675 B，`228aabb7…`），而 web 产出一周前就变成了 231,388 B（`d5db3c17…`）。
+  根因是 commit `d6aebff` 改了根 `Cargo.toml` 的 release profile
+  （`lto="thin"` / `strip` / `opt-level="z"`），web 产物 -16.4%，探针没跟着重建。
+  **没人发现的原因有两层**：两边 9 个公开导出名完全一样（导出集对比当场失效），
+  且 workflow 的 `paths` 只盯 `apps/miniprogram-wasm-probe/**`，改 `Cargo.toml` 根本不触发。
+- **重建**：`just build-wasm` 重建后仍是 `d5db3c17…`，证明「当前树 + 本机工具链」
+  与 11-08 那次逐字节一致（rustc 1.98.1 / wasm-pack 0.15.0 / wasm-opt 133），
+  所以只需让探针跟上。探针 wasm → 231,388 B，`workers/wasm-glue.js` 零 diff
+  （web 胶水自 `3e21cc3` 未变，转换确定性）。主包体积 341.0 → 296.8 KB。
+- **防再漂移**：新增 `apps/miniprogram-wasm-probe/scripts/verify-wasm-sync.mjs`，
+  判据是「三份 wasm 字节同源 + 源码与构建配置指纹」，导出集只用来抓「换了个少函数的
+  二进制」——本次事故里导出集完全相同，拿它当门禁等于没有。
+  指纹输入为根 `Cargo.toml` + `crates/taiyin-core/{Cargo.toml,src/**}`，
+  **刻意排除 `Cargo.lock`**（近 50 次提交改了 13 次，会把服务端依赖变更算成漂移）。
+  来源清单落在 `scripts/wasm-provenance.json`（不含时间戳，无变化重跑零 diff）。
+- **接线**：`verify-all.mjs` 从六项扩到**七项**（新增 `precheck-real-device.mjs` 默认模式，
+  `--strict` 留给 `/tmp` 副本，因为仓库永远是 `touristappid`）；
+  `miniprogram-probe.yml` 触发路径补 `apps/web/wasm/**`、`apps/web/public/wasm/**`、
+  `crates/taiyin-core/**`、`Cargo.toml`；`justfile` 增 `rebuild-probe-wasm` / `verify-probe` / `probe-copy`。
+- **真机准备工作脚本化**：新增 `prepare-realdevice-copy.mjs`
+  （`just probe-copy wx…`）：校验 AppID 格式、复制前在仓库里做漂移预检、
+  拒绝复用旧副本、注入 appid 并改工程名避免缓存、在副本里自跑 `--strict`。
+  真 AppID 只写进 `/tmp`，仓库继续保留游客号。
+- **清单口径修正**：`REAL-DEVICE-CHECKLIST.md` 第 4 项（切后台再回来）原来判「能继续点」，
+  但页面只有 `onLoad`/`onUnload`、没有 `onShow` 重探测——按原文判定必然假失败。
+  改为**记录现象**（结果还在吗 / 点击立刻出还是 12 秒超时 / 重新探测能否恢复），
+  由这三点决定后续要不要补自动重建 Worker。回执同时新增 wasm sha、包体积、基础库版本三行。
+- **变异验证**（两条都实测红、退出码 1）：换回旧二进制 → 报「与 web 产物不同源」+
+  「与来源清单不符」；只给根 `Cargo.toml` 追加一行注释 → 报「源码或构建配置变了但探针产物没重建」。
+- 仍未做：真机本身。iOS / Android 实跑、WXML 排版、包体积真机表现、性能、低版本基础库
+  都需要开 GUI + 真手机，**本轮只把前面能自动化的部分做完**。
+
 ### 识别能力口径更正：从「拍照识别 ✅」降为「图片录入（受限）」
 
 出门第三道门「真谱适用性判定」的结论比「缺照片」严重得多——**不是没验过，

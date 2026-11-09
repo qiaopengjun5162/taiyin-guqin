@@ -314,7 +314,7 @@
    `worker.onMessage` 回调拿到的是 `{ message }` 而不是 `{ data }`。
    写 `self.onmessage` 会报 `Cannot set properties of undefined (setting 'onmessage')`。
 
-**复跑**（一个入口跑齐四个校验器，任意工作目录都行）：
+**复跑**（一个入口跑齐七项，任意工作目录都行）：
 
 ```bash
 node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
@@ -324,19 +324,36 @@ node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
 
 | 校验器 | 作用 |
 |---|---|
-| `scripts/verify-adapter.mjs` | 适配层 8 项：Node 里打真 wasm 二进制 |
-| `scripts/verify-worker-transport.cjs` | 微信 Worker 传输层 8 项：模拟 `worker` / `{message}` |
+| `scripts/verify-adapter.mjs` | 适配层：Node 里打真 wasm 二进制 |
+| `scripts/verify-worker-transport.cjs` | 微信 Worker 传输层：模拟 `worker` / `{message}` |
 | `scripts/verify-guards.cjs` | 超时 / 错误广播的兜底变异验证 |
-| `scripts/lint-project.mjs` | 静态 18 项（含 `workers` 声明） |
+| `scripts/verify-pages.mjs` | 页面数据链路：真 wasm 产出 → 映射渲染 |
+| `scripts/verify-page-logic.cjs` | 页面行为：桩运行时跑真 wasm（点击 / 记录 / 解码） |
+| `scripts/lint-project.mjs` | 工程静态约束（含 `workers` 声明、禁用浏览器 API） |
+| `scripts/precheck-real-device.mjs` | 真机前静态预检 + 产物同源（默认模式；`--strict` 留给 `/tmp` 副本） |
 
-**CI 已挂**（2026-11-07）：`.github/workflows/miniprogram-probe.yml` 是**独立 job**，
-push / PR 改动 `apps/miniprogram-wasm-probe/**` 或该 workflow 自身时触发，
-`workflow_dispatch` 也能手动跑。它不改动 `build.yml`、不装任何依赖，只跑上面那一行；
-纯 Node 内置模块，checkout 后即可执行（wasm 二进制已随仓库提交）。
+> 各校验器的断言条数以脚本自身输出为准，不在这张表里复述——写死过一次，后面就没人跟着改。
+
+**2026-11-09 补：产物漂移已修复并加上机器闸门。**
+commit `d6aebff`（11-08）改了根 `Cargo.toml` 的 release profile（`lto=thin` / `strip` /
+`opt-level=z`），web 产物 `276,675 → 231,388` 字节，但探针里的 wasm 没跟着重建，**漂移四天**。
+没被发现的原因有两条：两边 9 个公开导出名完全一样（导出集对比当场失效），
+且 workflow 的 `paths` 只盯 `apps/miniprogram-wasm-probe/**`，改 `Cargo.toml` 根本不触发。
+现在 `scripts/verify-wasm-sync.mjs` 用「三份字节同源 + 源码与构建配置指纹」双判据兜住，
+`miniprogram-probe.yml` 的触发路径也补上了 `crates/taiyin-core/**`、`Cargo.toml` 与两份 web wasm。
+重建探针产物用 `just rebuild-probe-wasm`（一条命令，避免只重建一半）。
+
+**CI 已挂**（2026-11-07，11-09 扩触发路径）：`.github/workflows/miniprogram-probe.yml` 是**独立 job**，
+push / PR 改动 `apps/miniprogram-wasm-probe/**`、`apps/web/wasm/**`、`apps/web/public/wasm/**`、
+`crates/taiyin-core/**`、根 `Cargo.toml` 或该 workflow 自身时触发，`workflow_dispatch` 也能手动跑。
+它不改动 `build.yml`、不装任何依赖，只跑上面那一行；纯 Node 内置模块，
+checkout 后即可执行（wasm 二进制已随仓库提交，`.gitignore` 白名单）。
 
 模拟器复跑：CLI **不认 `touristappid`**（报「不存在此 AppID」），需把工程复制到临时目录、
-把 `project.config.json` 的 `appid` 换成自己账号下的**小程序测试号**，
-再用 `cli open --project <dir>` 或工具内导入；页面大字 PASS / FAIL 即结论。
+把 `project.config.json` 的 `appid` 换成自己账号下的**小程序测试号**；
+现在这条路径已脚本化：`node apps/miniprogram-wasm-probe/scripts/prepare-realdevice-copy.mjs --appid wx…`
+（或 `just probe-copy wx…`），它会复制到 `/tmp`、注入 AppID、并在副本里自跑 `--strict`。
+页面大字 PASS / FAIL 即结论。
 仓库保留 `touristappid` 是刻意的——不把个人账号信息写进公开仓库。
 
 ## 九、参考「火蜘蛛减字谱输入法」（firespide.com）：同赛道最硬的同行

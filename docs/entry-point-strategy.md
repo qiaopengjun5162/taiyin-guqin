@@ -97,12 +97,13 @@
 | 旧判断 | 实际做法 | 为什么改 |
 |---|---|---|
 | Taro 4.x 编译 React 组件，省一半工 | **原生小程序 + WASM Worker** | ① 减字渲染是「字体 GSUB 连字 + 手绘 SVG」双层，React 组件复用的前提是小程序能跑这两层，实际卡在自定义字体与内联 SVG；② MVP 只需要"纯计算 + 列表"，没有复杂交互，复用收益小；③ `WXWebAssembly` **只在 Worker 内可用**，原生壳能直接把 wasm 放进去（探针已验） |
-| — | 代价：UI 要重写 | 实际约一天（三页），比跟 Taro 的编译差异搏斗便宜 |
+| — | 代价：UI 要重写 | 实际约一天（四页），比跟 Taro 的编译差异搏斗便宜 |
 
 - **为什么它仍是最优先**：用户全在微信（文章在微信发、琴友在微信聊），小程序是"顺手"的入口；
   能被搜到、能转发、能扫码。
-- **现状**：`apps/miniprogram-wasm-probe` 已有 home / 查音位 / 记一个字 三页，
-  Node 侧 34 项行为断言 + 5 个校验器全绿；**未发布、未上真机**。
+- **现状**：`apps/miniprogram-wasm-probe` 已有 home / 查音位 / 记一个字 / WASM 自检面板 四页，
+  `verify-all.mjs` 七项校验全绿（六项逻辑 + 真机前静态预检，含产物同源）；
+  **未发布、未上真机**。
 - **坑**：类目选"工具/教育"；WASM 要分包；**开发者工具 CLI 不接受游客 AppID**，
   模拟器只能 GUI 手动开（想自动化截图得先有测试号）。
 
@@ -272,7 +273,7 @@
 
 ---
 
-*本版核对依据：`apps/miniprogram-wasm-probe/`（三页壳 + 6 个校验器）、
+*本版核对依据：`apps/miniprogram-wasm-probe/`（四页壳 + 七项校验）、
 `apps/web/src/components/`（调音器/节拍器/录音/慢练/日课均已存在）、
 `apps/web/src/lib/jianzi-template.ts`（13 处 canvas 依赖）、
 `crates/taiyin-server/data/template_index.json`（1.3 MB）、
