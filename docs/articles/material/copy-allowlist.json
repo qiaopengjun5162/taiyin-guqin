@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "note": "行级豁免。每条形如 { id, file, sha256(normalizeLine 后的行), ruleId, reason, expires }。匹配 0 行即报「豁免失效」；总量上限 8 条、单文件 4 条。标题与摘要永不允许豁免。",
+  "entries": []
+}

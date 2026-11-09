@@ -150,6 +150,12 @@ jobs:
         # tuning 参数确实改变候选。前置条件由上一 Build WASM 步骤满足（apps/web/wasm 已生成）。
         # 见 scripts/verify-wasm.mjs 与 just verify-wasm。
         run: node scripts/verify-wasm.mjs
+      - name: Verify pending article copy
+        # 待群发物料口径闸门：docs/articles/drafts/*.md 全扫 + fail-closed
+        # （草稿不写进台账就判红，防止「改了仓库口径、忘了改待发稿」）。
+        # frontmatter 一并扫：上一轮出问题的正是标题/摘要。纯 Node、不需要 vault。
+        # 见 scripts/verify-publish.mjs --copy-only 与 scripts/lib/copy-gate.mjs。
+        run: node scripts/verify-publish.mjs --copy-only
       - name: Lint
         run: pnpm --filter web lint
       - name: Type check
