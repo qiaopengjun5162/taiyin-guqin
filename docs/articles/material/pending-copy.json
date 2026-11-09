@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "待群发物料台账。state=pending 参与口径扫描；internal 不扫，但必须不在 drafts/ 下。drafts/ 下每个文件都必须入账（fail-closed），否则闸门判红。historical_headings 里的段落算「过程记录」，CONTEXT 类规则放行，HARD 类仍不放行。",
+  "note": "物料台账。state 语义：pending=尚未群发，published=线上已群发，hold=暂缓，internal=不再作为对外稿处理（不参与口径扫描）。pending 与 published 都参与口径扫描 —— 已群发的稿子仍可能被重推，不能因为『发过了』就脱离闸门。drafts/ 下每个文件都必须入账（fail-closed），否则闸门判红。historical_headings 里的段落算「过程记录」，CONTEXT 类规则放行，HARD 类仍不放行。",
   "updated": "2026-11-09",
   "articles": [
     {
@@ -8,24 +8,25 @@
       "state": "pending",
       "media_id": "100018549",
       "repo_path": "docs/articles/drafts/03-太音到底是什么-一个说不清自己的产品想明白的过程.md",
-      "vault_path": "Articles/ready/taiyin-what-is-it.md"
+      "vault_path": "Articles/ready/taiyin-what-is-it.md",
+      "note": "2026-11-09 沿公众号历史消息与 WebSearch 均未检索到该标题已群发的迹象，按待发处理。若你确认已发，把 state 改成 published"
     },
     {
       "slug": "taiyin-guqin-5-months",
-      "state": "pending",
-      "media_id": "100018557",
+      "state": "published",
+      "media_id": "100018567",
       "repo_path": "docs/articles/drafts/01-五个月-130次提交-一个人做出古琴减字谱编辑器.md",
       "vault_path": "Articles/ready/taiyin-guqin-5-months.md",
       "historical_headings": ["## 七、让谱子「能拍进来」（当时的弯路，后判定不可用）"],
-      "note": "2026-11-09 改写 13 处并重做封面后重推，100018271 → 100018557（旧稿自动删）；三源 18/18"
+      "note": "线上已于 2026-11-01 09:26 群发（mid=2247501920），正文仍是旧口径（第七节「让谱子能拍进来」+ 摘要「能拍进来」）。草稿箱 100018567 是 2026-11-09 改好的新口径母版；旧稿 100018271 → 100018557 → 100018567 均由 push 自动删除。改草稿不改变线上那篇"
     },
     {
       "slug": "taiyin-guqin-launch",
-      "state": "pending",
-      "media_id": "100018553",
+      "state": "published",
+      "media_id": "100018575",
       "repo_path": "docs/articles/drafts/04-太音上线了-国风外观与免费托管.md",
       "vault_path": "Articles/ready/taiyin-guqin-launch.md",
-      "note": "2026-11-09 改写 11 处后重推，100018516 → 100018553（旧稿自动删）；三源 18/18"
+      "note": "线上已于 2026-11-08 17:19 群发（mid=2247502172，分享链 https://mp.weixin.qq.com/s/J63rkLvxBE4sGTLrsN_qJA），正文仍是旧口径（「### 拍：电子谱面，识别入谱」+「拍照或截图上传」+「模板匹配…全部认对」）。草稿箱 100018575 是新口径母版（含「图片录入（受限）」）；100018516 → 100018553 → 100018571 → 100018575 旧稿均自动删除"
     },
     {
       "slug": "jianzi-recognize-0-to-100",
@@ -33,7 +34,7 @@
       "media_id": "100017949",
       "vault_path": "Articles/internal/jianzi-recognize-0-to-100.md",
       "required_phrases": [],
-      "note": "仓库无 v1 源稿，仅 vault 有；v1 已被 v2 取代，两版均转内部复盘，草稿箱两条待后台手删"
+      "note": "仓库无 v1 源稿，仅 vault 有。⚠️ internal 在此表示「不再作为对外稿」，不代表未发布：线上已于 2026-11-03 22:27 群发（mid=2247501944），且标题本身就写着「AI 识别准确率从 0% 到 100%」。不参与口径扫描以免闸门常红；详见 material/2026-11-09-已群发三篇与草稿箱错位.md"
     },
     {
       "slug": "jianzi-recognize-0-to-100-v2",
@@ -41,7 +42,8 @@
       "media_id": "100018136",
       "repo_path": "docs/articles/internal/02-太音古琴减字谱编辑器-识别准确率0到100实操全记录.md",
       "vault_path": "Articles/internal/jianzi-recognize-0-to-100-v2.md",
-      "required_phrases": []
+      "required_phrases": [],
+      "note": "同上：线上 2026-11-03 22:27 已群发（mid=2247501944）；internal = 不再对外，不是未发布"
     }
   ]
 }

@@ -251,7 +251,11 @@ function checkMaterialCopy() {
     ok("待群发物料已入账", `${drafts.length} 个草稿全部在台账内`);
   }
 
-  const pending = ledger.articles.filter((a) => a.state === "pending");
+  // pending 与 published 都要扫：已群发的稿子仍可能被重推（改稿后重发），
+  // 不能因为「发过了」就脱离闸门。internal / hold 不扫。
+  const pending = ledger.articles.filter(
+    (a) => a.state === "pending" || a.state === "published",
+  );
   const findings = [];
   const missing = [];
   let scanned = 0;
@@ -304,7 +308,7 @@ function checkMaterialCopy() {
   if (findings.length) {
     materialFindings.push(...findings);
     bad("待群发物料口径", `${findings.length} 处超线\n${formatFindings(findings)}`);
-  } else ok("待群发物料口径", `${scanned} 份稿 / ${pending.length} 篇待发`);
+  } else ok("待群发物料口径", `${scanned} 份稿 / ${pending.length} 篇（待发+已发）`);
 }
 
 /** 台账结构 + 豁免表自身（孤儿 / 超限 / 过期）。 */
