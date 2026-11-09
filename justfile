@@ -51,6 +51,19 @@ build-wasm:
     cp -r crates/taiyin-core/pkg apps/web/wasm
     cp -r crates/taiyin-core/pkg apps/web/public/wasm
 
+# 重建 web + 小程序探针的 WASM（一条命令闭环）。
+# 只跑 build-wasm 会让探针停在旧二进制 —— 2026-11-08 就是这么漂移了四天。
+rebuild-probe-wasm: build-wasm
+    node apps/miniprogram-wasm-probe/scripts/build-worker.mjs
+
+# 探针全部校验（七项：六项逻辑 + 真机前静态预检，含产物同源）
+verify-probe:
+    node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
+
+# 生成真机验证副本：真 AppID 只写进 /tmp，不进 git
+probe-copy appid:
+    node apps/miniprogram-wasm-probe/scripts/prepare-realdevice-copy.mjs --appid {{appid}}
+
 # 从 Rust wire 类型重新生成前端 TS 类型（见 crates/taiyin-core/src/bin/gen_types.rs）。
 # 生成结果落在 apps/web/src/lib/generated/，由前端直接 import，杜绝手工对齐。
 gen-types:

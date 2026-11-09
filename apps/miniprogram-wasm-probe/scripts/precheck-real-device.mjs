@@ -3,7 +3,8 @@
  * 小程序「真机前」静态预检 —— 把不用真机就能排掉的雷先排掉。
  *
  * 边界（别把这个脚本当成真机验证）：
- *   它只算静态事实：AppID、打包体积、WASM 合法性、workers 声明、基础库版本。
+ *   它只算静态事实：AppID、打包体积、WASM 合法性、workers 声明、基础库版本、
+ *   产物是否跟上核心重建。
  *   iOS/Android 真机、WXWebAssembly 真机可用性、WXML 排版、性能、低版本基础库
  *   仍必须开微信开发者工具 GUI + 真手机实跑，见 REAL-DEVICE-CHECKLIST.md。
  *
@@ -17,6 +18,8 @@
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { inspect as inspectWasmSync } from "./verify-wasm-sync.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const strict = process.argv.includes("--strict");
@@ -116,16 +119,23 @@ for (const page of appJson.pages || []) {
 if (missing.length) add("FAIL", "页面文件缺失", missing.join(", "));
 else add("PASS", "页面四件套齐全", `${(appJson.pages || []).length} 个页面`);
 
+// ── 8. 产物是否跟上核心重建（换过二进制却忘了同步 = 真机验的是旧代码）────
+// 判据见 verify-wasm-sync.mjs：三份字节同源 + 来源指纹；导出集只做「少函数」检测。
+for (const r of inspectWasmSync()) add(r.level, r.name, r.detail);
+
 function report() {
-  const icon = { PASS: "✓", WARN: "!", FAIL: "✗", INFO: "·" };
+  const icon = { PASS: "✓", WARN: "!", FAIL: "✗", INFO: "·", SKIP: "·" };
   console.log(`小程序真机前静态预检${strict ? "（--strict）" : ""}`);
   console.log("─".repeat(60));
   for (const r of rows) {
-    console.log(`${icon[r.level]} [${r.level}] ${r.name}${r.detail ? `\n      ${r.detail}` : ""}`);
+    console.log(`${icon[r.level] ?? "·"} [${r.level}] ${r.name}${r.detail ? `\n      ${r.detail}` : ""}`);
   }
   console.log("─".repeat(60));
   const c = (lv) => rows.filter((r) => r.level === lv).length;
-  console.log(`汇总：PASS ${c("PASS")} / WARN ${c("WARN")} / FAIL ${c("FAIL")}`);
+  const skipped = c("SKIP");
+  console.log(
+    `汇总：PASS ${c("PASS")} / WARN ${c("WARN")} / FAIL ${c("FAIL")}${skipped ? ` / SKIP ${skipped}` : ""}`,
+  );
   console.log("边界：本脚本不替代真机。WXML 排版、WXWebAssembly 真机可用性、性能、低版本基础库仍需 GUI 实跑。");
   process.exit(c("FAIL") > 0 ? 1 : 0);
 }

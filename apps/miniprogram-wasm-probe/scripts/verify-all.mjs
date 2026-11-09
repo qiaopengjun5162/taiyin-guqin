@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * 小程序 WASM 探针 —— 一键跑全部六个校验器。
+ * 小程序 WASM 探针 —— 一键跑全部七个校验器。
  *
- * 为什么要这一个入口：校验器分散在 scripts/ 下，本地和 CI 各写六行容易漏，
+ * 为什么要这一个入口：校验器分散在 scripts/ 下，本地和 CI 各写七行容易漏，
  * 漏掉一个就等于「改坏了没人知道」。以后挂 CI 只需一行：
  *   node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
  *
@@ -11,8 +11,8 @@
  *
  * 覆盖边界（别把这个脚本当成「小程序产品验证」）：
  * 它校验的是**本地可复现**的部分 —— 适配层逻辑、Worker 消息协议、兜底分支、
- * 页面数据链路与行为、工程静态约束。真机 iOS/Android、包体积、性能、
- * 低版本基础库、WXML 排版仍需开发者工具实跑。
+ * 页面数据链路与行为、工程静态约束、真机前静态预检（含产物同源）。
+ * 真机 iOS/Android、包体积、性能、低版本基础库、WXML 排版仍需开发者工具实跑。
  */
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -45,6 +45,12 @@ const checks = [
   {
     name: "工程静态校验：编译期约束",
     file: "scripts/lint-project.mjs",
+  },
+  {
+    // 默认模式（不带 --strict）：仓库永远是 touristappid，strict 会红，
+    // 所以 CI 只跑默认模式。--strict 留给 /tmp 真机副本。
+    name: "真机前静态预检：AppID / 体积 / WASM / 产物同源",
+    file: "scripts/precheck-real-device.mjs",
   },
 ];
 

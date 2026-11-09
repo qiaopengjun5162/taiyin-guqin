@@ -1,17 +1,30 @@
 name: Miniprogram WASM Probe
 
 # 独立的探针校验 job：不改动 build.yml，也不用装 pnpm 依赖。
-# verify-all.mjs 只用 Node 内置模块，六个校验器读的都是仓库里已提交的文件
-# （含用 git add -f 强制提交的 wasm/taiyin_core_bg.wasm），checkout 后即可跑。
+# verify-all.mjs 只用 Node 内置模块，七个校验器读的都是仓库里已提交的文件
+# （wasm/taiyin_core_bg.wasm 由 .gitignore 白名单纳入版本控制），checkout 后即可跑。
+#
+# 触发路径包含 crates/taiyin-core/** 与根 Cargo.toml 的原因（2026-11-08 的教训）：
+# commit d6aebff 只改了根 Cargo.toml 的 release profile，探针里的 wasm 因此停留在
+# 旧二进制（276,675 B vs 231,388 B），而当时路径过滤只盯 apps/miniprogram-wasm-probe/**，
+# 这个 workflow 压根没触发，漂移四天没人发现。现在核心一改就触发，产物没重建直接红。
 on:
   push:
     branches: [main]
     paths:
       - "apps/miniprogram-wasm-probe/**"
+      - "apps/web/wasm/**"
+      - "apps/web/public/wasm/**"
+      - "crates/taiyin-core/**"
+      - "Cargo.toml"
       - ".github/workflows/miniprogram-probe.yml"
   pull_request:
     paths:
       - "apps/miniprogram-wasm-probe/**"
+      - "apps/web/wasm/**"
+      - "apps/web/public/wasm/**"
+      - "crates/taiyin-core/**"
+      - "Cargo.toml"
       - ".github/workflows/miniprogram-probe.yml"
   workflow_dispatch:
 
@@ -20,7 +33,7 @@ permissions:
 
 jobs:
   verify:
-    name: 六个校验器（适配层 / Worker 传输 / 兜底变异 / 数据链路 / 页面行为 / 静态约束）
+    name: 七个校验器（适配层 / Worker 传输 / 兜底变异 / 数据链路 / 页面行为 / 静态约束 / 产物同源）
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -32,5 +45,6 @@ jobs:
 
       # 边界：这里只验「本地可复现」的部分。真机 iOS/Android、包体积、性能、
       # 低版本基础库仍需开发者工具实跑（见 docs/competitive-analysis.md 8.5）。
-      - name: 跑齐六个校验器
+      # 注意：precheck 在这里跑默认模式，不是 --strict —— 仓库刻意保留 touristappid。
+      - name: 跑齐七个校验器
         run: node apps/miniprogram-wasm-probe/scripts/verify-all.mjs
