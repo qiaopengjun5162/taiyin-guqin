@@ -104,6 +104,13 @@
 | 形态：PWA | ✅ | 断网可开（真浏览器验过） |
 | 形态：小程序 | ⚠️ | 四页壳 + 七项校验（含产物同源），**未发布、未上真机**；真机准备已脚本化（`just probe-copy wx…`） |
 
+**发布这条线也有闸门**（2026-11-09 扩展）：`node scripts/verify-publish.mjs --copy-only` 原来只扫
+5 个「当前口径文件」，待发稿全程在盲区；现在扫台账（`docs/articles/material/pending-copy.json`）
+里全部 `state=pending` 的稿，仓库侧 + vault 侧都扫，并进了 CI。判红口径是 fail-closed——
+`drafts/` 下每个 `.md` 不入账就红；行级豁免要 `sha256 + 过期时间 + 次数上限`，
+孤儿 / 超限 / 过期同样判红。判定逻辑抽在 `scripts/lib/copy-gate.mjs`，
+`--self-test` 跑 25 条（含 17 条变异）证明闸门自己不会静默失效。
+
 ### 代码规模（现场数出来的）
 
 | | 数字 |

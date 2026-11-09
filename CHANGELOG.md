@@ -2,6 +2,44 @@
 
 ## [Unreleased] - 2026-11-09
 
+### 发布闸门扩到物料层：草稿箱盘清 + 两篇过线稿重推
+
+上一轮把「拍照识别」判成结构性失效后，只改了 5 个「当前口径文件」。这次盘草稿箱才发现
+**闸门根本没管待发稿** —— 机制缺口比文案缺口更值得修。
+
+- **根因**：`checkCopy()` 的文件白名单是写死的 5 个路径（README / overview / pitch / 定位稿 / 首页文案），
+  `docs/articles/drafts/` 下的待发稿**从来没被扫过**。所以「口径改完了」只对文档成立，对未来要群发的东西不成立。
+- **盘清结果**：vault `Articles/ready/` 5 篇，4 篇过线 ——
+  定位文（`100018549`）上一轮已修好；上线文整节把「拍照识别」当入口；五个月长文 4 处正文
+  + 封面印着「能拍照识别 / AI 识别」；0→100 两版**光标题就过线**。
+- **闸门结构**（`scripts/lib/copy-gate.mjs`，判定逻辑独立成纯函数才能做变异验证）：
+  - `HARD_RULES` H1–H12：任何位置命中即红（「拍照识别」「AI 识别准确率」等）
+  - `CONTEXT_RULES` C1–C4：只在**当前段**生效，历史段放行，且带否定词表（「不能拍照识别」不算违规）
+  - `FRONTMATTER_RULES` F1–F3：只扫 title / wechat_title / digest / cover_title，**永不豁免**
+  - 历史段用 `historical_headings` 豁免，但标题必须**恰好出现一次**，否则报 `L1`（防止拿豁免当挡箭牌）
+  - 行级豁免 `copy-allowlist.json`：`sha256(normalizeLine)` + `expires` + `maxHits`；
+    孤儿 `A2` / 超限 `A3` / 过期 `A4` / 总量 8 条 `A1` / 单文件 4 条 `A5` 全判红。**本轮没用任何豁免**（`entries: []`）
+  - 必填边界表述 `REQUIRED_PHRASES = ["图片录入", "逐格校正"]`，缺失报 `R1`
+  - **fail-closed 台账**：`drafts/` 下每个 `.md` 必须进 `pending-copy.json`，漏一个就红
+- **接线**：`--copy-only` 进 `.github/workflows/build.yml`（CI 只有仓库侧，带 vault 会 WARN，不伪造路径）；
+  本地发布前跑 `--copy-only --vault <vault>` 两侧都扫。
+- **自检**：`--self-test` 从 10 条扩到 **25 条，含 17 条变异**（每条都实测红、退出码 1），
+  避免「闸门自己坏了但一直绿」。扩过程中真抓到一次：`REQUIRED_PHRASES` 改成两个词后，
+  原「应放行」用例只写了一个 → 当场红，于是补了一条「只写一半边界表述须判红」的变异。
+- **反证**：拿改前的旧稿跑 → 14 处命中；改后现稿 → 0 处。证明闸门不是摆设。
+- **两篇重推**（`update-draft` 原地改需 `WECHAT_SECRET`，本机全没有 → 只能用 `push` 换号）：
+  - 上线文 `100018516` → **`100018553`**（改写 11 处）
+  - 五个月长文 `100018271` → **`100018557`**（改写 13 处 + 封面重做 1800×1000）
+  - 两篇旧稿由 moonpub 自动删除，手机预览已发，**待后台手动群发**
+- **新的核对脚本** `scripts/verify-article-bundle.mjs`：md / html / draft.json 三源一致 + `media_id` 未变
+  + 正文无内联 base64 + **无相对路径图** + CDN 图数量 + 体积上限。两篇推送后各跑一次，均 **18/18 PASS**。
+  加这条的直接原因：launch 渲染后正文 226KB、6 张图变成 `fig/xxx.png` 相对路径（微信正文里就是破图）、
+  页脚二维码内联成 200KB base64 —— 而 push 日志照样打印 `✓ done`。**「推成功」不等于「推的是新版」。**
+- **0→100 两版转内部复盘**：仓库 `git mv` 到 `docs/articles/internal/`，vault 两份移入 `Articles/internal/`，
+  md 顶部加「内部复盘，未群发，请勿再发」+ 判定说明；drafts 下 8 个旧封面 / moonpub 临时截图一并归档为 `old-*`。
+- **仍未做**：`WECHAT_SECRET` 缺失 → `list-drafts` / `delete-draft` / `update-draft` 全跑不了，
+  后台实况核不到，media_id 只能按 `.media_id` 文件推定；两条内部稿（`100017949` / `100018136`）需后台手删。
+
 ### 小程序探针：产物漂移修复 + 真机验证准备脚本化
 
 出门第四道门（真机）之前，先修掉一个会让结论失效的问题：**探针里的 WASM 是旧二进制**。
