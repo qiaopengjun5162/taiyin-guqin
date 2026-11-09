@@ -66,9 +66,13 @@ jobs:
         uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          # 与 .cargo/audit.toml 的豁免保持一致：rsa 0.9.x 的 Marvin 计时侧信道、webpki-roots 0.26.x
-          # 的 bundled-root 信任问题均暂无上游修复版本（前者无补丁，后者修复在 1.0.x 需 rustls 主版本联动）。
-          ignore: RUSTSEC-2023-0071,RUSTSEC-2026-0381
+          # 与 .cargo/audit.toml 的豁免保持一致（那边有完整理由，改这里必须同步改那边）：
+          #   RUSTSEC-2023-0071 rsa 0.9.x 的 Marvin 计时侧信道 —— 上游无补丁
+          #   RUSTSEC-2026-0381 webpki-roots 0.26.x 的 bundled-root —— 修复在 1.0.x，需 rustls 主版本联动
+          #   RUSTSEC-2026-0459 libsqlite3-sys 0.30.1 的 WAL 内存问题 —— 修复要 >=0.39，
+          #     但 sqlx 0.8.6 锁 ^0.30、sqlx 0.9.0 只到 ^0.37，上游链还没跟上；
+          #     且该 crate 只在 sqlx 的 sqlite feature 下编译，本项目只用 postgres
+          ignore: RUSTSEC-2023-0071,RUSTSEC-2026-0381,RUSTSEC-2026-0459
       - name: Test
         run: cargo nextest run --all-features
 

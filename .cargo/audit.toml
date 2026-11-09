@@ -15,8 +15,22 @@
 #   使用已知 CA，该 bundled-root 信任问题的现实风险极低。待 rustls 链支持 webpki-roots 1.0 后
 #   移除该豁免并升级依赖。
 
+# RUSTSEC-2026-0459 — libsqlite3-sys 0.30.1 打包的 SQLite < 3.54.0 在处理
+#   页大小不一致的 -wal 兄弟文件时会返回未初始化页缓存内存（CVE-2026-119375）。
+#   修复要求 libsqlite3-sys >= 0.39.0（rusqlite 0.41），但 **上游整条链都没跟上**：
+#   sqlx 0.8.6 锁 ^0.30.1，sqlx 0.9.0 也只到 ^0.37.0，sqlx-sqlite 0.9 要求
+#   `>=0.30.1, <0.38.0` —— 升级 sqlx 到当前最新稳定版也消除不了这条 advisory。
+#   影响面为零的两条依据：
+#     1. 该 crate 只在 sqlx 的 `sqlite` feature 下参与编译，本项目只用 `postgres`
+#        （`cargo tree -p sqlx -f "{p} {f}"` 的 feature 列表里没有 sqlite，
+#        `cargo tree -i libsqlite3-sys` 也返回 nothing）——它只存在于 Cargo.lock。
+#     2. 漏洞触发需要「本地打开一个攻击者可写的 db 文件 + 同目录 -wal」，
+#        本项目不打开任何 SQLite 文件，只连云上的 Postgres。
+#   待 sqlx 链放开到 libsqlite3-sys >= 0.39 后，移除该豁免并升级依赖。
+
 [advisories]
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2026-0381",
+    "RUSTSEC-2026-0459",
 ]

@@ -2,6 +2,29 @@
 
 ## [Unreleased] - 2026-11-09
 
+### 依赖审计：豁免 RUSTSEC-2026-0459（libsqlite3-sys，本项目不编译它）
+
+推完上一条后 CI 的 `build` 红了，**与本轮改动无关**，是外部信号：
+
+- RustSec 在 2026-10-30 新增 **RUSTSEC-2026-0459 / CVE-2026-119375**：
+  `libsqlite3-sys` 0.30.1 打包的 SQLite < 3.54.0 在处理页大小不一致的 `-wal`
+  兄弟文件时会返回未初始化页缓存内存。
+- **上游整条链都没跟上**：修复要求 `libsqlite3-sys >= 0.39.0`（rusqlite 0.41），
+  而 `sqlx 0.8.6` 锁 `^0.30.1`、`sqlx 0.9.0` 也只到 `^0.37.0`，
+  `sqlx-sqlite 0.9` 要求 `>=0.30.1, <0.38.0`。**升到当前最新稳定版也消除不了。**
+- **影响面为零的两条依据**：
+  1. 该 crate 只在 `sqlx` 的 `sqlite` feature 下参与编译。本项目只用 `postgres`
+     （`cargo tree -p sqlx -f "{p} {f}"` 的 feature 列表里没有 sqlite，
+     `cargo tree -i libsqlite3-sys` 返回 `nothing to print`）——它只存在于 `Cargo.lock`。
+  2. 漏洞触发需要「本地打开一个攻击者可写的 db 文件 + 同目录 `-wal`」，
+     本项目不打开任何 SQLite 文件，只连云上的 Postgres。
+- 按 `.cargo/audit.toml` 的规矩（只豁免「上游暂无修复版本」的），本次豁免**符合**该条件，
+  不是把有补丁的漏洞盖起来。`.github/workflows/build.yml` 的 `ignore` 已同步，
+  两边注释互相指路。待 sqlx 链放开到 `>= 0.39` 后移除豁免并升级。
+- 顺带记录：`audit-check` 在发现漏洞时会尝试创建 check run 并报
+  `Resource not accessible by integration`（缺 `checks: write`）。成功路径不会触发，
+  所以这次不扩权限，豁免后自然消失。
+
 ### 推送前门禁：修掉一个假绿两轮的 preflight，并拦住「推旧稿」
 
 上一轮是**推完**跑三源断言才发现推错了。这次把同类检查前置到 push 之前，
