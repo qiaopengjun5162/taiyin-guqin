@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "note": "由 scripts/build-worker.mjs 生成，勿手改。不含时间戳，无变化重跑不会产生 diff。",
+  "sourceFingerprint": "sha256:078712116059d10acd49e66f8deb250805e1a091df8ea794ae427181a47e75d4",
+  "sourceInputs": [
+    "Cargo.toml",
+    "crates/taiyin-core/Cargo.toml",
+    "crates/taiyin-core/src/bin/gen_types.rs",
+    "crates/taiyin-core/src/jianpu.rs",
+    "crates/taiyin-core/src/jianzi_code.rs",
+    "crates/taiyin-core/src/jianzi_dictionary.rs",
+    "crates/taiyin-core/src/jianzi_stats.rs",
+    "crates/taiyin-core/src/lib.rs",
+    "crates/taiyin-core/src/wasm.rs"
+  ],
+  "wasm": {
+    "bytes": 231388,
+    "sha256": "d5db3c173e5b38664ee67310ba4ac8e712f1c30c0bcd6c023ab0d953f11a515d"
+  },
+  "glue": {
+    "bytes": 15308,
+    "sha256": "3a4be92be46fd11b085b0b471ab4de5b8d91df818026fef3928e11b817c50991"
+  },
+  "publicExports": [
+    "analyze_jianzi_frequency",
+    "arrange_jianpu_sequence_to_jianzi",
+    "decode_jianzi_batch",
+    "encode_jianzi_batch",
+    "get_jianzi_dictionary",
+    "get_jianzi_variant_groups",
+    "split_phrases_to_json",
+    "translate_jianpu_sequence_to_jianzi",
+    "translate_jianpu_to_jianzi"
+  ],
+  "toolchain": {
+    "rustc": "1.98.1",
+    "wasmPack": "0.15.0",
+    "wasmOpt": "133"
+  }
+}

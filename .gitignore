@@ -7,6 +7,10 @@ dist
 # 必须依赖仓库内预编译的 taiyin-core 产物（JS glue + 运行时二进制）。
 !apps/web/wasm/taiyin_core_bg.wasm
 !apps/web/public/wasm/taiyin_core_bg.wasm
+# 小程序探针里的 WASM 同样纳入版本控制：真机验证与探针 CI 直接 checkout 使用，
+# 不在 CI 里重建（CI 的 wasm-opt 版本与本地不同，按字节比会假红）。
+# 白名单本身不影响已跟踪文件，但能让漂移排查时 `git check-ignore` 不再误报。
+!apps/miniprogram-wasm-probe/wasm/taiyin_core_bg.wasm
 *.local
 .DS_Store
 .env
