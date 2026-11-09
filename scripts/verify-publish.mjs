@@ -12,6 +12,10 @@
  * 一旦其中一个停在旧版，「先听一首」点了没声音，首访修复就白做一半。
  * 这些检查以前全靠人手工做，本脚本把它们收成一条命令。
  *
+ * 2026-11-09 又补一条：方向 C 改完仓库口径后，草稿箱待群发的定位文没跟上
+ * （仍把已判定失效的「拍照认谱」当核心入口写）。故新增「对外口径无超线表述」，
+ * 把当前有效口径文件里的禁用短语收进闸门，防止口径改完又悄悄回退。
+ *
  * 环境（区分 dev / 线上）：
  *   - 本机沙箱自带代理会让直连域名 502，脚本自动剔除指向 50218 的代理变量；
  *   - Vercel 域名需走本机 Clash：VERCEL_PROXY=http://127.0.0.1:7890 node scripts/verify-publish.mjs
@@ -30,6 +34,26 @@ const VERCEL_URL = process.env.VERCEL_URL || "https://taiyin-guqin-alws.vercel.a
 const VERCEL_PROXY = process.env.VERCEL_PROXY || "";
 const OLD_COPY = ["AI 传习", "AI传习", "智能拼装", "非遗科技复活"];
 const NEW_TITLE = "打谱工具";
+
+// 2026-11-09 判定后，当前对外口径里不该再出现的「已完成能力」式表述。
+// 只列肯定式短语：pitch.md 红线表把这些当作「不能说」的反面示例，故不扫它。
+const BANNED_COPY = [
+  "拍照识谱",
+  "拍照识别 ✅",
+  "可识别本项目字体渲染的完整减字",
+  "可认完整减字",
+  "AI 按坐标识别",
+  "整字都在",
+];
+// 只扫「陈述当前能力」的文件。历史复盘 / 更正记录 / 待群发物料一律不扫，
+// 否则闸门会被历史引用弄成恒红，反而没人信它。物料一致性另按复核清单人工核。
+const COPY_FILES = [
+  "README.md",
+  "docs/overview.md",
+  "apps/web/src/app/layout.tsx",
+  "apps/web/src/components/jianzi-recognizer.tsx",
+  "apps/web/src/components/jianzi-sheet-recognizer.tsx",
+];
 
 const argv = process.argv.slice(2);
 const OFFLINE = argv.includes("--offline");
@@ -64,6 +88,23 @@ function run(cmd, args, opts = {}) {
 export function isCurrentCopy(html) {
   if (!html.includes(NEW_TITLE)) return false;
   return !OLD_COPY.some((w) => html.includes(w));
+}
+
+/**
+ * 纯函数：返回命中的禁用短语（去重）。
+ * 注释行豁免——组件头部注释要保留「旧注释称…是错的，已更正」这段误判史，
+ * 属否定语境；UI 文案行不豁免，出现即判红。
+ */
+export function bannedCopyIn(text) {
+  const hits = new Set();
+  for (const line of text.split("\n")) {
+    const t = line.trimStart();
+    if (t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")) continue;
+    for (const phrase of BANNED_COPY) {
+      if (line.includes(phrase)) hits.add(phrase);
+    }
+  }
+  return [...hits];
 }
 
 /** 纯函数：只要有一个 failure 就红；有未跑完的单独标 PENDING。 */
@@ -107,6 +148,29 @@ function checkCi(sha) {
   else if (verdict === "pending") warn("CI 全绿", `仍在跑：${summary}`);
   else if (verdict === "none") warn("CI 全绿", "这个提交还没有 CI 记录（刚 push？等一下再跑）");
   else ok("CI 全绿", summary);
+}
+
+/** 2026-11-09 新增：当前有效口径文件里不许再出现已被证伪的能力宣称。 */
+function checkCopy() {
+  let checked = 0;
+  const violations = [];
+  const missing = [];
+  for (const rel of COPY_FILES) {
+    let body;
+    try {
+      body = readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
+    } catch {
+      missing.push(rel);
+      continue;
+    }
+    checked++;
+    const hits = bannedCopyIn(body);
+    if (hits.length) violations.push(`${rel}: ${hits.join("、")}`);
+  }
+  if (missing.length) warn("对外口径无超线表述", `读不到 ${missing.length} 个文件：${missing.join("、")}`);
+  if (!checked) bad("对外口径无超线表述", "一个口径文件都没读到（路径有变动？）");
+  else if (violations.length) bad("对外口径无超线表述", violations.join(" | "));
+  else ok("对外口径无超线表述", `${checked} 个当前口径文件 / ${BANNED_COPY.length} 条禁用短语`);
 }
 
 function fetchHtml(name, url, extra = []) {
@@ -199,6 +263,10 @@ function selfTest() {
     ["单个 failure 须判红", ciVerdict([{ status: "completed", conclusion: "success" }, { status: "completed", conclusion: "failure" }]), "fail"],
     ["全 success 才通过", ciVerdict([{ status: "completed", conclusion: "success" }]), "pass"],
     ["未跑完须标 pending", ciVerdict([{ status: "in_progress", conclusion: "" }]), "pending"],
+    ["干净口径应无命中", bannedCopyIn("键盘打谱、简谱转减字、打谱出声").length, 0],
+    ["旧 slogan 须判红", bannedCopyIn("把看不懂的古琴老谱，拍照识谱、简谱转减字").length > 0, true],
+    ["注释里的更正史应豁免", bannedCopyIn(" * 旧注释称「大九勾四这类整字都在」是错的，已更正。").length, 0],
+    ["UI 文案里的旧口径须判红", bannedCopyIn('        "AI 按坐标识别每个减字"').length > 0, true],
   ];
   let failed = 0;
   for (const [name, got, want] of cases) {
@@ -206,7 +274,7 @@ function selfTest() {
     if (!pass) failed++;
     console.log(`${pass ? "✅" : "❌"} ${name}（得到 ${String(got)}）`);
   }
-  console.log(failed ? `SELF-TEST FAILED: ${failed}` : "SELF-TEST OK: 6/6（含 3 条变异）");
+  console.log(failed ? `SELF-TEST FAILED: ${failed}` : `SELF-TEST OK: ${cases.length}/${cases.length}（含 5 条变异）`);
   process.exit(failed ? 1 : 0);
 }
 
@@ -214,6 +282,7 @@ if (SELF_TEST) selfTest();
 
 const sha = checkGit();
 checkCi(sha);
+checkCopy();
 if (!OFFLINE) {
   checkSites();
   if (BROWSER) await checkBrowser();
