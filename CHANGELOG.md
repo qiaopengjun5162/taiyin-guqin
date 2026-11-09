@@ -2,6 +2,48 @@
 
 ## [Unreleased] - 2026-11-09
 
+### 推送前门禁：修掉一个假绿两轮的 preflight，并拦住「推旧稿」
+
+上一轮是**推完**跑三源断言才发现推错了。这次把同类检查前置到 push 之前，
+顺手挖出一个从没生效过的检查项。
+
+- **假门禁（根因）**：`moonpub preflight` 的**退出码恒为 0** —— 通过 / 失败 /
+  文件不存在全是 0，`--strict` 对该子命令也无效。而 `moonpub-cover-gate.py`
+  第 4 项判据是 `p.returncode == 0`，所以它**永远是 ✅**。
+  实测：`os-async-stop-and-go.md` 有 3 张断图、`aleo-…-zk-transaction.md` 有
+  `<div>`，两篇 preflight 都报 `passed:false`，门禁却打印 `✅ preflight: passed`。
+  断图最危险：`push` 上传图片时 `path.exists()` 为 false **直接跳过**，推上去就是破图，退出码 0。
+- **为什么坏了两轮没人发现**：自测的两个 runner 硬写
+  `MOONPUB_GATE_SKIP_PREFLIGHT=1`，第 4 项**从未被执行过一次**。
+  **没被测试的分支等于不存在。**
+- **修法**：改读 `--json` 的 `passed` 字段（JSON 解析失败再回落解析首行文本），
+  自测改成「跳过与否是显式参数」，并用假二进制把 passed=true / false /
+  只有 `digest_limit` 三种情形都测到。
+- **失败项分级**：`digest_limit`（源稿摘要超 120 字）降级为 warn ——
+  `push` 会按字节截断到约 69 字写进 draft.json，微信端显示正常，属内容质量问题；
+  `image_links` / `layout_audit` / 文件缺失 / 标题超长仍阻塞。
+- **新增 `bundle_fresh`**：`push` 只读 `<slug>.html`，不读 md，而
+  `just push` / `just update-draft` 都不 render。所以 md 比 html 新 → **直接判红**，
+  报错里给 `just render` 一行命令。**刻意不自动 render**：会把手工替换过的
+  CDN 图链接与二维码冲回相对路径 + 200KB base64（上一轮的坑）。
+- **新增 `bundle_hygiene`**：相对路径图 / 内联 base64 > 200KB / html > 300KB。
+  默认只警告，`--strict` 才阻塞 —— 存量稿的页脚二维码普遍是 base64，一上来硬拦会卡死。
+- **参数解析**：原来静默吞掉所有未知 `--flag`，`--strict` 打错字会静默失效；
+  改成未知参数直接报错。
+- **附带修正 `cover_matches`**：cookie 模式下 `push` 直接找 `<slug>.cover.png`，
+  **根本不读 `thumb_media_id`**，而门禁却在要求全局 thumb 指向本文 —— 结论对、依据错，
+  还导致推每篇都要先切全局封面。改成按 `auth_method` 分支：cookie 只验本文封面存在，
+  appsecret 保留原判据。
+- **自测 9 组 → 18 组 / 52 条断言**，全绿；**两条变异实测红**：
+  判据退回 returncode → 用例 10/12 失败；新鲜度 `>` 改 `>=` → 用例 14 失败。
+  （第一次跑变异时副本在 `/tmp`，`import wxlib` 失败导致全部用例崩溃，看起来像「抓到了」——
+  那是假抓到；改成检测 `Traceback` 并把副本放进 `scripts/` 同目录后才成立。）
+- **新增 `scripts/audit-bundle-freshness.mjs`**：只读体检，扫三个 stage 的 md/html/media_id，
+  区分 `pushed-old`（推的那一刻 html 就旧了）与 `draft-behind`（推完又改了 md）。
+  首次全库结果：**94 篇 / 产物不同步 11 篇 / 草稿内容确定落后 7 篇**，
+  7 篇全在 `ready/` 的历史稿（9 月那批 os-* 与读秦岭简史），**本轮不修**，只出报告。
+- **仍未做**：存量 7 篇不重推（由用户决定）；不自动 render；不改 moonpub 源码。
+
 ### 发布闸门扩到物料层：草稿箱盘清 + 两篇过线稿重推
 
 上一轮把「拍照识别」判成结构性失效后，只改了 5 个「当前口径文件」。这次盘草稿箱才发现
