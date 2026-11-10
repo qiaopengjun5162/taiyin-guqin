@@ -63,6 +63,59 @@ describe("定弦表", () => {
     expect(man.noteNames[2]).toBe("E2");
   });
 
+  /**
+   * 派生定弦「自证」：每条新定弦必须严格等于「正调 + 对指定弦 ±N 半音」。
+   * 这样定弦表里只要有一个音写错（错方向 / 错弦序 / 漏一个），测试立刻红，
+   * 不必靠人肉核对音名 —— 这也是 overview 里「8 种能自证」的落实方式。
+   */
+  const zheng = getTuningById("zhengdiao");
+
+  function expectDerived(id: Parameters<typeof getTuningById>[0], tight: number[], loose: number[]) {
+    const t = getTuningById(id);
+    const expectMidi = zheng.openMidi.map((m, i) =>
+      tight.includes(i) ? m + 1 : loose.includes(i) ? m - 1 : m,
+    );
+    const expectNames = zheng.noteNames.map((n, i) =>
+      tight.includes(i)
+        ? n.replace("♭", "").replace(/([A-G])(?=[0-9])/, "$1♯")
+        : n,
+    );
+    expect(t.openMidi).toEqual(expectMidi);
+    expect(t.noteNames).toEqual(expectNames);
+  }
+
+  it("清商调 = 紧二、五、七弦（各 +1 半音）", () => {
+    expectDerived("qingshang", [1, 4, 6], []);
+    expect(getTuningById("qingshang").noteNames[1]).toBe("D♯2");
+    expect(getTuningById("qingshang").noteNames[4]).toBe("A♯2");
+    expect(getTuningById("qingshang").noteNames[6]).toBe("D♯3");
+  });
+
+  it("太簇调 = 紧三、五、七弦（各 +1 半音）", () => {
+    expectDerived("taicu", [2, 4, 6], []);
+    expect(getTuningById("taicu").noteNames[2]).toBe("F♯2");
+    expect(getTuningById("taicu").noteNames[4]).toBe("A♯2");
+    expect(getTuningById("taicu").noteNames[6]).toBe("D♯3");
+  });
+
+  it("凄凉调 = 紧二、五弦（各 +1 半音），六、七弦同正调", () => {
+    expectDerived("qiliang", [1, 4], []);
+    expect(getTuningById("qiliang").noteNames[1]).toBe("D♯2");
+    expect(getTuningById("qiliang").noteNames[4]).toBe("A♯2");
+    expect(getTuningById("qiliang").noteNames[6]).toBe("D3");
+  });
+
+  it("六种定弦都出现在 TUNINGS 里且只有六种", () => {
+    expect(TUNINGS.map((t) => t.id)).toEqual([
+      "zhengdiao",
+      "ruibin",
+      "manjiao",
+      "qingshang",
+      "taicu",
+      "qiliang",
+    ]);
+  });
+
   it("弦序非法时返回 null", () => {
     expect(openStringMidi(null, "zhengdiao")).toBeNull();
     expect(openStringMidi("八", "zhengdiao")).toBeNull();

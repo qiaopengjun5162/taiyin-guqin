@@ -15,17 +15,26 @@ beforeEach(() => {
 });
 
 describe("TunerPanel", () => {
-  it("列出三种定弦，默认正调，七弦标注 C2…D3", () => {
+  it("列出六种定弦，默认正调，七弦标注 C2…D3", () => {
     render(<TunerPanel />);
     const select = screen.getByLabelText("定弦（调式）") as HTMLSelectElement;
     expect(select.value).toBe("zhengdiao");
-    expect(select.options).toHaveLength(3);
+    expect(select.options).toHaveLength(6);
 
     const strings = screen.getByTestId("tuner-strings");
     expect(strings.textContent).toContain("C2");
     expect(strings.textContent).toContain("F2");
     expect(strings.textContent).toContain("A2");
     expect(strings.textContent).toContain("D3");
+  });
+
+  it("清商调二弦显示 D♯2（紧二五七弦各自升半音）", () => {
+    render(<TunerPanel />);
+    fireEvent.change(screen.getByLabelText("定弦（调式）"), { target: { value: "qingshang" } });
+    const strings = screen.getByTestId("tuner-strings");
+    expect(strings.textContent).toContain("D♯2");
+    expect(strings.textContent).toContain("A♯2");
+    expect(strings.textContent).toContain("D♯3");
   });
 
   it("切到慢角调后三弦由 F2 变 E2，说明同步更新", () => {

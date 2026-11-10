@@ -549,13 +549,13 @@ describe("LoadDialog · 社区列表排序与热度", () => {
  * 没接入时（本机 tab / 没传回调）绝不能画控件，否则回调是空的、点了静默没反应。
  */
 describe("LoadDialog · 社区列表搜索与定弦过滤", () => {
-  it("社区 tab 接入 onCommunityFilterChange 时显示定弦下拉，含三种定弦", () => {
+  it("社区 tab 接入 onCommunityFilterChange 时显示定弦下拉，含六种定弦", () => {
     renderDialog([{ key: "community", label: "社区曲谱", scores: COMMUNITY, readOnly: true }], {
       onCommunityFilterChange: vi.fn(),
     });
     const select = screen.getByLabelText("按定弦筛选") as HTMLSelectElement;
     expect(select).toBeTruthy();
-    expect(select.querySelectorAll("option")).toHaveLength(4); // 全部 + 三种定弦
+    expect(select.querySelectorAll("option")).toHaveLength(7); // 全部 + 六种定弦
     expect(select.options[0].textContent).toContain("全部");
   });
 

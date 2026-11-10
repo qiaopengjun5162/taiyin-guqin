@@ -14,7 +14,7 @@
  * 只收录能确证的三种。宁缺毋滥：定弦表错一个音，比没有这个功能更糟。
  */
 
-export type TuningId = "zhengdiao" | "ruibin" | "manjiao";
+export type TuningId = "zhengdiao" | "ruibin" | "manjiao" | "qingshang" | "taicu" | "qiliang";
 
 export interface Tuning {
   id: TuningId;
@@ -55,6 +55,30 @@ export const TUNINGS: readonly Tuning[] = [
     openMidi: [36, 38, 40, 43, 45, 48, 50],
     hint: "只把三弦慢半音（F→E），其余六弦同正调。",
   },
+  {
+    id: "qingshang",
+    name: "清商调",
+    alias: "紧二五七弦 · 1=G",
+    noteNames: ["C2", "D♯2", "F2", "G2", "A♯2", "C3", "D♯3"],
+    openMidi: [36, 39, 41, 43, 46, 48, 51],
+    hint: "把二、五、七弦各紧半音（D→D♯、A→A♯、d→d♯），其余同正调。多用於《秋鸿》等。",
+  },
+  {
+    id: "taicu",
+    name: "太簇调",
+    alias: "紧三五七弦 · 1=bE",
+    noteNames: ["C2", "D2", "F♯2", "G2", "A♯2", "C3", "D♯3"],
+    openMidi: [36, 38, 42, 43, 46, 48, 51],
+    hint: "把三、五、七弦各紧半音（F→F♯、A→A♯、d→d♯），其余同正调。",
+  },
+  {
+    id: "qiliang",
+    name: "凄凉调",
+    alias: "紧二五弦 · 1=bB",
+    noteNames: ["C2", "D♯2", "F2", "G2", "A♯2", "C3", "D3"],
+    openMidi: [36, 39, 41, 43, 46, 48, 50],
+    hint: "把二、五弦各紧半音（D→D♯、A→A♯），六、七弦同正调。多用於《秋风词》《长门怨》。",
+  },
 ];
 
 export const DEFAULT_TUNING: TuningId = "zhengdiao";
@@ -66,7 +90,14 @@ let cached: TuningId | null = null;
 const listeners = new Set<() => void>();
 
 export function isTuningId(v: unknown): v is TuningId {
-  return v === "zhengdiao" || v === "ruibin" || v === "manjiao";
+  return (
+    v === "zhengdiao" ||
+    v === "ruibin" ||
+    v === "manjiao" ||
+    v === "qingshang" ||
+    v === "taicu" ||
+    v === "qiliang"
+  );
 }
 
 /**
