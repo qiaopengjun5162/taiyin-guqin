@@ -436,6 +436,14 @@ describe("Home · 社区排序与筛选接线", () => {
     await screen.findByText("社区谱0", {}, { timeout: 5000 });
 
     fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+    // 先证明「加载更多」真发出了第二页请求（offset=50），再等提示：
+    // 否则「提示没出现」分不清是请求没发出去（处理器静默早退，2026-11-10 CI
+    // 假红的形态）还是提示丢了。
+    await waitFor(() =>
+      expect(h.listScoresPage).toHaveBeenCalledWith(
+        expect.objectContaining({ offset: 50 }),
+      ),
+    );
     expect(await screen.findByText("加载更多失败，请稍后再试", {}, { timeout: 5000 })).toBeTruthy();
     // 失败后按钮要能再点（loadingMore 复位）
     expect(
@@ -466,6 +474,12 @@ describe("Home · 社区排序与筛选接线", () => {
     await screen.findByText("收藏0", {}, { timeout: 5000 });
 
     fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+    // 与社区翻页同样的观测纪律：先证请求真发出（offset=50），再等提示
+    await waitFor(() =>
+      expect(h.listFavoritesPage).toHaveBeenCalledWith(
+        expect.objectContaining({ offset: 50 }),
+      ),
+    );
     expect(
       await screen.findByText("加载更多收藏失败，请稍后再试", {}, { timeout: 5000 }),
     ).toBeTruthy();

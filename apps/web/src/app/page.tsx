@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type SetStateAction,
+} from "react";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
@@ -137,7 +145,7 @@ export default function Home() {
 
   // 持久化状态
   const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
-  const [loadTabs, setLoadTabs] = useState<LoadDialogTab[]>([]);
+  const [loadTabs, setLoadTabsState] = useState<LoadDialogTab[]>([]);
   /**
    * 当前账号收藏的曲谱 id。
    *
@@ -152,11 +160,21 @@ export default function Home() {
    * **那一次渲染**的 `loadTabs`——而此时它还是空的。于是点「加载更多」会读到空数组、
    * 直接 return，表现是「按钮点了没反应」，而且只在分页时才暴露。
    * 用 ref 读当前值，回调就不会被首次渲染的旧状态钉住。
+   *
+   * ref 的更新必须与状态**同刻**发生：早先用 `useEffect` 同步，副作用是延迟跑的，
+   * 「提交后、副作用前」的窗口里点按钮照样读到旧数组而静默早退——
+   * CI 慢机上「加载更多失败」提示从不出现就是这个窗口（2026-11-10 定位）。
+   * 所以包一层 setter，在更新状态的同一刻写 ref；四个处理器的防重
+   * （`tab.loadingMore`）也读它，ref 旧了连双击防重都不可靠。
    */
   const loadTabsRef = useRef<LoadDialogTab[]>([]);
-  useEffect(() => {
-    loadTabsRef.current = loadTabs;
-  }, [loadTabs]);
+  const setLoadTabs = (action: SetStateAction<LoadDialogTab[]>) => {
+    setLoadTabsState((prev) => {
+      const next = typeof action === "function" ? action(prev) : action;
+      loadTabsRef.current = next;
+      return next;
+    });
+  };
   // 纯前端模式（静态托管无后端）时，曲谱改存浏览器本地，需在 UI 上说明。
   // 用 useSyncExternalStore 读取「仅浏览器可得」的值：服务端快照固定为 server，
   // 挂载后取真实值，既不触发水合不一致，也避免在 effect 里同步 setState。
@@ -851,8 +869,14 @@ export default function Home() {
   async function handleLoadMoreCommunity() {
     // 从 ref 读：这里的回调是首次渲染时被写进 tab 对象的，直接读 state 会读到空数组
     const tab = loadTabsRef.current.find((t) => t.key === "community");
-    // 加载中不重入：按钮已 disabled，但双击 / 回车仍可能连发
-    if (!tab || tab.loadingMore) return;
+    // 找不到 tab 是「点了按钮却没有列表」：绝不静默吞掉（静默早退正是
+    // 2026-11-10 CI 假红的形态）。加载中不重入：按钮已 disabled，
+    // 但双击 / 回车仍可能连发。
+    if (!tab) {
+      showError("列表状态已失效，请关闭后重新打开");
+      return;
+    }
+    if (tab.loadingMore) return;
 
     setLoadTabs((prev) =>
       prev.map((t) => (t.key === "community" ? { ...t, loadingMore: true } : t)),
@@ -899,8 +923,12 @@ export default function Home() {
    */
   async function handleCommunitySortChange(sort: "recent" | "popular") {
     const tab = loadTabsRef.current.find((t) => t.key === "community");
-    // 重入保护与翻页一致：正在加载时忽略再次点击
-    if (!tab || tab.loadingMore) return;
+    // 重入保护与翻页一致：正在加载时忽略再次点击；找不到 tab 同样要出声
+    if (!tab) {
+      showError("列表状态已失效，请关闭后重新打开");
+      return;
+    }
+    if (tab.loadingMore) return;
 
     setLoadTabs((prev) =>
       prev.map((t) => (t.key === "community" ? { ...t, loadingMore: true } : t)),
@@ -944,7 +972,11 @@ export default function Home() {
    */
   async function handleCommunityFilterChange(query: string, tuning: TuningId | null) {
     const tab = loadTabsRef.current.find((t) => t.key === "community");
-    if (!tab || tab.loadingMore) return;
+    if (!tab) {
+      showError("列表状态已失效，请关闭后重新打开");
+      return;
+    }
+    if (tab.loadingMore) return;
 
     setLoadTabs((prev) =>
       prev.map((t) => (t.key === "community" ? { ...t, loadingMore: true } : t)),
@@ -981,7 +1013,11 @@ export default function Home() {
   /** 「我的收藏」翻页。与社区翻页同样的两条纪律：不可重入、失败要复位 loadingMore。 */
   async function handleLoadMoreFavorites() {
     const tab = loadTabsRef.current.find((t) => t.key === "favorites");
-    if (!tab || tab.loadingMore) return;
+    if (!tab) {
+      showError("列表状态已失效，请关闭后重新打开");
+      return;
+    }
+    if (tab.loadingMore) return;
 
     setLoadTabs((prev) =>
       prev.map((t) => (t.key === "favorites" ? { ...t, loadingMore: true } : t)),
