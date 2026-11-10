@@ -1,7 +1,7 @@
 {
   "version": 1,
   "note": "物料台账。state 语义：pending=尚未群发，published=线上已群发，hold=暂缓，internal=不再作为对外稿处理（不参与口径扫描）。pending 与 published 都参与口径扫描 —— 已群发的稿子仍可能被重推，不能因为『发过了』就脱离闸门。drafts/ 下每个文件都必须入账（fail-closed），否则闸门判红。historical_headings 里的段落算「过程记录」，CONTEXT 类规则放行，HARD 类仍不放行。",
-  "updated": "2026-11-09",
+  "updated": "2026-11-10",
   "articles": [
     {
       "slug": "taiyin-what-is-it",
@@ -15,10 +15,11 @@
       "slug": "taiyin-guqin-5-months",
       "state": "published",
       "media_id": "100018567",
+      "share_url": "https://mp.weixin.qq.com/s/2n-ZYeeeKpPimcoFAsbqzA",
       "repo_path": "docs/articles/drafts/01-五个月-130次提交-一个人做出古琴减字谱编辑器.md",
       "vault_path": "Articles/ready/taiyin-guqin-5-months.md",
       "historical_headings": ["## 七、让谱子「能拍进来」（当时的弯路，后判定不可用）"],
-      "note": "线上已于 2026-11-01 09:26 群发（mid=2247501920），正文仍是旧口径（第七节「让谱子能拍进来」+ 摘要「能拍进来」）。草稿箱 100018567 是 2026-11-09 改好的新口径母版；旧稿 100018271 → 100018557 → 100018567 均由 push 自动删除。改草稿不改变线上那篇"
+      "note": "【新口径版】2026-11-10 14:15 群发（share https://mp.weixin.qq.com/s/2n-ZYeeeKpPimcoFAsbqzA），线上正文与本仓库草稿逐节一致：含 11-09 判定、0/27 不能外推、图片录入（受限）、第七节「当时的弯路，后判定不可用」。母版是草稿箱 100018567（2026-11-09 改好；100018271 → 100018557 → 100018567 旧稿均由 push 自动删除）。【旧口径版】同题旧文曾于 2026-11-01 09:26 群发（mid=2247501920），是另一篇，不被本次覆盖；其是否仍挂在公众号历史消息本机未核对。详见 material/2026-11-10-五个月新口径版已群发.md"
     },
     {
       "slug": "taiyin-guqin-launch",
