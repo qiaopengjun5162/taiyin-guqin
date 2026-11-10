@@ -586,7 +586,8 @@ export async function selectCandidates(
 }
 
 export interface RecognizeJianziResponse {
-  method: "llm" | "unavailable";
+  /** template=模板匹配；llm=视觉模型识别；unavailable=后端未启用 */
+  method: "template" | "llm" | "unavailable";
   /** 模型给出的规范减字文本，如「散挑一」「大九勾四」；为空表示识别失败 */
   glyph: string | null;
   /** 识别依据（可解释性） */

@@ -20,6 +20,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = ServerConfig::from_env();
+    // 限流 0 会让 governor 的 finish() 返回 None，进而以一句含糊的 panic 失败。
+    // 先在这里说清是哪个变量、想关闸该用什么，再往下走。
+    config
+        .validate_rate_limits()
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     if !config.cors_locked() {
         tracing::warn!(

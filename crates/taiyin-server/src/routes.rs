@@ -34,6 +34,7 @@ use crate::models::{
 };
 use crate::sheet_segment;
 use crate::template_match::{self, RecognizeMode};
+use taiyin_core::jianpu::JianpuNote;
 
 const MAX_TITLE_LENGTH: usize = 200;
 /// 署名上限：留足「某某琴社·某某」这类写法，又不至于把列表撑爆。
@@ -825,12 +826,25 @@ async fn health_check() -> &'static str {
     "🪕 taiyin ok"
 }
 
+/// 简谱数字只有 1–7（八度用 `octave` 表达）。
+///
+/// 非法数字以前会静默返回空候选，用户看到的是「无候选」，以为是琴谱或琴的问题；
+/// 这里直接说清合法范围。`octave` 不做范围限制：琴上够不着的音返回空候选是合理的。
+fn validate_notes(notes: &[JianpuNote]) -> Result<(), String> {
+    notes
+        .iter()
+        .find(|n| !(1..=7).contains(&n.number))
+        .map(|bad| format!("简谱数字必须是 1 到 7，收到 {}", bad.number))
+        .map_or(Ok(()), Err)
+}
+
 /// AI 候选选择：生成各音候选后交 LLM 择优；未配置或失败时回退启发式 top1。
 async fn select_candidates(
     State(state): State<AppState>,
     Json(req): Json<SelectRequest>,
 ) -> AppResult<Json<SelectResponse>> {
     let tuning = req.tuning.unwrap_or(taiyin_core::jianpu::Tuning::ZhengDiao);
+    validate_notes(&req.notes).map_err(AppError::Validation)?;
     let candidates = taiyin_core::jianpu::translate_jianpu_sequence(&req.notes, tuning);
 
     let (method, selections) =
@@ -1415,6 +1429,21 @@ async fn claim_score(
 mod tests {
     use super::*;
     use crate::template_match::{INDEX, RecognizeStrategy};
+
+    /// 简谱数字越界以前会静默返回空候选，用户以为是琴谱或琴的问题。
+    #[test]
+    fn translate_rejects_jianpu_number_outside_1_to_7() {
+        for bad in [0u8, 8, 255] {
+            let msg = validate_notes(&[JianpuNote::new(bad, 0)]).expect_err("非法数字应被拒");
+            assert!(msg.contains("1 到 7"), "应写清合法范围：{msg}");
+            assert!(msg.contains(&bad.to_string()), "应写清收到的值：{msg}");
+        }
+        assert!(validate_notes(&[]).is_ok(), "空列表不该报错");
+        assert!(
+            validate_notes(&[JianpuNote::new(1, -3), JianpuNote::new(7, 4)]).is_ok(),
+            "合法数字不应报错（octave 不限）"
+        );
+    }
 
     #[test]
     fn tuning_whitelist_matches_frontend_tuning_ids() {

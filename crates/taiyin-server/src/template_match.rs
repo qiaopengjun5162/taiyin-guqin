@@ -53,8 +53,34 @@ pub struct TemplateIndex {
 
 static RAW_INDEX: &str = include_str!("../data/template_index.json");
 
+/// 校验模板索引的不变量：边长合法、至少一条、每条像素长度与边长一致。
+///
+/// 不变量本该由 `data/template_index.json` 的生成脚本保证，这里是第二道闸门。
+/// `euclid` 用 `zip` 比较，长度不一致会**静默按短的算**——那种错法最糟：
+/// 索引加载得好好的，识别结果全错，还不报任何错。宁可在启动时就炸。
+fn validate_raw_index(raw: &RawIndex) -> Result<(), String> {
+    if raw.size == 0 {
+        return Err("template_index: size must be > 0".to_string());
+    }
+    if raw.entries.is_empty() {
+        return Err("template_index: entries must not be empty".to_string());
+    }
+    let want = raw.size * raw.size;
+    for e in &raw.entries {
+        let n = B64.decode(&e.pixels).map(|p| p.len()).unwrap_or(usize::MAX);
+        if n != want {
+            return Err(format!(
+                "template_index: entry {:?} has {} pixels, expected {} ({}x{})",
+                e.name, n, want, raw.size, raw.size
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub static INDEX: LazyLock<TemplateIndex> = LazyLock::new(|| {
     let raw: RawIndex = serde_json::from_str(RAW_INDEX).expect("template_index.json must parse");
+    validate_raw_index(&raw).expect("template_index.json must satisfy index invariants");
     let entries = raw
         .entries
         .into_iter()
@@ -243,7 +269,12 @@ pub fn normalize_gray(width: usize, height: usize, luma: &[u8], size: usize) -> 
         .collect()
 }
 
+/// 欧氏距离。长度不一致时返回 `f32::INFINITY`——不能比就不比，
+/// 绝不静默按短的算（那会把不相干的图判成很近）。
 fn euclid(a: &[u8], b: &[u8]) -> f32 {
+    if a.len() != b.len() {
+        return f32::INFINITY;
+    }
     let mut acc = 0f32;
     for (x, y) in a.iter().zip(b.iter()) {
         let d = *x as f32 - *y as f32;
@@ -253,18 +284,28 @@ fn euclid(a: &[u8], b: &[u8]) -> f32 {
 }
 
 /// 在索引里给归一化像素找最近邻。
-pub fn match_pixels(index: &TemplateIndex, query: &[u8]) -> TemplateMatch {
+///
+/// 返回 `None` 表示「没法比」而不是「没匹配上」：query 长度与索引边长对不上，
+/// 或索引里没有长度相符的条目（含空索引）。调用方应把 `None` 当作
+/// 「模板路径不可用」去降级（落 LLM），而不是当成识别失败。
+/// `dists[0]` 以前会在空索引上直接 panic。
+pub fn match_pixels(index: &TemplateIndex, query: &[u8]) -> Option<TemplateMatch> {
+    let want = index.size * index.size;
+    if query.len() != want {
+        return None;
+    }
     let mut dists: Vec<(usize, f32)> = index
         .entries
         .iter()
         .enumerate()
+        .filter(|(_, e)| e.pixels.len() == want)
         .map(|(i, e)| (i, euclid(&e.pixels, query)))
         .collect();
-    dists.sort_by(|a, b| a.1.partial_cmp(&b.1).expect("distances are finite"));
-    let (bi, bd) = dists[0];
+    dists.sort_by(|a, b| a.1.partial_cmp(&b.1).expect("distances are comparable"));
+    let (bi, bd) = *dists.first()?;
     let second = dists.get(1).map(|(_, d)| *d).unwrap_or(bd);
     let entry = &index.entries[bi];
-    TemplateMatch {
+    Some(TemplateMatch {
         name: entry.name.clone(),
         text: entry
             .truths
@@ -273,7 +314,7 @@ pub fn match_pixels(index: &TemplateIndex, query: &[u8]) -> TemplateMatch {
             .unwrap_or_else(|| entry.name.clone()),
         distance: bd,
         margin: second - bd,
-    }
+    })
 }
 
 /// 解码图片字节（png/jpeg/webp）→ 归一化 → 最近邻。
@@ -285,7 +326,8 @@ pub fn match_image_bytes(bytes: &[u8]) -> anyhow::Result<TemplateMatch> {
         img.as_raw(),
         SIZE,
     );
-    Ok(match_pixels(&INDEX, &pixels))
+    match_pixels(&INDEX, &pixels)
+        .ok_or_else(|| anyhow::anyhow!("模板索引为空或像素长度不匹配，模板路径不可用"))
 }
 
 /// 识别路径选择。
@@ -487,7 +529,7 @@ mod tests {
     fn match_pixels_picks_argmin_and_confidence() {
         let idx = toy_index();
         let query = vec![250u8; SIZE * SIZE]; // 靠近「满」
-        let m = match_pixels(&idx, &query);
+        let m = match_pixels(&idx, &query).expect("toy_index 应能匹配");
         assert_eq!(m.name, "g_full");
         assert_eq!(m.text, "满");
         assert!(m.distance < m.margin, "应明显近于次优");
@@ -511,6 +553,89 @@ mod tests {
         assert!(match_image_bytes(b"not an image").is_err());
     }
 
+    /// 索引不变量：边长 0、空索引、像素长度与边长不符都必须被拒。
+    /// 这些在「生成脚本改了边长却没重编索引」时会出现，届时 euclid 会静默截断。
+    #[test]
+    fn index_invariants_reject_mismatched_pixels_and_empties() {
+        let bad_len = RawIndex {
+            size: 2,
+            entries: vec![RawEntry {
+                name: "g".into(),
+                truths: vec![],
+                pixels: B64.encode([1u8, 2, 3]),
+            }],
+        };
+        let msg = validate_raw_index(&bad_len).expect_err("3 像素配 2x2 应被拒");
+        assert!(msg.contains("3 pixels"), "错误应写清实际长度：{msg}");
+
+        assert!(
+            validate_raw_index(&RawIndex {
+                size: 2,
+                entries: vec![]
+            })
+            .expect_err("空索引应被拒")
+            .contains("empty")
+        );
+        assert!(
+            validate_raw_index(&RawIndex {
+                size: 0,
+                entries: vec![RawEntry {
+                    name: "g".into(),
+                    truths: vec![],
+                    pixels: String::new(),
+                }],
+            })
+            .expect_err("边长 0 应被拒")
+            .contains("size")
+        );
+
+        assert!(
+            validate_raw_index(&RawIndex {
+                size: 2,
+                entries: vec![RawEntry {
+                    name: "g".into(),
+                    truths: vec!["满".into()],
+                    pixels: B64.encode([1u8, 2, 3, 4]),
+                }],
+            })
+            .is_ok()
+        );
+    }
+
+    /// 空索引 / query 长度不符时返回 None 而不是 panic（`dists[0]` 以前会越界），
+    /// 让上层能把它当「模板路径不可用」降级到 LLM。
+    #[test]
+    fn match_pixels_returns_none_instead_of_panicking() {
+        let empty = TemplateIndex {
+            size: SIZE,
+            entries: vec![],
+        };
+        assert!(
+            match_pixels(&empty, &vec![0u8; SIZE * SIZE]).is_none(),
+            "空索引应返回 None"
+        );
+
+        let idx = toy_index();
+        assert!(
+            match_pixels(&idx, &[0u8; 3]).is_none(),
+            "query 长度与索引边长不符应返回 None"
+        );
+
+        // 条目像素长度与边长不符时不能静默截断比较，而应被排除到没法比为止
+        let broken = TemplateIndex {
+            size: SIZE,
+            entries: vec![TemplateEntry {
+                name: "bad".into(),
+                truths: vec![],
+                pixels: vec![0u8; 3],
+            }],
+        };
+        assert!(
+            match_pixels(&broken, &vec![0u8; SIZE * SIZE]).is_none(),
+            "长度不符的条目应被排除，无条目可比时返回 None"
+        );
+    }
+
     #[test]
     fn pipeline_roundtrip_on_embedded_index() {
         // 取内嵌索引里的一个模板，还原成图片再走完整管线，应匹配回同一个字形。
@@ -519,7 +644,7 @@ mod tests {
             .iter()
             .find(|e| e.name == "lg_yangtuo")
             .expect("index contains lg_yangtuo");
-        let m = match_pixels(&INDEX, &entry.pixels);
+        let m = match_pixels(&INDEX, &entry.pixels).expect("内嵌索引应能自匹配");
         assert_eq!(m.name, "lg_yangtuo");
         assert_eq!(m.text, "仰托");
         assert!(m.distance < 1e-6, "自匹配距离应为 0");

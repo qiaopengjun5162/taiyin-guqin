@@ -130,6 +130,34 @@ impl ServerConfig {
     pub fn cors_locked(&self) -> bool {
         !self.allowed_origins.is_empty()
     }
+
+    /// 限流值必须都 >= 1：governor 的 `finish()` 对 0 会返回 `None`。
+    ///
+    /// 配额 0 是**刻意保留**的应急关闸（见 `from_env`）；限流没有对应的语义。
+    /// 与其在启动时以一句含糊的 `expect` 失败，不如说清是哪个变量、合法范围，
+    /// 以及想关掉发布入口该用什么——限流 0 通常是手滑或想「关闸」，两种都该指路。
+    pub fn validate_rate_limits(&self) -> Result<(), String> {
+        let pairs: [(&str, u64); 8] = [
+            ("GLOBAL_RATE_PER_SECOND", self.global_per_second),
+            ("GLOBAL_RATE_BURST", self.global_burst as u64),
+            ("TRANSLATE_RATE_PER_SECOND", self.translate_per_second),
+            ("TRANSLATE_RATE_BURST", self.translate_burst as u64),
+            ("AUTH_RATE_PER_SECOND", self.auth_per_second),
+            ("AUTH_RATE_BURST", self.auth_burst as u64),
+            ("WRITE_RATE_PER_SECOND", self.write_per_second),
+            ("WRITE_RATE_BURST", self.write_burst as u64),
+        ];
+        for (name, v) in pairs {
+            if v == 0 {
+                return Err(format!(
+                    "{name} 不能为 0（限流的每秒数与突发容量都必须 >= 1）。\
+                     想立刻关掉发布入口请用配额 0：PUBLISH_QUOTA_PER_ACCOUNT=0 \
+                     / PUBLISH_QUOTA_PER_DEVICE=0，不用限流来关闸。"
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for ServerConfig {
@@ -227,5 +255,35 @@ mod tests {
         assert!(cfg.publish_quota_per_device > 0);
         // 未登录额度必须更紧，否则「换一个新凭证」就等于重置配额。
         assert!(cfg.publish_quota_per_device < cfg.publish_quota_per_account);
+    }
+
+    /// 限流 0 不能悄悄让服务起不来：要指明是哪个变量，并把「想关闸」
+    /// 引到配额 0 上去（配额 0 是刻意保留的应急关闸）。
+    #[test]
+    fn rate_limits_reject_zero_with_guidance() {
+        let cfg = ServerConfig::default();
+        assert!(cfg.validate_rate_limits().is_ok(), "默认配置应可用");
+
+        let bad = ServerConfig {
+            global_burst: 0,
+            ..ServerConfig::default()
+        };
+        let msg = bad.validate_rate_limits().expect_err("burst=0 应被拒");
+        assert!(msg.contains("GLOBAL_RATE_BURST"), "应指明是哪个变量：{msg}");
+        assert!(
+            msg.contains("PUBLISH_QUOTA_PER_ACCOUNT=0"),
+            "应指引用配额 0 关闸：{msg}"
+        );
+
+        let bad_rate = ServerConfig {
+            translate_per_second: 0,
+            ..ServerConfig::default()
+        };
+        assert!(
+            bad_rate
+                .validate_rate_limits()
+                .expect_err("per_second=0 应被拒")
+                .contains("TRANSLATE_RATE_PER_SECOND")
+        );
     }
 }

@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### 边界收尾：让「没法比 / 非法输入 / 配置写错」不再静默（2026-11-10）
+
+上一轮修完三处「悄悄给错结果」后，把剩下几处输入与配置边界一起收了：
+
+| 边界 | 以前 | 现在 |
+|---|---|---|
+| 模板索引数据不一致 | `euclid` 用 `zip` **静默按短的算**距离——索引加载得好好的，识别结果全错还不报错 | 加载期校验 `size` 与每条像素长度，不一致直接启动失败并写清是哪一条；`match_pixels` 把长度不符的条目排除到「没法比」为止 |
+| 模板索引为空 / query 长度不符 | `match_pixels` 的 `dists[0]` 直接 panic | 返回 `None`，上层当「模板路径不可用」降级到 LLM（`sheet_segment` 跳过该格） |
+| 简谱数字不在 1–7 | 静默返回空候选，用户看到「无候选」以为是琴谱或琴的问题 | `/translate/select` 明确 400「简谱数字必须是 1 到 7，收到 N」。前端解析器本就挡住了非法数字，这里堵的是公开 API |
+| `RecognizeJianziResponse.method` | 漏了 `template`（后端模板路径会返回，组件也按它分支显示） | 补上，并加 vitest + `tsc` 契约护栏：窄了直接编译不过 |
+| 限流配置为 0 | governor 的 `finish()` 返回 `None`，启动时一句含糊的 `expect` panic | 先校验并指明是哪个变量、合法范围，并把「想关发布入口」引到配额 0 上（配额 0 是**刻意保留**的应急关闸） |
+
+**顺带修了一处测试隔离缺陷**：`tests/scores.rs` 用单一常量凭证 + `DELETE FROM scores`
+清空全表做隔离，`cargo test --workspace` 并行跑用例时会互相删对方刚造的数据——
+症状是拿自己造的谱 GET 到 404、`x-total-count` 少 1（单跑全绿、`--workspace` 偶发红）。
+改成每个用例独立 `owner_token`、清理只删自己的行。**测试必须在并行下独立通过**，
+否则 CI 一红，人会先去怀疑功能回归，白查半天。
+
+新增 4 条 Rust 测试（模板索引 2、非法数字 1、限流 1）+ 2 条前端 `method` 契约测试；
+六处变异验证分别把修复撤回，都如实判红且红在断言 / 类型错误（不是编译崩或断库）。
+
+本轮**未触碰 `crates/taiyin-core/src`**，小程序探针的 WASM 同源清单无需重建。
+
+验证：`cargo fmt --all -- --check` / `cargo clippy --workspace --all-targets -- -D warnings` /
+`cargo test --workspace`（core 101 + server lib 83 + 全部集成测试并行跑）/ `tsc --noEmit` /
+vitest 2 条全绿。
+
 ### 后端三处「悄悄给错结果」的修复（2026-11-10）
 
 功能补齐之后做了一轮 Rust 侧正确性审查，捞出三个**不会报错、只会给错结果**的缺陷：

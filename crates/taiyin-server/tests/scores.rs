@@ -9,12 +9,22 @@ use taiyin_server::{AppState, ServerConfig, app};
 use tower::util::ServiceExt;
 
 /// 测试用发布者凭证：创建时带上，之后改 / 删必须带同一个值。
-const OWNER: &str = "test-owner-token-0001";
+/// 每个用例一个独立发布者凭证。
+///
+/// `cargo test` 会并行跑用例（同一进程内多线程，不同测试二进制还共享同一个库）。
+/// 以前共用一个常量凭证 + 「`DELETE FROM scores` 清空全表」做隔离，会让用例互相删
+/// 对方刚造的数据：症状是拿自己造的谱 GET 到 404、或 `x-total-count` 少 1——
+/// 都不会报功能错误，只会让 CI 偶发红。隔离到凭证一级后，清理只删自己的行。
+fn unique_owner() -> String {
+    format!("test-owner-{}", uuid::Uuid::new_v4())
+}
 
 #[tokio::test]
 async fn test_create_and_list_scores() {
     let pool = common::test_pool().await;
-    sqlx::query("DELETE FROM scores")
+    let owner = unique_owner();
+    sqlx::query("DELETE FROM scores WHERE owner_token = $1")
+        .bind(&owner)
         .execute(&pool)
         .await
         .unwrap();
@@ -30,7 +40,7 @@ async fn test_create_and_list_scores() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
@@ -67,7 +77,9 @@ async fn test_create_and_list_scores() {
 #[tokio::test]
 async fn test_create_get_update_delete() {
     let pool = common::test_pool().await;
-    sqlx::query("DELETE FROM scores")
+    let owner = unique_owner();
+    sqlx::query("DELETE FROM scores WHERE owner_token = $1")
+        .bind(&owner)
         .execute(&pool)
         .await
         .unwrap();
@@ -86,7 +98,7 @@ async fn test_create_get_update_delete() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
@@ -124,7 +136,7 @@ async fn test_create_get_update_delete() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -155,7 +167,7 @@ async fn test_create_get_update_delete() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .uri(format!("/api/v1/scores/{id}"))
                 .body(Body::empty())
                 .unwrap(),
@@ -184,7 +196,9 @@ async fn test_create_get_update_delete() {
 #[tokio::test]
 async fn test_score_tuning_roundtrip() {
     let pool = common::test_pool().await;
-    sqlx::query("DELETE FROM scores")
+    let owner = unique_owner();
+    sqlx::query("DELETE FROM scores WHERE owner_token = $1")
+        .bind(&owner)
         .execute(&pool)
         .await
         .unwrap();
@@ -199,7 +213,7 @@ async fn test_score_tuning_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
@@ -222,7 +236,7 @@ async fn test_score_tuning_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -284,7 +298,7 @@ async fn test_score_tuning_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -302,7 +316,9 @@ async fn test_score_tuning_roundtrip() {
 #[tokio::test]
 async fn test_score_author_roundtrip() {
     let pool = common::test_pool().await;
-    sqlx::query("DELETE FROM scores")
+    let owner = unique_owner();
+    sqlx::query("DELETE FROM scores WHERE owner_token = $1")
+        .bind(&owner)
         .execute(&pool)
         .await
         .unwrap();
@@ -317,7 +333,7 @@ async fn test_score_author_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
@@ -340,7 +356,7 @@ async fn test_score_author_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -400,7 +416,7 @@ async fn test_score_author_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -417,7 +433,9 @@ async fn test_score_author_roundtrip() {
 #[tokio::test]
 async fn test_owner_token_guards_update_and_delete() {
     let pool = common::test_pool().await;
-    sqlx::query("DELETE FROM scores")
+    let owner = unique_owner();
+    sqlx::query("DELETE FROM scores WHERE owner_token = $1")
+        .bind(&owner)
         .execute(&pool)
         .await
         .unwrap();
@@ -432,7 +450,7 @@ async fn test_owner_token_guards_update_and_delete() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .header("x-forwarded-for", "203.0.113.7")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
@@ -527,7 +545,7 @@ async fn test_owner_token_guards_update_and_delete() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .uri(format!("/api/v1/scores/{id}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body_str))
@@ -541,7 +559,7 @@ async fn test_owner_token_guards_update_and_delete() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .uri(format!("/api/v1/scores/{id}"))
                 .body(Body::empty())
                 .unwrap(),
@@ -583,6 +601,7 @@ async fn test_owner_token_guards_update_and_delete() {
 #[tokio::test]
 async fn list_scores_is_paginated() {
     let pool = common::test_pool().await;
+    let owner = unique_owner();
     let state = AppState {
         pool: pool.clone(),
         llm: Default::default(),
@@ -596,7 +615,7 @@ async fn list_scores_is_paginated() {
                     .method("POST")
                     .uri("/api/v1/scores")
                     .header("content-type", "application/json")
-                    .header("x-owner-token", OWNER)
+                    .header("x-owner-token", &owner)
                     .header("x-forwarded-for", "203.0.113.7")
                     .body(Body::from(
                         serde_json::to_string(&json!({"title": title, "notes": []})).unwrap(),
@@ -698,6 +717,7 @@ async fn list_scores_is_paginated() {
 #[tokio::test]
 async fn create_score_is_rate_limited_but_list_is_not() {
     let pool = common::test_pool().await;
+    let owner = unique_owner();
     let config = ServerConfig {
         // 全局放到几乎不生效，才能证明「发布自己带锁」而不是被全局顺带挡住
         global_per_second: 1000,
@@ -728,7 +748,7 @@ async fn create_score_is_rate_limited_but_list_is_not() {
                     .method("POST")
                     .uri("/api/v1/scores")
                     .header("content-type", "application/json")
-                    .header("x-owner-token", OWNER)
+                    .header("x-owner-token", &owner)
                     .header("x-forwarded-for", "198.51.100.31")
                     .body(Body::from(body))
                     .unwrap(),
@@ -755,7 +775,7 @@ async fn create_score_is_rate_limited_but_list_is_not() {
                 .method("POST")
                 .uri("/api/v1/scores")
                 .header("content-type", "application/json")
-                .header("x-owner-token", OWNER)
+                .header("x-owner-token", &owner)
                 .header("x-forwarded-for", "198.51.100.77")
                 .body(Body::from(body))
                 .unwrap(),

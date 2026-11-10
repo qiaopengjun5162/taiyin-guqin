@@ -142,7 +142,11 @@ pub fn recognize_cells(
                 &crop,
                 template_match::SIZE,
             );
-            let m = template_match::match_pixels(index, &pixels);
+            // `match_pixels` 返回 `None` 表示「没法比」（索引为空 / 像素长度对不上），
+            // 这一格就跳过：模板路径对它不可用，上层拿到空 cells 会降级到 LLM。
+            let Some(m) = template_match::match_pixels(index, &pixels) else {
+                continue;
+            };
             out.push(SheetCellMatch {
                 row,
                 col,
