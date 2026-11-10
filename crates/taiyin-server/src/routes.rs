@@ -1094,8 +1094,9 @@ struct ListScoresQuery {
     /// `recent`（默认）= 按更新时间倒序；`popular` = 按收藏数倒序（热度）。
     /// 只认这两个值，其它一律当 `recent`——不把任意字符串塞进 SQL（排序子句无法参数化）。
     sort: Option<String>,
-    /// 关键词：同时匹配标题与署名（ILIKE，大小写不敏感）。空 / 纯空白视为「不给」。
-    /// 拼进 SQL 的是**占位符 `$1`**，实际值走 bind——绝不把用户输入当 SQL 片段拼。
+    /// 关键词：同时匹配标题与署名（大小写不敏感的字面子串）。空 / 纯空白视为「不给」。
+    /// 拼进 SQL 的是**占位符 `$1`**，实际值走 bind——绝不把用户输入当 SQL 片段拼；
+    /// 也不包 `%` 交给 ILIKE（见 `list_scores` 里的 `position`）。
     q: Option<String>,
     /// 定弦过滤：只留等于该值的谱。非法值直接 400（而非静默忽略），
     /// 否则「我以为筛了其实没筛」比不提供筛选更让人困惑。
@@ -1123,13 +1124,16 @@ async fn list_scores(
         _ => "ORDER BY updated_at DESC",
     };
 
-    // 关键词：同时匹配标题与署名（ILIKE，大小写不敏感）。空 / 纯空白视为「不给」。
-    // 拼进 SQL 的是**占位符 `$1`**，实际值走 bind——绝不把用户输入当 SQL 片段拼。
+    // 关键词：同时匹配标题与署名（大小写不敏感）。空 / 纯空白视为「不给」。
+    // 值走 bind，绝不把用户输入当 SQL 片段拼；也**不包 `%` 交给 ILIKE**：
+    // 那样用户搜 `%` 会被当成「任意字符串」返回全库，`_` 会匹配任意单字符，
+    // 列表内容和 x-total-count 会一起错，而且一句错话都不报。
+    // 改成 position() 做字面子串匹配，`%` / `_` / `\` 都只是普通字符。
     let q_param: Option<String> =
         q.q.as_ref()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
-            .map(|s| format!("%{s}%"));
+            .map(str::to_string);
     // 定弦过滤：只留等于该值的谱。非法值直接 400（而非静默忽略），
     // 否则「我以为筛了其实没筛」比不提供筛选更让人困惑。
     let tuning_param: Option<String> = match q.tuning.as_deref() {
@@ -1144,7 +1148,8 @@ async fn list_scores(
         "SELECT id, title, tuning, author, owner_user_id, favorites_count, created_at, updated_at \
          FROM scores \
          WHERE hidden_at IS NULL \
-           AND ($1::text IS NULL OR title ILIKE $1 OR author ILIKE $1) \
+           AND ($1::text IS NULL OR position(lower($1) in lower(title)) > 0 \
+                OR position(lower($1) in lower(author)) > 0) \
            AND ($2::text IS NULL OR tuning = $2) \
          {order_by} LIMIT $3 OFFSET $4"
     ))
@@ -1162,7 +1167,8 @@ async fn list_scores(
     let total: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM scores \
          WHERE hidden_at IS NULL \
-           AND ($1::text IS NULL OR title ILIKE $1 OR author ILIKE $1) \
+           AND ($1::text IS NULL OR position(lower($1) in lower(title)) > 0 \
+                OR position(lower($1) in lower(author)) > 0) \
            AND ($2::text IS NULL OR tuning = $2)",
     )
     .bind(q_param.clone())
@@ -1382,18 +1388,27 @@ async fn claim_score(
     }
 
     // 不动 updated_at：认领不是内容变更，不该把旧谱顶到列表最前面。
+    //
+    // WHERE 里的归属约束不能省：owner_token 在认领后**故意保留**（换设备还能靠
+    // 账号认谱，旧凭证也要能继续认自己别的谱）。只比对凭证的话，同一台设备
+    // 换个账号登录再调一次 claim，就能把已经归到前一个账号名下的谱抢过来——
+    // 前一个账号不会收到任何通知，只是悄悄失去改删权。
+    // 允许 `owner_user_id = $1` 是为了让本人重复点击保持幂等。
+    // 条件写在 UPDATE 里而不是先查后改，靠行锁保证并发时只有一个账号能得手。
     let updated = sqlx::query_as::<_, Score>(
         "UPDATE scores SET owner_user_id = $1 \
-         WHERE id = $2 \
+         WHERE id = $2 AND (owner_user_id IS NULL OR owner_user_id = $1) \
          RETURNING id, title, notes, tuning, author, owner_token, owner_user_id, \
                    created_at, updated_at, (hidden_at IS NOT NULL) AS hidden",
     )
     .bind(caller.user_id)
     .bind(id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await?;
 
-    Ok(Json(updated))
+    updated
+        .map(Json)
+        .ok_or_else(|| AppError::Conflict("这首曲谱已归属其他账号，不能重复认领".into()))
 }
 
 #[cfg(test)]

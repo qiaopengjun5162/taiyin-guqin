@@ -550,11 +550,7 @@ pub async fn recognize_jianzi_with_llm(
     }
 
     let api_resp: ApiResponse = resp.json().await?;
-    let text = api_resp
-        .content
-        .first()
-        .map(|c| c.text.as_str())
-        .unwrap_or("");
+    let text = api_resp.first_text()?;
 
     Ok(Some(parse_recognition(text)))
 }
@@ -839,11 +835,7 @@ pub async fn recognize_sheet_with_llm(
     }
 
     let api_resp: ApiResponse = resp.json().await?;
-    let text = api_resp
-        .content
-        .first()
-        .map(|c| c.text.as_str())
-        .unwrap_or("");
+    let text = api_resp.first_text()?;
 
     Ok(Some(parse_sheet_recognition(text)))
 }
@@ -873,6 +865,28 @@ struct ApiResponse {
 #[derive(Deserialize)]
 struct ApiContent {
     text: String,
+}
+
+impl ApiResponse {
+    /// 取第一个非空文本块；`content` 为空或全是空文本时报错。
+    ///
+    /// 不能像以前那样 `.first().unwrap_or("")` 继续往下走：`parse_selections` /
+    /// `parse_recognition` / `parse_sheet_recognition` 对空串一律回退成
+    /// 「top1 / glyph:null / 空 cells」，而响应里的 `method` 仍是 `"llm"` ——
+    /// 一个假的 200 绿灯（推理型模型耗尽 token、安全拦截、网关截断都会触发）。
+    /// 报错后上层会把 `method` 诚实降级为 `heuristic`，或直接返回 503；
+    /// 与 OpenAI 路径 `call_openai_vision` 的判空保持一致。
+    fn first_text(&self) -> anyhow::Result<&str> {
+        match self
+            .content
+            .iter()
+            .map(|c| c.text.trim())
+            .find(|t| !t.is_empty())
+        {
+            Some(text) => Ok(text),
+            None => anyhow::bail!("模型返回空内容（content 块数 {}）", self.content.len()),
+        }
+    }
 }
 
 /// 调用 Anthropic Messages API 选择候选；未配置密钥时返回 `Ok(None)`。
@@ -913,11 +927,7 @@ pub async fn select_with_llm(
     }
 
     let api_resp: ApiResponse = resp.json().await?;
-    let text = api_resp
-        .content
-        .first()
-        .map(|c| c.text.as_str())
-        .unwrap_or("");
+    let text = api_resp.first_text()?;
 
     Ok(Some(parse_selections(
         text,
@@ -1220,6 +1230,26 @@ mod tests {
         }
     }
 
+    /// Anthropic 路径的假配置。`spawn_mock_openai` 只是「按脚本依次应答的本地
+    /// HTTP 端点」，与请求路径/协议无关，两条协议共用同一个设施。
+    fn anthropic_config(url: &str) -> LlmConfig {
+        LlmConfig {
+            api_key: Some("test-key".into()),
+            api_style: ApiStyle::Anthropic,
+            base_url: url.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Anthropic Messages API 的响应体：`content` 是若干文本块。
+    fn mock_messages_body(texts: &[&str]) -> String {
+        let content: Vec<_> = texts
+            .iter()
+            .map(|t| serde_json::json!({"type": "text", "text": t}))
+            .collect();
+        serde_json::json!({ "content": content }).to_string()
+    }
+
     #[tokio::test]
     async fn test_openai_recognize_sends_image_model_and_bearer_auth() {
         let glyph_json = r#"{"glyph":"散挑一","explanation":"左散右挑下弦一","confidence":0.9}"#;
@@ -1401,5 +1431,51 @@ mod tests {
         assert!(u.contains("null"), "user 应重复 null 纪律：{u}");
         let ss = build_recognize_sheet_system();
         assert!(ss.contains("逐字格独立"), "sheet 应逐字格独立观察：{ss}");
+    }
+
+    /// 三个 Anthropic 入口遇到空内容都必须报错，否则上层会拿到 method="llm"
+    /// 的假成功：候选优选变默认 top1、单字识别变 glyph:null、整页识别变空 cells。
+    /// 触发条件很常见：推理型模型把 max_tokens 烧在思考上、安全拦截、网关截断。
+    #[tokio::test]
+    async fn test_anthropic_empty_content_is_an_error_not_a_fake_llm_success() {
+        let notes = [JianpuNote::new(5, 0)];
+        let cands = vec![vec![open(1), pressed(2)]];
+
+        // ① 候选优选：content 为空数组
+        let (url, _) = spawn_mock_openai(vec![(200, mock_messages_body(&[]))]);
+        let err = select_with_llm(&anthropic_config(&url), &notes, Tuning::ZhengDiao, &cands)
+            .await
+            .expect_err("空 content 必须是错误，不能返回 Ok(Some(默认 top1))");
+        assert!(
+            err.to_string().contains("空内容"),
+            "错误应说明空内容：{err}"
+        );
+
+        // ② 单字识别：只有一个纯空白文本块
+        let (url2, _) = spawn_mock_openai(vec![(200, mock_messages_body(&["  "]))]);
+        let err2 = recognize_jianzi_with_llm(&anthropic_config(&url2), "QUJD", "image/png")
+            .await
+            .expect_err("纯空白 content 必须是错误，不能返回 glyph:null 的 200");
+        assert!(err2.to_string().contains("空内容"), "{err2}");
+
+        // ③ 整页识别：content 为空数组
+        let (url3, _) = spawn_mock_openai(vec![(200, mock_messages_body(&[]))]);
+        let err3 = recognize_sheet_with_llm(&anthropic_config(&url3), "QUJD", "image/png")
+            .await
+            .expect_err("空 content 必须是错误，不能返回空 cells 的 200");
+        assert!(err3.to_string().contains("空内容"), "{err3}");
+    }
+
+    /// 判空不能矫枉过正：多块响应里应跳过前面的空块，用第一个非空文本。
+    #[tokio::test]
+    async fn test_anthropic_uses_first_non_empty_content_block() {
+        let glyph_json = r#"{"glyph":"散挑一","confidence":0.9}"#;
+        let (url, _) = spawn_mock_openai(vec![(200, mock_messages_body(&["", glyph_json]))]);
+        let result = recognize_jianzi_with_llm(&anthropic_config(&url), "QUJD", "image/png")
+            .await
+            .unwrap()
+            .expect("应返回识别结果");
+        assert_eq!(result.glyph.as_deref(), Some("散挑一"));
+        assert_eq!(result.method, "llm");
     }
 }

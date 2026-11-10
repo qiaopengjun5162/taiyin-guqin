@@ -614,3 +614,92 @@ async fn me_endpoint_is_not_throttled_with_login() {
         "/auth/me 不该与登录共用限流，否则登录态会被误判为失效"
     );
 }
+
+/// 认领后 owner_token 仍保留，不能因此让「同一台设备换账号登录」把谱抢走。
+///
+/// 症状不会报错：A 只是某天发现自己改不了那首谱了，B 的列表里凭空多出一行。
+/// 同时钉住「本人重复认领是幂等的」，避免把修复做成「点第二次就 409」。
+#[tokio::test]
+async fn claim_cannot_reassign_a_score_owned_by_another_account() {
+    let pool = common::test_pool().await;
+    let (email_a, token_a) = register_token(&pool, "qin-you-2026").await;
+    let (email_b, token_b) = register_token(&pool, "qin-you-2026").await;
+
+    let (status, created) = send(
+        &pool,
+        "POST",
+        "/api/v1/scores",
+        Some(json!({"title": "共用设备发的谱", "notes": []})),
+        None,
+        Some("shared-device-token"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = created["id"].as_str().unwrap().to_string();
+    let score_id = Uuid::parse_str(&id).unwrap();
+
+    // ① A 用这台设备认领
+    let (status, claimed) = send(
+        &pool,
+        "POST",
+        &format!("/api/v1/scores/{id}/claim"),
+        None,
+        Some(&token_a),
+        Some("shared-device-token"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{claimed}");
+    let owner_a = claimed["owner_user_id"].as_str().unwrap().to_string();
+
+    // ② B 拿着同一把设备凭证再认领：必须被拒，不能改归属
+    let (status, body) = send(
+        &pool,
+        "POST",
+        &format!("/api/v1/scores/{id}/claim"),
+        None,
+        Some(&token_b),
+        Some("shared-device-token"),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "换账号登录不该能把已认领的谱抢走：{body}"
+    );
+
+    let owner: Option<Uuid> = sqlx::query_scalar("SELECT owner_user_id FROM scores WHERE id = $1")
+        .bind(score_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        owner.map(|u| u.to_string()).as_deref(),
+        Some(owner_a.as_str()),
+        "库里的归属必须仍是 A"
+    );
+
+    // ③ A 自己重复点一次应保持幂等
+    let (status, again) = send(
+        &pool,
+        "POST",
+        &format!("/api/v1/scores/{id}/claim"),
+        None,
+        Some(&token_a),
+        Some("shared-device-token"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "本人重复认领不该报错：{again}");
+
+    sqlx::query("DELETE FROM scores WHERE id = $1")
+        .bind(score_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for email in [&email_a, &email_b] {
+        sqlx::query("DELETE FROM users WHERE email = $1")
+            .bind(email)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}

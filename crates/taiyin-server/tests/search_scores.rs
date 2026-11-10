@@ -223,3 +223,68 @@ async fn tuning_filter_and_invalid_is_400() {
         .await
         .ok();
 }
+
+/// `%` / `_` 是用户想搜的字符，不是 SQL 通配符。
+///
+/// 修之前关键词被包成 `%{q}%` 交给 ILIKE：`q=%` 等价于「不过滤」返回全库，
+/// `q=_` 匹配任意单字符谱，列表和 x-total-count 一起错，还一句错话都不报。
+/// 现在用字面子串匹配，命中结果的标题/署名里必须真的出现这个字符。
+#[tokio::test]
+async fn search_treats_like_metacharacters_as_literal_text() {
+    let pool = common::test_pool().await;
+    let app = router(pool.clone());
+    let _a = create_score(&app, "Wildcard%_Score", "Someone", "zhengdiao").await;
+    let _b = create_score(&app, "PlainSong", "Someone", "zhengdiao").await;
+
+    // ① 搜 `%`（URL 编码 %25）：只该命中真含 % 的谱，绝不能把 PlainSong 带出来
+    let (status, body, _) = call(&app, "GET", "/api/v1/scores?q=%25&limit=200", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    // 与同文件其它用例一致：不对 x-total-count 做精确数值断言（开发库可能有历史数据），
+    // 关键是「每一条命中都真的含关键词」以及「不含关键词的谱没被带出来」。
+    let titles = titles_of(&body);
+    assert!(
+        titles.iter().all(|t| t.contains('%')),
+        "搜 %% 的结果必须都真含 %%，实际：{titles:?}"
+    );
+    assert!(
+        titles.iter().any(|t| t == "Wildcard%_Score"),
+        "应命中含 % 的谱：{titles:?}"
+    );
+    assert!(
+        !titles.iter().any(|t| t == "PlainSong"),
+        "搜 %% 不该返回全库：{titles:?}"
+    );
+
+    // ② 搜 `_`：同样只该命中真含下划线的谱
+    let (_, body2, _) = call(&app, "GET", "/api/v1/scores?q=_&limit=200", None, None).await;
+    let titles2 = titles_of(&body2);
+    assert!(
+        titles2.iter().all(|t| t.contains('_')),
+        "搜 _ 的结果必须都真含 _，实际：{titles2:?}"
+    );
+    assert!(
+        titles2.iter().any(|t| t == "Wildcard%_Score"),
+        "应命中含 _ 的谱：{titles2:?}"
+    );
+    assert!(
+        !titles2.iter().any(|t| t == "PlainSong"),
+        "搜 _ 不该匹配任意单字符谱：{titles2:?}"
+    );
+
+    // ③ 反斜杠也只是普通字符，不该被当转义符
+    let _c = create_score(&app, "Back\\SlashSong", "Someone", "zhengdiao").await;
+    let (_, body3, _) = call(&app, "GET", "/api/v1/scores?q=%5C&limit=200", None, None).await;
+    let titles3 = titles_of(&body3);
+    assert!(
+        titles3.iter().all(|t| t.contains('\\')),
+        "搜 \\ 的结果必须都真含反斜杠：{titles3:?}"
+    );
+    assert!(titles3.iter().any(|t| t == "Back\\SlashSong"));
+
+    sqlx::query(
+        "DELETE FROM scores WHERE title IN ('Wildcard%_Score','PlainSong','Back\\SlashSong')",
+    )
+    .execute(&pool)
+    .await
+    .ok();
+}

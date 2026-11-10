@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### 后端三处「悄悄给错结果」的修复（2026-11-10）
+
+功能补齐之后做了一轮 Rust 侧正确性审查，捞出三个**不会报错、只会给错结果**的缺陷：
+
+| 缺陷 | 触发条件 | 后果 | 修复 |
+|---|---|---|---|
+| 认领可抢走别人的谱 | 谱由设备凭证 T 发布并认领给账号 A 后，持同一凭证 T 登录账号 B 再调 claim | `UPDATE scores SET owner_user_id` 没有归属约束，A 静默失去改删权、B 凭空多一首谱 | `WHERE` 加 `owner_user_id IS NULL OR owner_user_id = $1`，靠行锁保证并发只有一个账号得手；`fetch_optional` 落空返回 409，本人重复点仍幂等 |
+| Anthropic 空内容假绿 | 推理型模型把 token 烧在思考上、安全拦截、网关截断，`content` 为空或全空文本 | 三处入口 `unwrap_or("")` 后 `parse_*` 回退成默认 top1 / `glyph:null` / 空 cells，但 `method` 仍是 `"llm"` —— 前端显示「AI 已优选」，其实什么都没做 | 统一 `ApiResponse::first_text()`：跳过前面的空块取第一个非空文本，全空则 `bail!`，让上层按既有分支降级为 `heuristic` 或 503；与 OpenAI 路径的判空对齐 |
+| 搜索关键词被当通配符 | `?q=%25`（`%`）、`?q=_` | `format!("%{s}%")` 交给 ILIKE，`%` 匹配任意串返回全库、`_` 匹配任意单字符，列表与 `x-total-count` 一起错 | 改用 `position(lower($1) in lower(title/author))` 做字面子串匹配，值仍走 bind；`%` / `_` / `\` 都只是普通字符 |
+
+新增 4 条测试（2 条 llm 库单测 + 2 条连真 Postgres 的集成测试），并做**变异验证**：
+把三处修复分别临时撤回，三条新测试都如实判红且红在断言（不是编译崩或连不上库）——
+搜索那条撤回后直接复现「搜 `%` 返回全库，`PlainSong` 也在结果里」。
+
+**有意没修的两项**（记录，不硬造功能）：
+- `JianpuNote.number` 未校验 1–7：WASM / `/translate/select` 传 0、8 会静默返回空候选。
+  要修就得把 WASM 契约、类型生成、前端校验一起改，另排工程。
+- 整页识别缺 `row` / `col` 的格子被 `unwrap_or(0)` 归到 (0,0)，前端按 `row-col` 建表会互相覆盖。
+  识别本身已判定结构性失效、不作卖点，这条随识别重建一起处理。
+
+验证：`cargo fmt --all -- --check` / `cargo clippy --workspace --all-targets -- -D warnings` /
+`cargo test --workspace`（core 101 + server lib 79 + 全部集成测试）全绿。
+本轮**未触碰 `crates/taiyin-core/src`**，小程序探针的 WASM 同源清单无需重建。
+
 ### 定弦 6 种：补上漏掉的两处，并加一道契约闸门（2026-11-10）
 
 上一轮把定弦从 3 种扩到 6 种，只改了 `apps/web/src/lib/tuning.ts`，另外三处还停在 3 种：
