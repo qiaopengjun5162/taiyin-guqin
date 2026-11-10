@@ -182,7 +182,7 @@ export interface Score extends ScoreListItem {
 /**
  * 兜底校验后端返回的定弦。
  *
- * 正常情况后端只会存三种合法值，但接口层不该信任网络数据：
+ * 正常情况后端只会存六种合法值（见 `VALID_TUNINGS`），但接口层不该信任网络数据：
  * 万一拿到未知字符串，退回正调也比让 `openMidi[index]` 取到 undefined 崩掉好。
  */
 function normalizeTuning<T extends { tuning: TuningId }>(score: T): T {

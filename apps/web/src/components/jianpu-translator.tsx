@@ -2,11 +2,13 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { useWasmInit } from "@/lib/taiyin-wasm";
-import { getServerTuning, getTuning, subscribeTuning } from "@/lib/tuning";
+import { getServerTuning, getTuning, getTuningById, subscribeTuning } from "@/lib/tuning";
 import { SingleNoteMode } from "./jianpu-translator/single-note-mode";
 import { SequenceMode } from "./jianpu-translator/sequence-mode";
 import {
   TUNING_OPTIONS,
+  TUNING_TO_ID,
+  isArrangementTuning,
   tuningFromId,
   type InputMode,
   type Tuning,
@@ -23,6 +25,12 @@ export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
   const { state: wasmState, error: wasmError } = useWasmInit();
 
   const wasmReady = wasmState === "ready";
+  // 编排按这里的调式出候选，试听也按它；但候选放回曲谱后，播放走的是
+  // 曲谱自己的定弦。两者不一致必须说破——尤其是那三种没有编排调式的外调。
+  const scoreTuningName = getTuningById(scoreTuning).name;
+  const arrangementName = TUNING_OPTIONS.find((t) => t.value === tuning)?.label ?? tuning;
+  const tuningMismatch = TUNING_TO_ID[tuning] !== scoreTuning;
+  const unsupportedScoreTuning = !isArrangementTuning(scoreTuning);
 
   return (
     <div className="flex flex-col gap-2">
@@ -55,6 +63,16 @@ export function JianpuTranslator({ onSelect }: JianpuTranslatorProps) {
           ))}
         </select>
       </div>
+      {tuningMismatch && (
+        <p
+          role="status"
+          className="rounded border border-amber-700/30 bg-amber-50 px-2 py-1 text-[10px] leading-relaxed tracking-wider text-amber-900"
+        >
+          {unsupportedScoreTuning
+            ? `当前曲谱定弦「${scoreTuningName}」没有对应的编排调式（编排只支持正调 / 蕤宾 / 慢角）。这里按「${arrangementName}」出候选，放回曲谱后却会按「${scoreTuningName}」发声，弹出来会差半音；建议先把上方定弦切回这三种之一。`
+            : `当前曲谱定弦「${scoreTuningName}」与这里的编排调式「${arrangementName}」不一致：候选试听按编排调式，放回曲谱后按曲谱定弦发声。`}
+        </p>
+      )}
       {wasmState === "loading" && (
         <p className="text-[10px] tracking-wider text-stone-500">
           减字引擎加载中…

@@ -10,7 +10,7 @@ pub struct Score {
     pub id: Uuid,
     pub title: String,
     pub notes: serde_json::Value,
-    /// 定弦标识（`zhengdiao` / `ruibin` / `manjiao`）。
+    /// 定弦标识，六种取值见 `routes.rs::VALID_TUNINGS`。
     /// 与 `notes` 里的减字一起才完整：减字只写「几弦几徽」，音高由定弦决定。
     pub tuning: String,
     /// 打谱人昵称；空串表示匿名（迁移前的老数据一律为空）。

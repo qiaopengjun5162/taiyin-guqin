@@ -27,7 +27,31 @@ export const TUNING_TO_ID: Record<Tuning, TuningId> = {
   manjiao: "manjiao",
 };
 
-/** 应用定弦标识 → 翻译器调式。 */
+/**
+ * 编排引擎支持的定弦。
+ *
+ * WASM 候选生成只建模「1=F 清乐七声」的简谱（见 Rust `jianpu.rs::Tuning`）：
+ * 输入是「数字 + 八度」，没有升降号。清商 / 太簇 / 凄凉的空弦含 D♯、F♯，
+ * 这套记谱写不出来，所以它们只用于存谱、调音、播放，不进编排。
+ * `scripts/verify-tuning-contract.mjs` 会核对这份名单与 `TUNING_OPTIONS` 一致。
+ */
+export const ARRANGEMENT_TUNING_IDS: readonly TuningId[] = [
+  "zhengdiao",
+  "ruibin",
+  "manjiao",
+];
+
+export function isArrangementTuning(id: TuningId): boolean {
+  return ARRANGEMENT_TUNING_IDS.includes(id);
+}
+
+/**
+ * 应用定弦标识 → 翻译器调式。
+ *
+ * 后三种外调没有对应的编排调式，这里返回正调**只作为下拉的默认值**：
+ * 调用方必须先用 `isArrangementTuning` 判断并显示可见提示，
+ * 不能把它当成无声的降级——否则编排按正调、播放按外调，弹出来差半音。
+ */
 export function tuningFromId(id: TuningId): Tuning {
   return id === "ruibin" ? "ruibin" : id === "manjiao" ? "manjiao" : "zheng";
 }

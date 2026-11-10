@@ -766,8 +766,22 @@ fn ensure_can_edit(caller: &Caller, score: &Score) -> AppResult<()> {
 }
 
 /// 合法定弦标识，与前端 `apps/web/src/lib/tuning.ts` 的 `TuningId` 一一对应。
-/// 两处要一起改，否则后端收下前端不认识的定弦，前端反推音高时只能退回正调。
-const VALID_TUNINGS: [&str; 3] = ["zhengdiao", "ruibin", "manjiao"];
+///
+/// 六种里只有前三种能进 WASM 的简谱编排：编排核心 `taiyin_core::jianpu::Tuning`
+/// 用「1=F 清乐七声」的简谱数字建模，清商 / 太簇 / 凄凉的空弦含 D♯、F♯ 这类
+/// 变化音，在这套记谱里写不出来。后三种只负责存谱、调音、播放时的空弦音高，
+/// 由前端的 MIDI 表表达，不参与候选生成——这不是漏实现，是记谱模型的边界。
+///
+/// 这份名单与前端 `TuningId` / `isTuningId` 的一致性由
+/// `scripts/verify-tuning-contract.mjs` 在 CI 里复核，两处必须一起改。
+const VALID_TUNINGS: [&str; 6] = [
+    "zhengdiao",
+    "ruibin",
+    "manjiao",
+    "qingshang",
+    "taicu",
+    "qiliang",
+];
 const DEFAULT_TUNING: &str = "zhengdiao";
 
 fn validate_tuning(tuning: &str) -> AppResult<()> {
@@ -1386,6 +1400,43 @@ async fn claim_score(
 mod tests {
     use super::*;
     use crate::template_match::{INDEX, RecognizeStrategy};
+
+    #[test]
+    fn tuning_whitelist_matches_frontend_tuning_ids() {
+        // 前端 lib/tuning.ts 的 TuningId 联合（六种）。跨语言一致性另由
+        // scripts/verify-tuning-contract.mjs 在 CI 里做静态复核。
+        let frontend_ids = [
+            "zhengdiao",
+            "ruibin",
+            "manjiao",
+            "qingshang",
+            "taicu",
+            "qiliang",
+        ];
+        assert_eq!(VALID_TUNINGS.len(), frontend_ids.len());
+        for id in frontend_ids {
+            assert!(VALID_TUNINGS.contains(&id), "后端白名单少了 {id}");
+            assert!(validate_tuning(id).is_ok(), "{id} 应能存谱 / 筛选");
+        }
+        assert_eq!(DEFAULT_TUNING, "zhengdiao");
+    }
+
+    #[test]
+    fn tuning_whitelist_rejects_unknown_values() {
+        // 注意 "zheng" 是 WASM 编排的 wire 值，不是存谱用的定弦标识，别混。
+        for bad in ["bogus", "", "zheng", "Zhengdiao"] {
+            let err = validate_tuning(bad).expect_err("未给定弦应拒绝");
+            assert!(matches!(err, AppError::Validation(_)), "{err:?}");
+        }
+        // 报错要列出全部可用值，别让用户只看到一个「未知定弦」。
+        let err = validate_tuning("bogus").expect_err("未给定弦应拒绝");
+        let AppError::Validation(msg) = err else {
+            panic!("应是 Validation 错误");
+        };
+        for id in VALID_TUNINGS {
+            assert!(msg.contains(id), "报错未列出 {id}：{msg}");
+        }
+    }
 
     #[test]
     fn title_limit_counts_chars_not_bytes() {

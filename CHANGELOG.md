@@ -1,8 +1,40 @@
 # 更新日志
 
-## [Unreleased] - 2026-11-09
+## [Unreleased]
 
-### 更正：三篇都已群发 —— 「改草稿」到不了线上
+### 定弦 6 种：补上漏掉的两处，并加一道契约闸门（2026-11-10）
+
+上一轮把定弦从 3 种扩到 6 种，只改了 `apps/web/src/lib/tuning.ts`，另外三处还停在 3 种：
+
+| 断点 | 后果 |
+|---|---|
+| 后端 `VALID_TUNINGS` 仍是 3 种 | 清商 / 太簇 / 凄凉的谱发布、更新、按定弦筛选一律 400 |
+| `tuningFromId` 把新调式静默回退 `zheng` | 编排按正调出候选，候选放回曲谱却按外调发声，弹出来差半音 |
+
+本轮做了三件：
+
+- 后端白名单扩到 6 种，补 2 条纯函数单测（6 个合法值逐一放行、4 个非法值拒绝、
+  报错信息列出全部可用值）。DB 迁移 `002_add_score_tuning.sql` 的 `tuning` 列是普通 TEXT、
+  没有 CHECK 约束，不需要改库。
+- 翻译器新增 `isArrangementTuning` 和可见提示条：曲谱用了外调、或手动选的编排调式
+  与曲谱定弦不一致时，直接写出「编排按哪个调、放回曲谱按哪个调发声、会差半音」，
+  不再无声降级；新增 3 条页面测试钉住文案。
+- 新增 `scripts/verify-tuning-contract.mjs`：静态核对四份名单同源——前端
+  `TuningId` / `TUNINGS` / `isTuningId`、后端 `VALID_TUNINGS`、Rust `Tuning` 的 serde wire 值、
+  翻译器 `TUNING_OPTIONS` / `TUNING_TO_ID` / 编排支持集。11 项检查，
+  `--self-test` 用 7 条变异证明闸门自身不假绿（并检测「解析整体失效」这种假抓到）。
+  已进 CI 与 `just verify-tuning`。**以后再加定弦，漏改任何一处 CI 直接红。**
+
+**有意没做的事**：WASM 编排核心 `taiyin-core::jianpu::Tuning` 仍是 3 种。它用
+「1=F 清乐七声」的简谱数字建模，输入 `JianpuNote` 只有数字 + 八度，写不出
+清商 / 太簇 / 凄凉空弦里的 D♯、F♯；硬加变体只会让 `nearest_pitch` 吸附到
+邻近自然音或整片返回 None，是静默错音，比明确不支持更糟。边界已写进源码注释：
+真要支持变化音，得同时扩展 `JianpuNote`（升降号）、`Pitch`（半音偏移）与
+`nearest_pitch` 的搜索空间，属另一轮工程。
+
+顺手修正 `docs/overview.md` 里过时的 Rust 测试数（306 → 234，按 `#[test]` 属性数现场复核）。
+
+### 更正：三篇都已群发 —— 「改草稿」到不了线上（2026-11-09）
 
 这一轮一开始把 `Articles/ready/` 里的三篇当成「待发稿」，改稿、重推、换 `media_id`。
 核对公众号后发现**三篇全部已群发**，草稿箱的动作对线上零影响：

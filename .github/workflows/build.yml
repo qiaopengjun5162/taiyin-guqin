@@ -160,6 +160,12 @@ jobs:
         # frontmatter 一并扫：上一轮出问题的正是标题/摘要。纯 Node、不需要 vault。
         # 见 scripts/verify-publish.mjs --copy-only 与 scripts/lib/copy-gate.mjs。
         run: node scripts/verify-publish.mjs --copy-only
+      - name: Verify tuning contract
+        # 定弦名单四份（前端 TuningId / 后端白名单 / WASM wire / 翻译器映射）必须同源；
+        # 2026-11-10 扩到 6 种时漏改后端与翻译器，两处静默错音就是这么来的。
+        # --self-test 用 7 条变异证明闸门自身不会假绿。纯 Node、不需要构建产物。
+        # 见 scripts/verify-tuning-contract.mjs 与 just verify-tuning。
+        run: node scripts/verify-tuning-contract.mjs --self-test && node scripts/verify-tuning-contract.mjs
       - name: Lint
         run: pnpm --filter web lint
       - name: Type check

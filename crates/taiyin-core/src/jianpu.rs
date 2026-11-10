@@ -111,6 +111,17 @@ fn nearest_pitch(midi: f64) -> Option<Pitch> {
 }
 
 /// 调式。散音音高以 1=F（三弦为宫）的简谱数字表示。
+///
+/// **这里只有三种，是记谱模型的边界，不是漏实现。** 候选生成建立在本文件
+/// `DEGREE_SEMITONES`（1=F 清乐七声：F G A B♭ C D E）之上，输入 `JianpuNote`
+/// 也只有「数字 + 八度」，写不出升降半音。清商 / 太簇 / 凄凉这类外调的空弦
+/// 含 D♯、F♯，往这个枚举里加变体只会让 `nearest_pitch` 把它们吸附到邻近
+/// 自然音、或整片返回 None —— 静默错音比不支持更糟。
+///
+/// 那三种定弦由前端 `lib/tuning.ts` 的 MIDI 表负责（存谱、调音、播放），
+/// 不进简谱编排；`apps/web/src/components/jianpu-translator/types.ts` 会据此
+/// 给出可见提示。将来若要让编排支持变化音，需同时扩展 `JianpuNote`（升降号）、
+/// `Pitch`（半音偏移）与 `nearest_pitch` 的搜索空间，是另一轮工程。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tuning {
     /// 正调：5 6 1 2 3 5 6

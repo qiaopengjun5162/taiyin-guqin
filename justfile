@@ -93,6 +93,10 @@ ts-check:
 verify-wasm:
     node scripts/verify-wasm.mjs
 
+# 定弦名单四份同源校验（纯 Node，不需要构建产物）；--self-test 跑 7 条变异
+verify-tuning:
+    node scripts/verify-tuning-contract.mjs --self-test && node scripts/verify-tuning-contract.mjs
+
 # 前端测试
 test-web:
     {{pnpm}} --filter web test

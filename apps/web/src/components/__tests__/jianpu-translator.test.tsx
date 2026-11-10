@@ -1,10 +1,12 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, fireEvent, waitFor, act } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { JianpuTranslator } from "../jianpu-translator";
+import { resetTuningCache, setTuning } from "@/lib/tuning";
+import { ARRANGEMENT_TUNING_IDS, isArrangementTuning } from "../jianpu-translator/types";
 import {
   translateJianpuToJianzi,
   translateJianpuSequenceToJianzi,
@@ -302,5 +304,50 @@ describe("JianpuTranslator sequence mode", () => {
 
     expect(queryByText("确认全部")).not.toBeInTheDocument();
     expect(getByText("调式已变更，请重新翻译")).toBeInTheDocument();
+  });
+});
+
+describe("JianpuTranslator 定弦边界", () => {
+  // setTuning 会通知所有 useSyncExternalStore 订阅者；组件还挂着时
+  // 必须在 act 里改，否则测试虽过但会刷一片 React 更新告警。
+  const resetTuning = () =>
+    act(() => {
+      resetTuningCache();
+      setTuning("zhengdiao");
+    });
+
+  beforeEach(resetTuning);
+  afterEach(resetTuning);
+
+  it("只有三种 1=F 记谱调式可编排，外调不算", () => {
+    expect(new Set(ARRANGEMENT_TUNING_IDS)).toEqual(
+      new Set(["zhengdiao", "ruibin", "manjiao"]),
+    );
+    for (const id of ["zhengdiao", "ruibin", "manjiao"] as const) {
+      expect(isArrangementTuning(id)).toBe(true);
+    }
+    for (const id of ["qingshang", "taicu", "qiliang"] as const) {
+      expect(isArrangementTuning(id)).toBe(false);
+    }
+  });
+
+  it("曲谱用了外调时，明确写出编排与发声会差半音", () => {
+    act(() => setTuning("qingshang"));
+    const { getByRole } = render(<JianpuTranslator onSelect={vi.fn()} />);
+    const hint = getByRole("status");
+    expect(hint.textContent).toContain("清商调");
+    expect(hint.textContent).toContain("没有对应的编排调式");
+    expect(hint.textContent).toContain("差半音");
+  });
+
+  it("曲谱定弦与手动选的编排调式不一致时也提示", () => {
+    act(() => setTuning("manjiao"));
+    const { container, getByRole } = render(<JianpuTranslator onSelect={vi.fn()} />);
+    fireEvent.change(container.querySelectorAll("select")[0] as HTMLSelectElement, {
+      target: { value: "zheng" },
+    });
+    const hint = getByRole("status");
+    expect(hint.textContent).toContain("不一致");
+    expect(hint.textContent).toContain("慢角调");
   });
 });
