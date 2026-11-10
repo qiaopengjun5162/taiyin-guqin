@@ -32,7 +32,20 @@
 真要支持变化音，得同时扩展 `JianpuNote`（升降号）、`Pitch`（半音偏移）与
 `nearest_pitch` 的搜索空间，属另一轮工程。
 
-顺手修正 `docs/overview.md` 里过时的 Rust 测试数（306 → 234，按 `#[test]` 属性数现场复核）。
+顺手修正 `docs/overview.md` 里过时的测试数：Rust 306 → 234（按 `#[test]` 属性数现场复核）、
+前端 1,254 → 1,304（按 CI `vitest run --coverage` 全量实测）；合计改成 1,538。
+
+### CI 两处反馈（2026-11-10）
+
+- **改 `taiyin-core` 源码（哪怕只加注释）会触发探针同源闸门**：源码指纹写进
+  `apps/miniprogram-wasm-probe/scripts/wasm-provenance.json`，`Miniprogram WASM Probe`
+  判红「现算 ec5ed… ≠ 清单 07871…」。按提示跑 `just rebuild-probe-wasm` 重编 +
+  三份产物同源复制 + 重算清单，本地 `just verify-probe`（七项，预检 PASS 9 / FAIL 0）
+  与 `node scripts/verify-wasm.mjs` 双绿后再推（`ee68c63`）。别手改清单绕过闸门。
+- **`page-wiring.test.tsx` 的「切换排序失败时提示」偶发假红**：那条 `findByText`
+  用的是默认 1000ms，CI 慢机上 1187ms 超时，而同文件其它异步断言都给 3000~5000ms；
+  本地 21/21 全绿、上一提交同代码也全绿，确认是观测手段脆弱而非功能回归。
+  已统一给到 5000ms。
 
 ### 更正：三篇都已群发 —— 「改草稿」到不了线上（2026-11-09）
 

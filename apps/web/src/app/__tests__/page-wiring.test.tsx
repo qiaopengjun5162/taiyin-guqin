@@ -371,7 +371,11 @@ describe("Home · 社区排序与筛选接线", () => {
     h.listScoresPage.mockRejectedValueOnce(new Error("boom"));
     fireEvent.click(screen.getByRole("button", { name: "最热" }));
 
-    expect(await screen.findByText("切换排序失败，请稍后再试")).toBeTruthy();
+    // 默认 findByText 只等 1000ms，CI 慢机上会假红（2026-11-10 实测 1187ms 超时、
+    // 本地 21/21 全绿）。同文件其它异步断言都给 3000~5000ms，这里对齐。
+    expect(
+      await screen.findByText("切换排序失败，请稍后再试", {}, { timeout: 5000 }),
+    ).toBeTruthy();
   });
 
   it("搜索词防抖后带 query 重拉（不是只在已加载里过滤）", async () => {
