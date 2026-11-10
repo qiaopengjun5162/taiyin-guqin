@@ -2,6 +2,8 @@
 name = "taiyin-server"
 version = "0.2.0"
 edition = "2024"
+# 与 workspace 其他 crate 保持一致（见 taiyin-core 的说明：1.88 来自依赖树上限）。
+rust-version = "1.88"
 
 [dependencies]
 taiyin-core = { path = "../taiyin-core" }

@@ -76,6 +76,22 @@ jobs:
       - name: Test
         run: cargo nextest run --all-features
 
+  # MSRV 门禁：用声明的最老工具链真跑一遍 cargo check。
+  # 这条红了 = Cargo.toml 的 rust-version 失真（某次依赖更新悄悄抬高了要求），
+  # 处理办法是上调两个 crate 的 rust-version 并同步这里的版本号，别调到能过为止。
+  msrv:
+    name: MSRV (rust-version 1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 硬编码版本、不写 stable：MSRV 的意义就是「老编译器真能编译」，
+      # 跟着 stable 走等于没测。
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-features --locked
+
   coverage:
     # 覆盖率闸门：低于阈值直接让 CI 变红，防止「加了代码没加测试」悄悄腐烂。
     # 阈值 = 2026-10-29 实测 --lib 基线（行 74.7%）略降，只用于防退步，不追求刷高。

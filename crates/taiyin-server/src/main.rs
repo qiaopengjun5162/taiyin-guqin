@@ -84,11 +84,47 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     // into_make_service_with_connect_info 注入 ConnectInfo，供 SmartIpKeyExtractor
     // 在缺少代理头时回退到真实 peer IP 进行限流。
+    //
+    // with_graceful_shutdown：收到 SIGTERM（容器 stop / 滚动更新）或 Ctrl-C 后，
+    // 停止 accept 新连接、等 in-flight 请求跑完再退出。没有它，滚动发布时正在
+    // 保存曲谱的用户会撞上「网络错误」。drain 不设上限：由部署层的停止超时兜底
+    // （`docker stop` 默认 10 s 后 SIGKILL），服务自身不跟部署策略抢定义权。
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
 
     Ok(())
+}
+
+/// 等待停机信号：SIGTERM（容器编排器）或 Ctrl-C（本地开发）。
+///
+/// 只在 Unix 上装 SIGTERM 处理器；其他平台用永不完成的 future 占位，
+/// 让 `select!` 仍可编译，行为退化为只认 Ctrl-C。
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("shutdown signal received: draining in-flight requests");
 }

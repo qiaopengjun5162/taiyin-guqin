@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### 发版门禁补齐：MSRV 钉死、镜像可复现、优雅停机（2026-11-10）
+
+按发版门禁六类自查（MSRV / edition 自洽 / feature 组合 / unsafe 清单 / 产物形态 / 回滚），修掉四项「上线后真会出事」：
+
+- **MSRV 声明并真测**：两个 crate 补 `rust-version = "1.88"`（取依赖树上限——`image` 1.88.0 等要求 1.88，不是 edition 下限 1.85）。CI 新增 `msrv` job：硬编码 1.88 工具链跑 `cargo check --workspace --all-features --locked`，声明值本地用真 1.88 编译验证过（EXIT=0）。以前只写 edition 不写 rust-version，用户报「装不上」时无从复现。
+- **workspace `resolver` 2 → 3**（MSRV-aware）：更新依赖时自动避开 `rust-version` 高于 1.88 的版本；显式写 2 等于把这层保护关掉。本次 Cargo.lock 零漂移。
+- **Dockerfile 四处**：`cargo build` 加 `--locked`（锁文件要改写就直接失败，构建可复现）；运行镜像 `cc-debian12:latest` → `:nonroot`（uid 65532 运行，降容器逃逸代价）；`CMD` 改绝对路径 exec 形式（SIGTERM 直达进程——shell 形式下 PID 1 是 sh，优雅停机永不触发）；构建镜像 rust:1.98 → 1.99 与 CI stable 对齐。
+- **优雅停机**：`axum::serve` 加 `with_graceful_shutdown`（SIGTERM + Ctrl-C），滚动发布 / 容器重启不再硬断正在保存曲谱的请求。drain 不设上限，由部署层停止超时兜底（`docker stop` 默认 10 s 后 SIGKILL）。**实测**：起服务 → `kill -TERM` → 日志打出 `shutdown signal received: draining in-flight requests` → 干净退出（带 RUST_LOG=info 验，排除「被信号默认杀死」的假抓到）。
+- **后端二进制保留行号**：`[profile.release.package.taiyin-server] debug = 1` + `strip = "none"`，线上 panic 的 backtrace 能显示文件:行号。全局 `strip = true` 是给 WASM 首载体积的，不动。体积代价约 +10 MB，排障值这个价。
+
+已知留白（有意不做）：迁移无 down 脚本（回滚靠「旧代码不认识新列」，删列类变更仍不可逆）；HTTP 请求级超时未设（识别请求可能合法地长，属产品决策）；镜像真构建由 CI 的 Backend Image workflow 验证。unsafe 清单复核：生产路径 0 处（仅示例 `perf_probe.rs` 的 GlobalAlloc 与 `gen_types.rs` 的 `set_var`，均有 SAFETY 注释）。
+
 ### 修「加载更多」竞态静默早退：根治 page-wiring 的 CI 假红（2026-11-10）
 
 docs-only 提交 `a317a54` 的 CI 上 `page-wiring.test.tsx > 社区翻页失败：提示「加载更多失败」并复位按钮` 判红（断言已给 5 秒、提示从不出现）——不是超时太短，是**处理器根本没发出请求**：

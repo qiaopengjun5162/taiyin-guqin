@@ -2,6 +2,9 @@
 name = "taiyin-core"
 version = "0.2.0"
 edition = "2024"
+# MSRV：依赖树上限（image 1.88.0 / home / tonic 等要求 1.88），不是 edition 下限 1.85。
+# 声明值由 CI 的 msrv job 用真 1.88 工具链跑 cargo check 钉住，别只写不测。
+rust-version = "1.88"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

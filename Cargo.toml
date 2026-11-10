@@ -1,6 +1,8 @@
 [workspace]
 members = ["crates/taiyin-core", "crates/taiyin-server"]
-resolver = "2"
+# resolver v3（edition 2024 默认）= MSRV-aware：更新依赖时自动避开
+# rust-version 高于本项目声明值（1.88）的版本。显式写 "2" 等于把这层保护关掉。
+resolver = "3"
 
 # 发布体积 / 构建时间折中：thin LTO 全局开，strip 掉符号。
 # panic 语义保持 unwind（axum 靠它隔离单请求 panic，不许改 abort）。
@@ -13,3 +15,10 @@ strip = true
 [profile.release.package.taiyin-core]
 opt-level = "z"
 codegen-units = 1
+
+# 后端二进制另立一条：保留行号表（debug = 1）且不剥符号。
+# 线上 panic 的 backtrace 靠它才能显示文件:行号；全局 strip = true 是给 WASM
+# 首载体积服务的，不能动，所以在这里覆盖回去。体积代价约 +10 MB，排障值这个价。
+[profile.release.package.taiyin-server]
+debug = 1
+strip = "none"
