@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "note": "由 scripts/build-worker.mjs 生成，勿手改。不含时间戳，无变化重跑不会产生 diff。",
-  "sourceFingerprint": "sha256:078712116059d10acd49e66f8deb250805e1a091df8ea794ae427181a47e75d4",
+  "sourceFingerprint": "sha256:ec5ed3e9a9f9a7cafc9c70cd4cc0ca9b1c66f8aabfc94d5b6cbf333688d6ced4",
   "sourceInputs": [
     "Cargo.toml",
     "crates/taiyin-core/Cargo.toml",
@@ -15,7 +15,7 @@
   ],
   "wasm": {
     "bytes": 231388,
-    "sha256": "d5db3c173e5b38664ee67310ba4ac8e712f1c30c0bcd6c023ab0d953f11a515d"
+    "sha256": "fd29af036e7f7e9fe0322ab9df1ddec8b64c210a89bd2f379b197bd94760bb48"
   },
   "glue": {
     "bytes": 15308,
