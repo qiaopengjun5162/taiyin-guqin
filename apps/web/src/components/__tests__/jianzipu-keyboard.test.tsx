@@ -561,3 +561,39 @@ describe("JianzipuKeyboard · 连打存图闭环", () => {
     expect(screen.getByText(/连打速查表/)).toBeTruthy();
   });
 });
+
+describe("吟猱族分组（字体挂字尾的 18 个记号）", () => {
+  it("按音下才有「吟猱」组，18 个键，选一个会写入 slide", () => {
+    const onAppend = vi.fn();
+    const { container } = render(<JianzipuKeyboard onAppend={onAppend} />);
+
+    expect(() => section(container, "吟猱")).toThrow();
+    pick(container, "音色", "按");
+    const group = section(container, "吟猱");
+    expect(group.querySelectorAll("button")).toHaveLength(18);
+
+    pick(container, "吟猱", "细吟");
+    expect(option(container, "吟猱", "细吟").className).toContain("bg-amber-700");
+    pick(container, "左手", "大");
+    pick(container, "徽位", "九");
+    pick(container, "右手", "勹");
+    pick(container, "弦序", "四");
+    fireEvent.click(confirmBtn());
+
+    expect((onAppend.mock.calls[0][0] as NoteColumn).jianzi.slide).toBe("细吟");
+  });
+
+  it("三组互斥：吟猱顶掉走手音，弹法又顶掉吟猱", () => {
+    const { container } = render(<JianzipuKeyboard />);
+    pick(container, "音色", "按");
+
+    pick(container, "走手音", "绰");
+    pick(container, "吟猱", "定猱");
+    expect(option(container, "走手音", "绰").className).not.toContain("bg-amber-700");
+    expect(option(container, "吟猱", "定猱").className).toContain("bg-amber-700");
+
+    pick(container, "弹法", "急");
+    expect(option(container, "吟猱", "定猱").className).not.toContain("bg-amber-700");
+    expect(option(container, "弹法", "急").className).toContain("bg-amber-700");
+  });
+});

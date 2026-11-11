@@ -1,5 +1,35 @@
 import type { JianziState, Duration, PitchSlide, SlideMark, NoteType } from "./types";
 
+/**
+ * 21 个装饰记号，**按长度降序**（两字复合在前、单字在后），供最长匹配。
+ *
+ * 顺序即正确性：「绰吟」若排在「绰」后面，`matchSlideMark("绰吟…")` 会先吃掉「绰」，
+ * 剩下「吟…」既不是分数也不是指法，整条解析就废了。
+ * 与 Rust `jianzi_code::SLIDE_TOKENS`、`jianzi-rapid.ts` 的 `TOKENS.slide` 同源，
+ * 三处增删必须一起改（有契约测试守着）。
+ */
+export const SLIDE_MARKS: readonly SlideMark[] = [
+  "绰吟", "绰猱", "注吟", "注猱", "细吟", "细猱", "游吟", "游猱",
+  "荡吟", "荡猱", "飞吟", "飞猱", "圆吟", "圆猱", "定吟", "定猱",
+  "绰", "注", "急", "吟", "猱",
+];
+
+/** 字体压在「分数后、右手法前」槽里的三个内折记号；其余 18 个挂字尾。 */
+const INLINE_MARKS: ReadonlySet<SlideMark> = new Set<SlideMark>(["绰", "注", "急"]);
+
+/** 记号走内折槽（true）还是挂字尾（false）。渲染与释义都按这个分。 */
+export function isInlineMark(mark: SlideMark): boolean {
+  return INLINE_MARKS.has(mark);
+}
+
+/** 在 s 开头最长匹配一个装饰记号；认不出返回 null。 */
+function matchSlideMark(s: string): SlideMark | null {
+  for (const mark of SLIDE_MARKS) {
+    if (s.startsWith(mark)) return mark;
+  }
+  return null;
+}
+
 /** 判断减字是否已完成（各音色类型所需字段不同）。 */
 export function isComplete(state: JianziState): boolean {
   // 散音：只需要右手指法和弦序
@@ -102,11 +132,15 @@ export function jianziToText(jianzi: JianziState): string {
   if (jianzi.fen) text += fenToGlyph(jianzi.fen);
   // ⚠ 顺序是字体连字规则，不是排版偏好：
   //   「大九六绰勾四」拼成整字，写成「大九绰六勾四」就散成两串（实测 1em vs 2em）。
-  //   所以分数必须在前，绰/注在后。
-  if (jianzi.slide && jianzi.toneType !== "泛") text += jianzi.slide;
+  //   所以分数必须在前，内折记号在后。
+  const slide = jianzi.slide && jianzi.toneType !== "泛" ? jianzi.slide : null;
+  if (slide && isInlineMark(slide)) text += slide;
   if (jianzi.rightAction)
     text += RIGHT_ACTION_GLYPH[jianzi.rightAction] ?? jianzi.rightAction;
   if (jianzi.stringNumber) text += jianzi.stringNumber;
+  // 吟猱族必须挂在字尾：放进上面的内折槽会把整字劈成两坨
+  // （实测「大九六吟勾四」1.5em），挂在弦序后是 1em 方块 + 右侧小字，才是传统写法。
+  if (slide && !isInlineMark(slide)) text += slide;
   return text;
 }
 
@@ -126,8 +160,8 @@ const HUI_CHARS = new Set([
 const FEN_DIGITS = new Set(["一", "二", "三", "四", "五", "六", "七", "八", "九"]);
 /** 弦序字符集 */
 const STRING_CHARS = new Set(["一", "二", "三", "四", "五", "六", "七"]);
-/** 装饰记号字符集（绰=下方向上滑，注=上方向下滑，急=急弹） */
-const SLIDE_CHARS = new Set(["绰", "注", "急"]);
+// 装饰记号的匹配统一走 matchSlideMark（21 个，两字复合优先）。
+// 不再维护单字 Set：复合「细吟」按单字丢会残留「细」，把后面的弦序判死。
 
 /**
  * 右手指法名，**按最长优先排列**，散音与按/泛音共用一份。
@@ -176,6 +210,11 @@ export function canHaveSlide(toneType: NoteType | null): boolean {
  *
  * 「急」是弹法记号，音高不动——把它混进滑音分支会把急弹当成注音弹，
  * 音高先高后落，等于弹错。所以音频链路一律过这道筛子。
+ *
+ * 吟猱族（含绰吟/注猱这类复合）一律返回 null：它们的吟猱成分不动音高，
+ * 复合里的绰/注成分**暂不合成滑音**——这是已知的听感边界，
+ * 宁可弹成直音，也不在未验证的合成路径上猜一个起音偏移量。
+ * 录入 / 渲染 / 存档 / 读回不受影响，只是这一声暂时没有滑音。
  */
 export function pitchSlide(slide: SlideMark | null): PitchSlide | null {
   return slide === "绰" || slide === "注" ? slide : null;
@@ -209,7 +248,19 @@ export function parseJianziText(text: string): JianziState | null {
      * 这里**丢掉记号继续解析**，不因为多一个记号整条失败：
      * 旧代码不丢也不解析，直接返回一个「没指法没弦」的空壳，比失败更糟。
      */
-    remaining = [...remaining].filter((ch) => !SLIDE_CHARS.has(ch)).join("").trim();
+    // 反复最长匹配剥掉装饰记号：复合「细吟」是两字，按单字丢会残留「细」，
+    // 把后面的弦序判死。散音吃不了记号，但粘贴来的谱本常带，丢了继续解析。
+    let cleaned = "";
+    while (remaining.length > 0) {
+      const mark = matchSlideMark(remaining);
+      if (mark) {
+        remaining = remaining.slice(mark.length);
+      } else {
+        cleaned += remaining[0];
+        remaining = remaining.slice(1);
+      }
+    }
+    remaining = cleaned.trim();
 
     for (const name of RIGHT_ACTION_NAMES) {
       if (remaining.startsWith(name)) {
@@ -261,12 +312,13 @@ export function parseJianziText(text: string): JianziState | null {
   //    减字里分数只写数字（七徽六分 → 「大七六勾四」），也兼容旧写法「六分」。
   //    两字徽位后可能带一个「徽」分隔字（见 jianziToText 的说明），先跳过。
   if (remaining.startsWith("徽")) remaining = remaining.slice(1);
-  // 绰/注 允许写在分数前或后：字体的连字规则只认「分数在前」，
+  // 内折记号（绰/注/急）允许写在分数前或后：字体的连字规则只认「分数在前」，
   // 但人打字时按口语顺序（「大九绰六勾四」）来的更多，两处都接住，
-  // 序列化时再统一排成字体要的顺序。
-  if (remaining.length > 0 && SLIDE_CHARS.has(remaining[0])) {
-    result.slide = remaining[0] as SlideMark;
-    remaining = remaining.slice(1);
+  // 序列化时再统一排成字体要的顺序。吟猱族不写这里——它们挂字尾（第 6 步）。
+  const inlineBefore = matchSlideMark(remaining);
+  if (inlineBefore && isInlineMark(inlineBefore)) {
+    result.slide = inlineBefore;
+    remaining = remaining.slice(inlineBefore.length);
   }
   if (remaining.startsWith("半")) {
     result.fen = "半";
@@ -276,12 +328,13 @@ export function parseJianziText(text: string): JianziState | null {
     remaining = remaining.slice(1);
     if (remaining.startsWith("分")) remaining = remaining.slice(1);
   }
-  if (!result.slide && remaining.length > 0 && SLIDE_CHARS.has(remaining[0])) {
-    result.slide = remaining[0] as SlideMark;
-    remaining = remaining.slice(1);
+  if (!result.slide) {
+    const inlineAfter = matchSlideMark(remaining);
+    if (inlineAfter && isInlineMark(inlineAfter)) {
+      result.slide = inlineAfter;
+      remaining = remaining.slice(inlineAfter.length);
+    }
   }
-  // 泛音是虚按徽位取泛音，滑不动；写进来也不收，免得谱面和听感对不上
-  if (result.toneType === "泛") result.slide = null;
 
   // 5. 右手指法
   for (const name of RIGHT_ACTION_NAMES) {
@@ -292,10 +345,26 @@ export function parseJianziText(text: string): JianziState | null {
     }
   }
 
-  // 6. 弦序
-  if (remaining && STRING_CHARS.has(remaining)) {
-    result.stringNumber = remaining;
+  // 6. 弦序 + 挂字尾的吟猱族记号
+  //    字体把吟猱族小字挂在弦序之后（「大九六勾四细吟」），内折记号走第 4 步的槽内。
+  //    先把首字当弦序，剩下的尾缀必须**整段**是合法装饰记号：
+  //    认不出、或槽里已经有记号了（一谱字只带一个），都判失败，别静默吞掉错字。
+  let stringPart = remaining;
+  let tailPart = "";
+  if (remaining.length > 0 && STRING_CHARS.has(remaining[0])) {
+    stringPart = remaining[0];
+    tailPart = remaining.slice(1);
   }
+  if (tailPart) {
+    const tailMark = matchSlideMark(tailPart);
+    if (!tailMark || tailMark.length !== tailPart.length || result.slide) return null;
+    result.slide = tailMark;
+  }
+  if (stringPart && STRING_CHARS.has(stringPart)) {
+    result.stringNumber = stringPart;
+  }
+  // 泛音是虚按徽位取泛音，滑不动也谈不上吟猱；写进来也不收，免得谱面和听感对不上
+  if (result.toneType === "泛") result.slide = null;
 
   return isComplete(result) ? result : null;
 }

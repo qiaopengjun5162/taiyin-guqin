@@ -2,7 +2,7 @@
 
 import type { JianziState } from "@/lib/types";
 import { SVG_PATHS } from "@/lib/svg-paths";
-import { fenToGlyph } from "@/lib/jianzi";
+import { fenToGlyph, isInlineMark } from "@/lib/jianzi";
 
 // ── mapped into svg path keys ──────────────────
 
@@ -51,11 +51,26 @@ const STRING_MAP: Record<string, string> = {
   "五": "str_5", "六": "str_6", "七": "str_7",
 };
 
-/** 装饰记号 → SVG 字形键。字体里三者同槽位、互斥，SVG 也共用一个槽。 */
-const SLIDE_MAP: Record<string, string> = {
-  "绰": "mod_chuo",
-  "注": "mod_zhu",
-  "急": "mod_ji",
+/**
+ * 装饰记号 → SVG 字形键，21 个必须全覆盖。
+ *
+ * 导出供契约测试使用：漏登记一个，字体 GSUB 分支仍能渲染，
+ * 但 SVG 降级分支（泛音 / 打摘 / 两字徽位+分 / 抹+记号）会**静默空白**。
+ *
+ * 内折 3 个（绰/注/急）压在分数后、右手法前；吟猱族 18 个挂字尾右下，
+ * 两类共用不上同一个槽位——`isInlineMark` 决定落哪一处。
+ */
+export const SLIDE_MAP: Record<string, string> = {
+  "绰": "mod_chuo", "注": "mod_zhu", "急": "mod_ji",
+  "吟": "mod_yin", "猱": "mod_nao",
+  "绰吟": "mod_chuoyin", "绰猱": "mod_chuonao",
+  "注吟": "mod_zhuyin", "注猱": "mod_zhunao",
+  "细吟": "mod_xiyin", "细猱": "mod_xinao",
+  "游吟": "mod_youyin", "游猱": "mod_younao",
+  "荡吟": "mod_dangyin", "荡猱": "mod_dangnao",
+  "飞吟": "mod_feiyin", "飞猱": "mod_feinao",
+  "圆吟": "mod_yuanyin", "圆猱": "mod_yuanniao",
+  "定吟": "mod_dingyin", "定猱": "mod_dingnao",
 };
 
 // ── glyph rendering helper ────────────────────
@@ -120,6 +135,8 @@ export function SvgJianziBlock({
     toneType !== "泛" && state.slide
       ? SLIDE_MAP[state.slide] ?? null
       : null;
+  /** 吟猱族在字体里挂字尾（右下小字），SVG 也照此摆，不能塞进内折槽。 */
+  const isTailSlide = Boolean(state.slide && !isInlineMark(state.slide));
   const actionKey = state.rightAction ? RIGHT_ACTION_MAP[state.rightAction] ?? null : null;
   /** 抹（木）不是半包围外壳：字体把弦序排在木的下方，不在木的肚子里。 */
   const isFlatAction = actionKey === "rh_mo";
@@ -232,13 +249,13 @@ export function SvgJianziBlock({
         </span>
       )}
 
-      {/* ── 装饰记号（绰/注/急） ──
+      {/* ── 内折装饰记号（绰/注/急） ──
           字体把这些笔画用 GPOS 压在谱字块里：绰是夹在「大」和徽位之间的一个短竖，
           注是沿左沿排开的三点水，急是同一位置的横折（与绰同槽）。
           SVG 没有 GPOS，位置靠这里的槽位给。
           槽宽高比贴着字形本身（绰 226×213≈1.06、急 274×218≈1.26、注 223×670≈0.33），
           扁槽会让 preserveAspectRatio=meet 把字形缩得很小。 */}
-      {slideEntry?.bbox && (
+      {slideEntry?.bbox && !isTailSlide && (
         <div
           className="absolute"
           style={
@@ -246,6 +263,19 @@ export function SvgJianziBlock({
               ? { top: "14%", left: "0%", width: "21%", height: "48%" }
               : { top: "28%", left: "30%", width: "22%", height: "16%" }
           }
+        >
+          <GlyphSVG d={slideEntry.d} bbox={slideEntry.bbox} />
+        </div>
+      )}
+
+      {/* ── 挂尾装饰记号（吟猱族 18 个） ──
+          字体把它们排成谱字右下的一枚小字（实测约 0.33em 见方，
+          「大九六勾四细吟」是 1em 方块 + 右侧小字；塞进内折槽会散成 1.5em）。
+          字形本身接近方形（约 320×350），槽也按近方形给，别用扁槽压小。 */}
+      {slideEntry?.bbox && isTailSlide && (
+        <div
+          className="absolute"
+          style={{ bottom: "4%", right: "0%", width: "24%", height: "20%" }}
         >
           <GlyphSVG d={slideEntry.d} bbox={slideEntry.bbox} />
         </div>

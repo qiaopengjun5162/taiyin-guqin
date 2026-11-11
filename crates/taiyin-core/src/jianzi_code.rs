@@ -24,7 +24,11 @@
 //! - 左手：大 `d`、食 `s`、中 `z`、名 `m`、跪 `g`（夕→名、亻→食 先归一）
 //! - 徽位：1–13 直接写数字（十 = `10`、十三 = `13`）
 //! - 分：`f1`–`f9`、半 `fb`（不写 `f` 的裸数字留给徽位，否则「十三」和「一徽三分」分不开）
-//! - 走手音：绰 `c`、注 `z`、急 `j`（仅按音）
+//! - 装饰记号（仅按音）：绰 `c`、注 `z`、急 `j`，吟 `y`、猱 `n`，
+//!   以及「绰吟 `cy` / 绰猱 `cn` / 注吟 `zy` / … / 定猱 `kn`」16 个吟猱族复合。
+//!   复合一律「前缀 + 吟/猱」双字母，解码按最长优先，不会把 `cy` 截成绰 + 半个字母。
+//!   注意：这是**码**的写法，与字体渲染串不同——字体的吟猱族记号挂在字尾（弦序之后），
+//!   见 `apps/web/src/lib/jianzi.ts` 的 `jianziToText`。码是「照着打的串」，不是字体串。
 //! - 右手：勾 `g`、挑 `t`、抹 `m`、打 `d`、摘 `z`、托 `tu`、剔 `ti`、劈 `b`，
 //!   复合指法 抹挑 `mt`、勾剔 `gt`、抹勾 `mg`、打摘 `dz`
 //! - 弦序：1–7
@@ -139,17 +143,66 @@ const ACTION_TOKENS: &[(&str, &str)] = &[
     ("b", "劈"),
 ];
 
-/// 走手音 → 字母。
+/// 装饰记号 → 字母。
+///
+/// 旧的绰/注/急是单字母；吟猱族 18 个按「前缀 + 吟/猱」编：
+/// 裸记号 吟 `y`、猱 `n`，前缀 绰 `c`、注 `z`、细 `x`、游 `u`、
+/// 荡 `h`、飞 `v`、圆 `o`、定 `k` 各配 吟/猱 两个变体（共 16）。
+/// 选这些字母是为了避开已占用的音色 `s/f/a`、徽位数字、分位 `fN`、
+/// 右手 `g/t/m/d/z/tu/ti/b/mt/gt/mg/dz`——同一个字母在不同槽位仍靠槽位区分。
 fn slide_letter(slide: &str) -> Option<&'static str> {
     match slide {
         "绰" => Some("c"),
         "注" => Some("z"),
         "急" => Some("j"),
+        "吟" => Some("y"),
+        "猱" => Some("n"),
+        "绰吟" => Some("cy"),
+        "绰猱" => Some("cn"),
+        "注吟" => Some("zy"),
+        "注猱" => Some("zn"),
+        "细吟" => Some("xy"),
+        "细猱" => Some("xn"),
+        "游吟" => Some("uy"),
+        "游猱" => Some("un"),
+        "荡吟" => Some("hy"),
+        "荡猱" => Some("hn"),
+        "飞吟" => Some("vy"),
+        "飞猱" => Some("vn"),
+        "圆吟" => Some("oy"),
+        "圆猱" => Some("on"),
+        "定吟" => Some("ky"),
+        "定猱" => Some("kn"),
         _ => None,
     }
 }
 
-const SLIDE_TOKENS: &[(&str, &str)] = &[("c", "绰"), ("z", "注"), ("j", "急")];
+/// 字母 → 装饰记号。**双字母必须排在单字母之前**：`match_longest` 取第一个前缀命中，
+/// 若 `c`（绰）排在 `cy`（绰吟）前面，`ad9cyg4` 会被截成绰 + `yg4` 而整条报错。
+/// `test_slide_tokens_are_sorted_longest_first` 守着这条顺序契约。
+const SLIDE_TOKENS: &[(&str, &str)] = &[
+    ("cy", "绰吟"),
+    ("cn", "绰猱"),
+    ("zy", "注吟"),
+    ("zn", "注猱"),
+    ("xy", "细吟"),
+    ("xn", "细猱"),
+    ("uy", "游吟"),
+    ("un", "游猱"),
+    ("hy", "荡吟"),
+    ("hn", "荡猱"),
+    ("vy", "飞吟"),
+    ("vn", "飞猱"),
+    ("oy", "圆吟"),
+    ("on", "圆猱"),
+    ("ky", "定吟"),
+    ("kn", "定猱"),
+    ("c", "绰"),
+    ("z", "注"),
+    ("j", "急"),
+    ("y", "吟"),
+    ("n", "猱"),
+];
 
 /// 徽位汉字 → 数字串。
 fn hui_digits(hui: &str) -> Option<&'static str> {
@@ -812,6 +865,77 @@ mod tests {
             let back = encode(&state).unwrap_or_else(|e| panic!("{code} 编不回：{e}"));
             assert_eq!(back, code);
         }
+    }
+
+    #[test]
+    fn test_yin_nao_marks_roundtrip() {
+        // 21 个装饰记号：旧的绰/注/急（单字母）+ 18 个吟猱族。
+        // 复合用「前缀 + 吟/猱」双字母，必须与绰/注的单字母按最长优先区分。
+        let marks: &[(&str, &str)] = &[
+            ("c", "绰"),
+            ("z", "注"),
+            ("j", "急"),
+            ("y", "吟"),
+            ("n", "猱"),
+            ("cy", "绰吟"),
+            ("cn", "绰猱"),
+            ("zy", "注吟"),
+            ("zn", "注猱"),
+            ("xy", "细吟"),
+            ("xn", "细猱"),
+            ("uy", "游吟"),
+            ("un", "游猱"),
+            ("hy", "荡吟"),
+            ("hn", "荡猱"),
+            ("vy", "飞吟"),
+            ("vn", "飞猱"),
+            ("oy", "圆吟"),
+            ("on", "圆猱"),
+            ("ky", "定吟"),
+            ("kn", "定猱"),
+        ];
+        assert_eq!(marks.len(), 21);
+        assert_eq!(SLIDE_TOKENS.len(), marks.len());
+        for (letter, mark) in marks {
+            let mut note = an_da_9_gou_4();
+            note.slide = Some((*mark).into());
+            let code = format!("ad9{letter}g4");
+            assert_eq!(encode(&note).unwrap(), code, "{mark} 编码");
+            let decoded = decode(&code).unwrap_or_else(|e| panic!("{code} 解不开：{e}"));
+            assert_eq!(decoded.slide.as_deref(), Some(*mark), "{code} 记号");
+            assert_eq!(
+                decoded.right_action.as_deref(),
+                Some("勾"),
+                "{code} 右手指法"
+            );
+            assert_eq!(encode(&decoded).unwrap(), code, "{code} 编回");
+        }
+    }
+
+    #[test]
+    fn test_slide_tokens_are_sorted_longest_first() {
+        // match_longest 依赖表顺序：长 token 必须在短 token 前面，
+        // 否则 `cy`（绰吟）会被 `c`（绰）截断，剩下 `yg4` 没有以 y 开头的右手指法，整条解码报错。
+        for (i, (short, _)) in SLIDE_TOKENS.iter().enumerate() {
+            for (long, _) in SLIDE_TOKENS.iter().skip(i + 1) {
+                assert!(
+                    !(long.starts_with(short) && long.len() > short.len()),
+                    "短 token {short} 排在长 token {long} 前面，会截断复合记号"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_yin_nao_marks_keep_z_ambiguity() {
+        // 扩了 z 开头的复合（注吟 zy / 注猱 zn）后，「z 既是注又是摘」的回溯不能被破坏。
+        let zhu = decode("ad9zg4").unwrap();
+        assert_eq!(zhu.slide.as_deref(), Some("注"));
+        let zhai = decode("ad9z4").unwrap();
+        assert_eq!(zhai.slide, None);
+        assert_eq!(zhai.right_action.as_deref(), Some("摘"));
+        // 注吟：zy 必须整体吃掉，不能读成「注」+ 以 y 开头的指法
+        assert_eq!(decode("ad9zyg4").unwrap().slide.as_deref(), Some("注吟"));
     }
 
     #[test]

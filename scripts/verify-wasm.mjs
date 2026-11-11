@@ -440,6 +440,45 @@ check(
   badRhythm.entries[0].error,
 );
 
+// 10. 吟猱族记号：码表从 3 个（绰/注/急）扩到 21 个后，必须在真 wasm 产物上
+//     仍可编可解。这条专门挡「改了码表却没重编 wasm」——只跑旧产物时，
+//     新字母根本不在 wasm 的码表里，编出来是 null / 解出来是错记号。
+const yinBatch = JSON.parse(
+  mod.encode_jianzi_batch(
+    JSON.stringify({
+      notes: [
+        { toneType: "按", leftFinger: "大", hui: "九", fen: null, slide: "吟", rightAction: "勾", stringNumber: "四" },
+        { toneType: "按", leftFinger: "大", hui: "九", fen: null, slide: "细吟", rightAction: "勾", stringNumber: "四" },
+        { toneType: "按", leftFinger: "大", hui: "九", fen: null, slide: "注吟", rightAction: "勾", stringNumber: "四" },
+        { toneType: "按", leftFinger: "大", hui: "九", fen: null, slide: "急", rightAction: "勾", stringNumber: "四" },
+      ],
+    }),
+  ),
+);
+check(
+  "code: 吟猱族 21 记号可编（ad9yg4/ad9xyg4/ad9zyg4/ad9jg4）",
+  yinBatch.codes?.join(",") === "ad9yg4,ad9xyg4,ad9zyg4,ad9jg4",
+  `got=${yinBatch.codes}`,
+);
+const yinDecode = JSON.parse(
+  mod.decode_jianzi_batch(JSON.stringify({ text: "ad9yg4 ad9xyg4 ad9zyg4 ad9jg4" })),
+);
+check(
+  "code: 吟猱族可解回原记号",
+  yinDecode.ok === 4 &&
+    yinDecode.entries[0].state?.slide === "吟" &&
+    yinDecode.entries[1].state?.slide === "细吟" &&
+    yinDecode.entries[2].state?.slide === "注吟" &&
+    yinDecode.entries[3].state?.slide === "急",
+  JSON.stringify(yinDecode.entries.map((e) => e.state?.slide)),
+);
+// z 既是注也是摘的回溯不能被扩表破坏：ad9z4 仍是「摘四弦」无走手音
+const zBack = JSON.parse(mod.decode_jianzi_batch(JSON.stringify({ text: "ad9z4" })));
+check(
+  "code: 扩表后 z 仍是摘而非注（回溯保留）",
+  zBack.entries[0].state?.slide == null && zBack.entries[0].state?.rightAction === "摘",
+  JSON.stringify(zBack.entries[0].state),
+);
 
 
 if (failures > 0) {

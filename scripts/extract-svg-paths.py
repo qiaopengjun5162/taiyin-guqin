@@ -63,6 +63,19 @@ TARGET_GLYPHS = {
     "str_1": "md_1", "str_2": "md_2", "str_3": "md_3",
     "str_4": "md_4", "str_5": "md_5", "str_6": "md_6",
     "str_7": "md_7",
+    # 挂尾吟猱族 18 个（2026-11-10 增量追加，字形名来自 GSUB 连字目标）。
+    # ⚠ 这里只是「来源索引」：本表与 svg-paths.ts 并非严格同源——
+    #   产物里 22 个标准字形已换齊伋體古体、3 个内折记号是后补的，
+    #   **全量重跑会覆盖掉它们**。新增字形一律走增量脚本，勿直接跑本脚本。
+    "mod_yin": "sm_yin", "mod_nao": "sm_nao",
+    "mod_chuoyin": "sm_chuoyin", "mod_chuonao": "sm_chuonao",
+    "mod_zhuyin": "sm_zhuyin", "mod_zhunao": "sm_zhunao",
+    "mod_xiyin": "sm_xiyin", "mod_xinao": "sm_xinao",
+    "mod_youyin": "sm_youyin", "mod_younao": "sm_younao",
+    "mod_dangyin": "sm_dangyin", "mod_dangnao": "sm_dangnao",
+    "mod_feiyin": "sm_feiyin", "mod_feinao": "sm_feinao",
+    "mod_yuanyin": "sm_yuanyin", "mod_yuanniao": "sm_yuanniao",
+    "mod_dingyin": "sm_dingyin", "mod_dingnao": "sm_dingnao",
 }
 
 

@@ -40,18 +40,26 @@ LAYOUT = {
     "mod_zhu":  ("21%", "48%", "top:14%;left:0%"),
     # 急与绰同槽（字体里两者互斥，压在同一个位置）
     "mod_ji":   ("22%", "16%", "top:28%;left:30%"),
+    # 吟猱族 18 个：字体挂在字尾右下，与 svg-jianzi-block.tsx 的 isTailSlide 分支一致
+    "tail_mark": ("24%", "20%", "bottom:4%;right:0%"),
     "rh":  ("100%", "56%", "bottom:1%;left:0"),
     "str": ("28%", "20%", "bottom:19%;left:50%;transform:translateX(-50%)"),
 }
 # 字形键前缀 -> 槽位名
+# 内折三个走精确匹配：mod_chuoyin 会被 "mod_chuo" 前缀误吞，不能靠前缀分。
+# 其余 mod_* 都是挂尾的吟猱族小字，统一归 tail_mark。
 PREFIX_SLOT = [
     ("top_", "top"), ("lh_", "lh"), ("hui_", "hui"),
-    ("fen_", "fen"), ("mod_chuo", "mod_chuo"), ("mod_zhu", "mod_zhu"), ("mod_ji", "mod_ji"),
-    ("rh_", "rh"), ("str_", "str"),
+    ("fen_", "fen"), ("rh_", "rh"), ("str_", "str"),
+    ("mod_", "tail_mark"),
 ]
+EXACT_SLOT = {
+    "mod_chuo": "mod_chuo", "mod_zhu": "mod_zhu", "mod_ji": "mod_ji",
+}
 GROUP_LABEL = {
     "top": "顶帽（音色）", "lh": "左手指法", "hui": "徽位",
     "fen": "分位", "mod_chuo": "走手音·绰", "mod_zhu": "走手音·注", "mod_ji": "急弹·急",
+    "tail_mark": "吟猱（挂尾小字）",
     "rh": "右手指法（半包围外壳）", "str": "弦序（内核）",
 }
 
@@ -96,6 +104,8 @@ def load_glyphs():
 
 
 def slot_of(key):
+    if key in EXACT_SLOT:
+        return EXACT_SLOT[key]
     for prefix, name in PREFIX_SLOT:
         if key.startswith(prefix):
             return name

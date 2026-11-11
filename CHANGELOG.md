@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### 吟猱族记号可录入：减字装饰记号从 3 扩到 21（2026-11-11）
+
+「录不进去」的缺口做实：字体虽认 330 连字 + 245 单字替换，产品录入面只接了绰/注/急 3 个走手音，
+吟猱族 18 个（吟/猱/绰吟/注吟/细吟/游吟/荡吟/飞吟/圆吟/定吟 + 对应猱）一个都打不出来。
+本轮把整条链路打通：
+
+- **码表（Rust `jianzi_code.rs`）**：`slide_letter` / `SLIDE_TOKENS` 扩到 21 记号。新 18 个按「前缀 + 吟/猱」双字母（吟 `y`、猱 `n`、细 `x`、游 `u`、荡 `h`、飞 `v`、圆 `o`、定 `k`），复合如 `cy` 绰吟 / `xy` 细吟 / `zy` 注吟。双字母**必须排在单字母之前**（`match_longest` 取首个前缀命中，`cy` 被 `c` 截断会剩 `yg4` 整条报错）——由 `test_slide_tokens_are_sorted_longest_first` 守序。
+- **序列化分流（前端 `jianzi.ts`）**：字体实测——吟猱族挂槽内会把方块劈成两坨（1.5em 散架），挂字尾（弦序后）才成完整方块、小字悬右（传统样式）；绰/注/急字体专门做了内折，留原槽。**逻辑层 21 记号统一走 slide 槽**，只有字体渲染串分流：旧 3 留分数后右手法前、新 18 挂尾。解析两序都收（分数前后 / 字尾），序列化归位；泛音/散音不收记号（`canHaveSlide` 纪律）；`pitchSlide` 只认绰/注（吟猱不动音高）。
+- **连打文法（`jianzi-rapid.ts`）**：`TOKENS.slide` 扩表，`RAPID_SLOTS_BY_TONE` 按音槽纳入全 21 记号；说明文案同步。
+- **键盘 UI（`jianzipu-keyboard.tsx`）**：按音下分三组摆——走手音（绰/注）、弹法（急）、吟猱（18 个新键），`SectionGroup` 自带 flex-wrap 换行；散音/泛音仍不给记号栏。释义字典（`jianzi-explain.ts`）补 21 记号的读法，旧逻辑把任何未知记号都写成「急（…）」的兜底已修。
+- **SVG 四象限降级**：fontTools 增量提取 18 个吟猱字形到 `svg-paths.ts`（**未跑全量 extract**，护住齊伋體替换的 22 字），`SLIDE_MAP` 新增 18 键、挂尾槽位（右下角小字、约主体 1/3），同步 `svg-paths.test.ts` 计数断言 45→63、画廊 `preview-jianzi-gallery.py` 的 `LAYOUT/PREFIX_SLOT`。
+
+**验证**：
+- 真 wasm 产物 `verify-wasm.mjs` 全绿，并**新增 3 条吟猱断言**（`ad9yg4/ad9xyg4/ad9zyg4/ad9jg4` 可编可解、扩表后 `z` 仍是摘而非注的回溯保留）。
+- 探针 `verify-wasm-sync.mjs` 4/4 PASS（三份字节同源、胶水逐字节复现、provenance 指纹未漂移）；`just rebuild-probe-wasm` 已重建三份 wasm + provenance。
+- core 单测 104 项、`jianzi.test.ts`(66) / `jianzi-rapid`(44) / `jianzi-explain`(29) / `jianzipu-keyboard`(28) / `svg-paths`+`jianzi-block`(21) 全绿，`tsc --noEmit` 0。
+- 变异验证：撤回修复须如实判红（最长优先序、z 歧义回归）的护栏已在。
+
+已知留白（有意不做）：撮/拨剌/历/拂/掐/锁/蠲/涓等复合指法、少息/再作/入拍等结构记号、异体与上古谱符仍缺；这些要拿《琴曲集成》逐字试打，按缺的补，不靠拍脑袋扩表。
+
 ### 发版门禁补齐：MSRV 钉死、镜像可复现、优雅停机（2026-11-10）
 
 按发版门禁六类自查（MSRV / edition 自洽 / feature 组合 / unsafe 清单 / 产物形态 / 回滚），修掉四项「上线后真会出事」：

@@ -41,11 +41,15 @@ type Section =
   | "stringNumber";
 
 /**
- * 装饰记号拆两组摆：绰/注 是走手音（真的滑音），急 是弹法（音高不动）。
- * 数据层是同一个 slide 字段——字体只有这一个槽位，三者互斥。
+ * 装饰记号拆三组摆：绰/注 是滑音走手音，急 是弹法（音高不动），
+ * 吟猱族 18 个是得音后的余韵记号——字体把它们挂在字尾，不是内折槽。
+ * 数据层都是同一个 slide 字段，一个谱字只带一个，互斥。
  */
-const SLIDE_ONLY = DEFAULT_KEYBOARD.slides.filter((s) => s !== "急");
+const SLIDE_ONLY = DEFAULT_KEYBOARD.slides.filter((s) => s === "绰" || s === "注");
 const URGENT_ONLY = DEFAULT_KEYBOARD.slides.filter((s) => s === "急");
+const YIN_NAO_MARKS = DEFAULT_KEYBOARD.slides.filter(
+  (s) => s !== "绰" && s !== "注" && s !== "急",
+);
 
 /** 连打模式还没敲出字时，「我的减字」的 current 用这个空状态（模块级，别每次渲染新建）。 */
 const EMPTY_JIANZI: JianziState = createEmptyState();
@@ -368,10 +372,10 @@ export function JianzipuKeyboard({
                   onSelect={(v) => handleSelect("fen", v)}
                 />
               )}
-              {/* 装饰记号：绰/注 是按音的走手音（滑音），急 是急弹记号。
-                  字体把三者压进同一个槽位（互斥、三选一），所以写的是同一个字段；
-                  但读法不同，界面上分两组摆，免得以为「急」也会滑音。
-                  散音没有左手可滑，泛音是虚按徽位一滑就脱离节点，都不给这两栏。 */}
+              {/* 装饰记号：绰/注 是按音的走手音（滑音），急 是急弹记号，
+                  吟猱族是余韵记号（字体挂字尾，不是内折槽）。
+                  三者写的是同一个 slide 字段、互斥二十一选一；读法不同，界面分三组摆。
+                  散音没有左手可滑，泛音是虚按徽位一滑就脱离节点，都不给这三栏。 */}
               {state.toneType === "按" && (
                 <>
                   <SectionGroup
@@ -383,6 +387,12 @@ export function JianzipuKeyboard({
                   <SectionGroup
                     label="弹法"
                     items={URGENT_ONLY}
+                    active={state.slide}
+                    onSelect={(v) => handleSelect("slide", v)}
+                  />
+                  <SectionGroup
+                    label="吟猱"
+                    items={YIN_NAO_MARKS}
                     active={state.slide}
                     onSelect={(v) => handleSelect("slide", v)}
                   />

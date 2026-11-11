@@ -7,6 +7,8 @@ import {
   getRhythmLineCount,
   durationToBeats,
   pitchSlide,
+  SLIDE_MARKS,
+  isInlineMark,
 } from "../jianzi";
 import type { JianziState } from "../types";
 
@@ -455,5 +457,106 @@ describe("parseJianziText：散音分支的收口", () => {
      * 序列化按字形表换成全字（勾），往返本来就是有损的写法归一。
      */
     expect(back!.rightAction).toBe("勾剔");
+  });
+});
+
+// ── 吟猱族 18 个挂尾记号（2026-11-10 扩） ──────────────────────────
+describe("装饰记号 21 个 · 内折 / 挂尾分流", () => {
+  const INLINE = ["绰", "注", "急"] as const;
+  const TAIL = [
+    "吟", "猱", "绰吟", "绰猱", "注吟", "注猱", "细吟", "细猱",
+    "游吟", "游猱", "荡吟", "荡猱", "飞吟", "飞猱", "圆吟", "圆猱",
+    "定吟", "定猱",
+  ] as const;
+
+  const base = () =>
+    make({
+      toneType: "按",
+      leftFinger: "大",
+      hui: "九",
+      fen: "六分",
+      rightAction: "勾",
+      stringNumber: "四",
+    });
+
+  it("SLIDE_MARKS 恰好 21 个、无重复、两字复合排在单字之前", () => {
+    expect(SLIDE_MARKS).toHaveLength(21);
+    expect(new Set(SLIDE_MARKS).size).toBe(21);
+    // matchSlideMark 取「第一个前缀命中」，短记号排前面会截断复合。
+    for (let i = 0; i < SLIDE_MARKS.length; i++) {
+      for (let j = i + 1; j < SLIDE_MARKS.length; j++) {
+        expect(
+          SLIDE_MARKS[j].startsWith(SLIDE_MARKS[i]) &&
+            SLIDE_MARKS[j].length > SLIDE_MARKS[i].length,
+          `${SLIDE_MARKS[i]} 排在 ${SLIDE_MARKS[j]} 前会截断复合记号`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("isInlineMark 只放行绰/注/急，其余 18 个挂尾", () => {
+    for (const m of INLINE) expect(isInlineMark(m), m).toBe(true);
+    for (const m of TAIL) expect(isInlineMark(m), m).toBe(false);
+  });
+
+  it("内折 3 个仍排在分数后、右手法前", () => {
+    for (const m of INLINE) {
+      expect(jianziToText({ ...base(), slide: m }), m).toBe(`大九六${m}勾四`);
+    }
+  });
+
+  it("挂尾 18 个排在弦序之后（不是槽内）", () => {
+    for (const m of TAIL) {
+      // 字体实测：挂进内折槽会散成 1.5em，挂字尾才是 1em 方块 + 右侧小字
+      expect(jianziToText({ ...base(), slide: m }), m).toBe(`大九六勾四${m}`);
+    }
+  });
+
+  it("21 个记号都能「序列化 → 解析」往返", () => {
+    for (const m of SLIDE_MARKS) {
+      const text = jianziToText({ ...base(), slide: m });
+      const back = parseJianziText(text);
+      expect(back, `${m} → ${text}`).not.toBeNull();
+      expect(back!.slide, text).toBe(m);
+      expect(jianziToText(back!), text).toBe(text);
+    }
+  });
+
+  it("两字复合挂尾不会被拆成「弦序 + 半个记号」", () => {
+    const r = parseJianziText("大九六勾四细吟");
+    expect(r!.slide).toBe("细吟");
+    expect(r!.stringNumber).toBe("四");
+    expect(r!.fen).toBe("六分");
+  });
+
+  it("内折记号写在字尾也收，并归位到槽内", () => {
+    const r = parseJianziText("大九六勾四绰");
+    expect(r!.slide).toBe("绰");
+    expect(jianziToText(r!)).toBe("大九六绰勾四");
+  });
+
+  it("认不出的字尾判 null，不静默吞掉一个错字", () => {
+    expect(parseJianziText("大九六勾四垃圾")).toBeNull();
+    expect(parseJianziText("大九六勾四细细")).toBeNull();
+  });
+
+  it("一个谱字只带一个记号：槽内 + 字尾同时有 → 判 null", () => {
+    expect(parseJianziText("大九六绰勾四吟")).toBeNull();
+  });
+
+  it("泛音/散音不收挂尾记号", () => {
+    const fan = parseJianziText("泛 大九勾四吟");
+    expect(fan).not.toBeNull();
+    expect(fan!.slide).toBeNull();
+    const san = parseJianziText("散勾四细吟");
+    expect(san).not.toBeNull();
+    expect(san!.slide).toBeNull();
+    expect(san!.stringNumber).toBe("四");
+  });
+
+  it("pitchSlide 对新 18 个记号一律返回 null（不改音高）", () => {
+    for (const m of TAIL) expect(pitchSlide(m), m).toBeNull();
+    expect(pitchSlide("绰")).toBe("绰");
+    expect(pitchSlide("注")).toBe("注");
   });
 });

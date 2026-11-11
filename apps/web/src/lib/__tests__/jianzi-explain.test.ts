@@ -231,3 +231,43 @@ describe("shortCaption —— 候选音位的两行小字", () => {
     expect(shortCaption(s).full).toContain("未定弦");
   });
 });
+
+describe("吟猱族 18 个记号的释义", () => {
+  const TAIL_MARKS = [
+    "吟", "猱", "绰吟", "绰猱", "注吟", "注猱", "细吟", "细猱",
+    "游吟", "游猱", "荡吟", "荡猱", "飞吟", "飞猱", "圆吟", "圆猱",
+    "定吟", "定猱",
+  ] as const;
+
+  it("18 个新记号都有专属释义，不会被读成「急（急弹…）」", () => {
+    for (const m of TAIL_MARKS) {
+      const parts = explainJianzi(state({ ...anYin, slide: m })).parts;
+      const mark = parts.find((p) => p.label === "走手音" || p.label === "弹法");
+      expect(mark, m).toBeDefined();
+      expect(mark!.text, m).toContain(m);
+      expect(mark!.text, m).not.toContain("急弹");
+      // 吟猱属广义走手音，只有「急」单列弹法
+      expect(mark!.label, m).toBe("走手音");
+      // 兜底句说明没登记，出现它就是漏了
+      expect(mark!.text, m).not.toContain("依师授");
+    }
+  });
+
+  it("旧 3 个读法不变", () => {
+    const chuo = explainJianzi(state({ ...anYin, slide: "绰" })).parts.find(
+      (p) => p.label === "走手音",
+    );
+    expect(chuo!.text).toContain("从本位下方滑上来");
+    const ji = explainJianzi(state({ ...anYin, slide: "急" })).parts.find(
+      (p) => p.label === "弹法",
+    );
+    expect(ji!.text).toContain("急弹");
+  });
+
+  it("散/泛音不显示装饰记号", () => {
+    for (const tone of ["散", "泛"] as const) {
+      const parts = explainJianzi(state({ ...anYin, toneType: tone, slide: "细吟" })).parts;
+      expect(parts.find((p) => p.label === "走手音" || p.label === "弹法")).toBeUndefined();
+    }
+  });
+});

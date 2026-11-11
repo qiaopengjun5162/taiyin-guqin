@@ -280,3 +280,47 @@ describe("parseRapidInput · 音色双向兜底", () => {
     expect(parseRapidInput("mqt3", "散").state.toneType).toBe("按");
   });
 });
+
+describe("parseRapidInput · 吟猱族 18 个记号", () => {
+  const MARKS: [string, string][] = [
+    ["y", "吟"], ["n", "猱"],
+    ["cy", "绰吟"], ["cn", "绰猱"], ["zy", "注吟"], ["zn", "注猱"],
+    ["xy", "细吟"], ["xn", "细猱"], ["uy", "游吟"], ["un", "游猱"],
+    ["hy", "荡吟"], ["hn", "荡猱"], ["vy", "飞吟"], ["vn", "飞猱"],
+    ["oy", "圆吟"], ["on", "圆猱"], ["ky", "定吟"], ["kn", "定猱"],
+  ];
+
+  it("18 个记号逐个连打，整字成字", () => {
+    for (const [letter, mark] of MARKS) {
+      const r = parseRapidInput(`d9${letter}g4`, "按");
+      expect(r.complete, `${letter} → ${mark}`).toBe(true);
+      expect(r.state.slide, letter).toBe(mark);
+      expect(r.state.rightAction, letter).toBe("勹");
+    }
+  });
+
+  it("双字母优先：xy 不会被拆成 x + y", () => {
+    const r = parseRapidInput("d9xyg4", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.slide).toBe("细吟");
+  });
+
+  it("旧 3 个单字母仍照常", () => {
+    expect(parseRapidInput("d9cg4", "按").state.slide).toBe("绰");
+    expect(parseRapidInput("d9zg4", "按").state.slide).toBe("注");
+    expect(parseRapidInput("d9jg4", "按").state.slide).toBe("急");
+  });
+
+  it("y 在徽位槽仍是「一」，不因吟占用 y 而变", () => {
+    const r = parseRapidInput("dyg4", "按");
+    expect(r.state.hui).toBe("一");
+    expect(r.state.slide).toBeNull();
+  });
+
+  it("连打出的挂尾记号，序列化挂在字尾", () => {
+    const r = parseRapidInput("d9f6xyg4", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.slide).toBe("细吟");
+    expect(jianziToText(r.state)).toBe("大九六勾四细吟");
+  });
+});

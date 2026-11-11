@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { SVG_PATHS, FONT_UPEM } from "../svg-paths";
+import { SLIDE_MARKS } from "../jianzi";
+import { SLIDE_MAP } from "../../components/svg-jianzi-block";
 
 const EXPECTED_KEYS = [
   "top_san", "top_fan",
@@ -10,13 +12,18 @@ const EXPECTED_KEYS = [
   // 复合指法（双指法连字）字形
   "rh_motiao", "rh_gouti", "rh_mogou", "rh_dazhai",
   "str_1", "str_2", "str_3", "str_4", "str_5", "str_6", "str_7",
-  // 装饰记号（绰/注/急）
+  // 装饰记号：内折 3 个 + 吟猱族挂尾 18 个（字形从 GSUB 连字目标增量提取）
   "mod_chuo", "mod_zhu", "mod_ji",
+  "mod_yin", "mod_nao",
+  "mod_chuoyin", "mod_chuonao", "mod_zhuyin", "mod_zhunao",
+  "mod_xiyin", "mod_xinao", "mod_youyin", "mod_younao",
+  "mod_dangyin", "mod_dangnao", "mod_feiyin", "mod_feinao",
+  "mod_yuanyin", "mod_yuanniao", "mod_dingyin", "mod_dingnao",
 ];
 
 describe("SVG_PATHS data integrity", () => {
-  it("has 45 entries", () => {
-    expect(Object.keys(SVG_PATHS).length).toBe(45);
+  it("has 63 entries", () => {
+    expect(Object.keys(SVG_PATHS).length).toBe(63);
   });
 
   it("contains all expected keys", () => {
@@ -51,6 +58,28 @@ describe("SVG_PATHS data integrity", () => {
     for (const [key, entry] of Object.entries(SVG_PATHS)) {
       expect(entry.d, `${key}`).toMatch(/^M/);
       expect(entry.d, `${key}`).toMatch(/[MLQCTZmlqctz]/);
+    }
+  });
+});
+
+describe("装饰记号 → SVG 字形契约", () => {
+  it("21 个记号在 SLIDE_MAP 里都登记了，且每个键都有字形", () => {
+    // 漏登记 = 字体分支正常、SVG 降级分支静默空白，肉眼在谱面上看不出来。
+    expect(Object.keys(SLIDE_MAP)).toHaveLength(21);
+    for (const mark of SLIDE_MARKS) {
+      const key = SLIDE_MAP[mark];
+      expect(key, `记号 ${mark} 没登记 SLIDE_MAP`).toBeDefined();
+      expect(SVG_PATHS[key], `${mark} → ${key} 缺字形`).toBeDefined();
+    }
+  });
+
+  it("内折 3 个用旧槽位键，挂尾 18 个用新键（不共用内折槽）", () => {
+    expect(SLIDE_MAP["绰"]).toBe("mod_chuo");
+    expect(SLIDE_MAP["注"]).toBe("mod_zhu");
+    expect(SLIDE_MAP["急"]).toBe("mod_ji");
+    for (const mark of SLIDE_MARKS) {
+      if (mark === "绰" || mark === "注" || mark === "急") continue;
+      expect(SLIDE_MAP[mark], mark).not.toMatch(/^mod_(chuo|zhu|ji)$/);
     }
   });
 });
