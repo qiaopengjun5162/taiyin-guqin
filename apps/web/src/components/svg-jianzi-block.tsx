@@ -44,6 +44,13 @@ export const RIGHT_ACTION_MAP: Record<string, string | null> = {
   "勾剔": "rh_gouti",
   "抹勾": "rh_mogou",
   "打摘": "rh_dazhai",
+  // 成块单指法（字体内折成块，GSUB 单字替换已核验真身）：
+  // 轮/锁/涓/历/拂 有对应 lgw_*/lg_* 部件；蠲/剌 字体 cmap→placeholder 且无 GSUB 规则，不接入（rh_juan 复用涓字形）。
+  "轮": "rh_lun",
+  "锁": "rh_suo",
+  "涓": "rh_juan",
+  "历": "rh_li",
+  "拂": "rh_fu",
 };
 
 const STRING_MAP: Record<string, string> = {

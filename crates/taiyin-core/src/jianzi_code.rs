@@ -30,7 +30,8 @@
 //!   注意：这是**码**的写法，与字体渲染串不同——字体的吟猱族记号挂在字尾（弦序之后），
 //!   见 `apps/web/src/lib/jianzi.ts` 的 `jianziToText`。码是「照着打的串」，不是字体串。
 //! - 右手：勾 `g`、挑 `t`、抹 `m`、打 `d`、摘 `z`、托 `tu`、剔 `ti`、劈 `b`，
-//!   复合指法 抹挑 `mt`、勾剔 `gt`、抹勾 `mg`、打摘 `dz`
+//!   复合指法 抹挑 `mt`、勾剔 `gt`、抹勾 `mg`、打摘 `dz`，
+//!   单指法 轮 `u`、锁 `o`、涓 `v`、历 `h`、拂 `p`（均字体内折成块，已核验 GSUB 真身）
 //! - 弦序：1–7
 //!
 //! 例：散勾三 = `sg3`；大九勾四 = `ad9g4`；泛大九勾四 = `fd9g4`；
@@ -123,6 +124,15 @@ fn action_letter(action: &str) -> Option<&'static str> {
         "勾剔" => Some("gt"),
         "抹勾" => Some("mg"),
         "打摘" => Some("dz"),
+        // 单指法（字体内折成块，GSUB 单字替换已核验真身）：轮/锁/涓/历/拂。
+        // 字母取空闲单字母，避开音色 sfa、左手 dszmg、徽位旧法 yewlqbj、分 fN、
+        // 走手音 czjy n + 复合、现有右手 gtm dz tu ti b，互不撞车。
+        // 注：蠲/剌 在本字体 cmap→placeholder 且无 GSUB 规则，渲染为占位框，不接入。
+        "轮" => Some("u"),
+        "锁" => Some("o"),
+        "涓" => Some("v"),
+        "历" => Some("h"),
+        "拂" => Some("p"),
         _ => None,
     }
 }
@@ -141,6 +151,12 @@ const ACTION_TOKENS: &[(&str, &str)] = &[
     ("d", "打"),
     ("z", "摘"),
     ("b", "劈"),
+    // 单指法（成块）：轮/锁/涓/历/拂
+    ("u", "轮"),
+    ("o", "锁"),
+    ("v", "涓"),
+    ("h", "历"),
+    ("p", "拂"),
 ];
 
 /// 装饰记号 → 字母。
@@ -805,6 +821,28 @@ mod tests {
         assert_eq!(encode(&san("托", "一")).unwrap(), "stu1");
         assert_eq!(encode(&san("剔", "四")).unwrap(), "sti4");
         assert_eq!(encode(&san("劈", "七")).unwrap(), "sb7");
+    }
+
+    #[test]
+    fn test_new_right_actions_roundtrip() {
+        // 字体内折成块、GSUB 单字替换已核验真身的单指法：轮/锁/涓/历/拂。
+        // 字母取空闲单字母，与音色/左手/徽位/分/走手音/现有右手互不撞车。
+        // 蠲/剌 在字体 cmap→placeholder 且无 GSUB 规则，不接入（见 action_letter 注释）。
+        let cases: &[(&str, &str)] = &[
+            ("u", "轮"),
+            ("o", "锁"),
+            ("v", "涓"),
+            ("h", "历"),
+            ("p", "拂"),
+        ];
+        for (letter, action) in cases {
+            let note = san(action, "四");
+            assert_eq!(encode(&note).unwrap(), format!("s{letter}4"), "{action} 编码");
+            let decoded =
+                decode(&format!("s{letter}4")).unwrap_or_else(|e| panic!("s{letter}4 解不开：{e}"));
+            assert_eq!(decoded.right_action.as_deref(), Some(*action), "{action} 解码");
+            assert_eq!(encode(&decoded).unwrap(), format!("s{letter}4"), "{action} 编回");
+        }
     }
 
     #[test]

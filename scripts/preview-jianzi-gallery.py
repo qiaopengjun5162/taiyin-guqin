@@ -82,6 +82,9 @@ RIGHT_ACTION_MAP = {
     # 复合指法（双指法连字）
     "抹挑": "rh_motiao", "勾剔": "rh_gouti",
     "抹勾": "rh_mogou", "打摘": "rh_dazhai",
+    # 成块单指法（字体内折成块，GSUB 单字替换已核验真身）
+    "轮": "rh_lun", "锁": "rh_suo", "涓": "rh_juan",
+    "历": "rh_li", "拂": "rh_fu",
 }
 STRING_MAP = {
     "一": "str_1", "二": "str_2", "三": "str_3", "四": "str_4",

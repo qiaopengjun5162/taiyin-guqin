@@ -59,6 +59,16 @@ TARGET_GLYPHS = {
     "rh_gouti": "lg_gouti",     # 勾剔
     "rh_mogou": "lg_mogou",     # 抹勾
     "rh_dazhai": "lg_dazhai",   # 打摘
+    # 成块单指法（字体内折成块，GSUB 单字替换已核验真身）：
+    # 轮/锁/涓/拂 走 lgw_*，历 走 lg_*（与上方 lg_* 外壳同源）。
+    # 蠲 在字体 cmap→placeholder 且无 GSUB 规则，渲染为占位框，不接入；
+    # 蠲 视觉与 涓 同形，SVG 降级复用 rh_juan，故不单列提取。
+    # 剌 同理为 placeholder，不接入。
+    "rh_lun": "lgw_lun",        # 轮
+    "rh_suo": "lgw_suo",        # 锁
+    "rh_juan": "lgw_juan",      # 涓（蠲复用）
+    "rh_li": "lg_li",           # 历
+    "rh_fu": "lgw_fu",          # 拂
     # 弦序内核
     "str_1": "md_1", "str_2": "md_2", "str_3": "md_3",
     "str_4": "md_4", "str_5": "md_5", "str_6": "md_6",

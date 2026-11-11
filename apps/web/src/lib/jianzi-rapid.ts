@@ -173,6 +173,13 @@ const TOKENS: Record<ValueSlot, Array<[string, string]>> = {
     ["d", "丁"],
     ["z", "倽"],
     ["b", "尸"],
+    // 成块单指法（字体内折成块，GSUB 单字替换已核验真身）：轮 u · 锁 o · 涓 v · 历 h · 拂 p
+    // 蠲 i / 剌 k 字体 cmap→placeholder 且无 GSUB 规则，不接入。
+    ["u", "轮"],
+    ["o", "锁"],
+    ["v", "涓"],
+    ["h", "历"],
+    ["p", "拂"],
   ],
   // 弦序优先用数字键 1-7；也收首字母，四弦同样遵守 ss 约定
   stringNumber: [
@@ -408,7 +415,7 @@ export const RAPID_CHEATSHEET = [
   },
   {
     title: "右手",
-    text: "挑 t · 勾 g · 抹 m · 打 d · 摘 z · 托 tu · 剔 ti · 擘 b · 抹挑 mt · 勾剔 gt",
+    text: "挑 t · 勾 g · 抹 m · 打 d · 摘 z · 托 tu · 剔 ti · 擘 b · 抹挑 mt · 勾剔 gt；成块单指法 轮 u · 锁 o · 涓 v · 历 h · 拂 p",
   },
   { title: "弦序", text: "数字 1–7；或 三 s、四 ss" },
 ] as const;

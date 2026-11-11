@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 成块单指法可录入：轮/锁/涓/历/拂 五指法接进产品（2026-11-11）
+
+「字形覆盖窄」下一截：字体 GSUB 认得大量右手指法连字，但产品录入面只接了 8 个单指法 + 4 复合。
+本轮经 GSUB 权威核验（查 cmap + 单字替换 + 连字规则），只把**字体真有身**的成块单指法接进产品，
+杜绝「拍脑袋扩表 → 渲染成占位框」：
+
+- **GSUB 核验结论**：轮(U+8F6E)/锁(U+9501)/涓(U+6D93)/历(U+5386)/拂(U+62C2) 在 GSUB 单字替换里分别映射到 `lgw_lun`/`lgw_suo`/`lgw_juan`/`lg_li`/`lgw_fu` 真实部件，字体内折成块；**蠲(U+8732) 与 剌(U+5283) 在字体 cmap→`placeholder` 且没有任何 GSUB 规则，渲染为占位框，属「字体本身没做」而非产品接线缺口**，不接入（曾误测为 1em，实为占位框宽度）。
+- **码表（Rust `jianzi_code.rs`）**：`action_letter` / `ACTION_TOKENS` 新增 轮 `u`、锁 `o`、涓 `v`、历 `h`、拂 `p`（空闲单字母，与音色/左手/徽位/分/走手音/现有右手互不撞车）；`test_new_right_actions_roundtrip` 锁 5 指法编解码往返。
+- **前端类型/序列化/连打/释义/键盘**：`types.ts` 的 `DEFAULT_KEYBOARD.rightActions`、`jianzi.ts` 的 `RIGHT_ACTION_GLYPH` 与 `RIGHT_ACTION_NAMES`、`jianzi-rapid.ts` 的 `TOKENS.rightAction` 与速查表、`jianzi-explain.ts` 的 `RIGHT_ACTIONS`、`jianzipu-keyboard.tsx` 五处同源登记；SVG 降级 `RIGHT_ACTION_MAP` 新增 `rh_lun/rh_suo/rh_juan/rh_li/rh_fu`（涓字形 蠲 复用 `rh_juan`）。
+- **SVG 增量提取**：fontTools 从 `lgw_*`/`lg_*` 增量提取 5 个部件到 `svg-paths.ts`（**未跑全量 extract**，护住齊伋體替换的 22 字），`svg-paths.test.ts` 计数断言 63→68；同步 `extract-svg-paths.py` 的 `TARGET_GLYPHS` 来源索引与画廊 `preview-jianzi-gallery.py` 的 `RIGHT_ACTION_MAP`。
+
+**验证**：core 单测 24 项（含修订后 roundtrip）全绿；`jianzi.test.ts`(66)/`jianzi-rapid`(44)/`jianzi-explain`(29)/`jianzipu-keyboard`(28)/`svg-paths`+`svg-jianzi-block`(23) 全部在 `--no-isolate` 下通过；`tsc --noEmit` 0；`just rebuild-probe-wasm` 重建三份 wasm + provenance（232487 字节，9 导出），`verify-wasm.mjs` 与 `verify-probe`（7 校验器）全绿。
+
 ### 吟猱族记号可录入：减字装饰记号从 3 扩到 21（2026-11-11）
 
 「录不进去」的缺口做实：字体虽认 330 连字 + 245 单字替换，产品录入面只接了绰/注/急 3 个走手音，
@@ -20,7 +33,7 @@
 - core 单测 104 项、`jianzi.test.ts`(66) / `jianzi-rapid`(44) / `jianzi-explain`(29) / `jianzipu-keyboard`(28) / `svg-paths`+`jianzi-block`(21) 全绿，`tsc --noEmit` 0。
 - 变异验证：撤回修复须如实判红（最长优先序、z 歧义回归）的护栏已在。
 
-已知留白（有意不做）：撮/拨剌/历/拂/掐/锁/蠲/涓等复合指法、少息/再作/入拍等结构记号、异体与上古谱符仍缺；这些要拿《琴曲集成》逐字试打，按缺的补，不靠拍脑袋扩表。
+已知留白（有意不做）：轮/锁/涓/历/拂 已落地（见上条「成块单指法可录入」）；**蠲/剌 经 GSUB 核验为字体 cmap→placeholder 且无 GSUB 规则，是字体本身没做，非产品接线缺口，不靠拍脑袋补**；剩 撮/拨/掐 及复合指法（大撮/反撮/半扶/长锁/短锁/背锁/圆锁/半涓/反涓/叠涓/连涓/半蠲/反蠲/连蠲/掐拂历等，多需修饰符才成块，或字体也缺）、少息/再作/入拍等结构记号、异体与上古谱符；这些要拿《琴曲集成》逐字试打，按缺的补。
 
 ### 发版门禁补齐：MSRV 钉死、镜像可复现、优雅停机（2026-11-10）
 

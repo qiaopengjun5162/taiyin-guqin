@@ -138,6 +138,38 @@ const RIGHT_ACTIONS: Record<string, RightAction> = {
     direction: "外",
     note: "字体无此连字，仅作文本兼容",
   },
+  // 成块单指法（字体内折成块，GSUB 单字替换已核验真身）
+  // 蠲/剌 字体 cmap→placeholder 且无 GSUB 规则，渲染为占位框，不接入。
+  轮: {
+    name: "轮",
+    finger: "无名指、中指、食指",
+    direction: null,
+    note: "轮指：三指依次快速摘托挑，一弦连得三声",
+  },
+  锁: {
+    name: "锁",
+    finger: "食指、中指",
+    direction: null,
+    note: "锁铃/长锁：抹勾剔连作，三声相系",
+  },
+  涓: {
+    name: "涓",
+    finger: "食指",
+    direction: "外",
+    note: "连剔两弦，轻作二声",
+  },
+  历: {
+    name: "历",
+    finger: "食指",
+    direction: "外",
+    note: "食指连挑数弦，历历而下",
+  },
+  拂: {
+    name: "拂",
+    finger: "食指、中指、无名指",
+    direction: "外",
+    note: "三指依次向外拂过数弦",
+  },
 };
 
 /**
