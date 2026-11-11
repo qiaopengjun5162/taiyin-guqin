@@ -299,6 +299,43 @@ const ACTION_GROUPS: &[Group] = &[
         label: "打摘",
         keys: &["打摘"],
     },
+    // 复合指法（成块，GSUB 连字 lgw_* 真身）：半扶/长锁/短锁/背锁/圆锁/半涓/反涓/叠涓/连涓。
+    Group {
+        label: "半扶",
+        keys: &["半扶"],
+    },
+    Group {
+        label: "长锁",
+        keys: &["长锁"],
+    },
+    Group {
+        label: "短锁",
+        keys: &["短锁"],
+    },
+    Group {
+        label: "背锁",
+        keys: &["背锁"],
+    },
+    Group {
+        label: "圆锁",
+        keys: &["圆锁"],
+    },
+    Group {
+        label: "半涓",
+        keys: &["半涓"],
+    },
+    Group {
+        label: "反涓",
+        keys: &["反涓"],
+    },
+    Group {
+        label: "叠涓",
+        keys: &["叠涓"],
+    },
+    Group {
+        label: "连涓",
+        keys: &["连涓"],
+    },
 ];
 
 // ──────────────────────────────────────────────
@@ -381,7 +418,7 @@ fn mk(spec: Spec) -> JianziDictEntry {
     }
 }
 
-/// 构建完整字全表（50 条）。与前端原 TS 版逐条对齐。
+/// 构建完整字全表（59 条：原 50 + 9 成块复合指法）。与前端原 TS 版逐条对齐。
 fn build_catalog() -> Vec<JianziDictEntry> {
     vec![
         // ── 散音（空弦，不取左手与徽位） ──
@@ -812,6 +849,88 @@ fn build_catalog() -> Vec<JianziDictEntry> {
             note: Some("打摘：先打后摘"),
             ..Default::default()
         }),
+        // ── 按音 · 复合指法（成块，GSUB 连字 lgw_* 真身）──
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "半扶",
+            string: "三",
+            note: Some("半扶：食指抹扶相连，一弦得两声"),
+            ..Default::default()
+        }),
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "长锁",
+            string: "三",
+            note: Some("长锁：抹勾剔连作，三声相系，节奏较长"),
+            ..Default::default()
+        }),
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "短锁",
+            string: "三",
+            note: Some("短锁：抹勾剔短促相连"),
+            ..Default::default()
+        }),
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "背锁",
+            string: "三",
+            note: Some("背锁：反向锁铃，指法相背"),
+            ..Default::default()
+        }),
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "圆锁",
+            string: "三",
+            note: Some("圆锁：锁铃圆转连贯"),
+            ..Default::default()
+        }),
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "半涓",
+            string: "三",
+            note: Some("半涓：抹勾相连，一弦得两声"),
+            ..Default::default()
+        }),
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "反涓",
+            string: "三",
+            note: Some("反涓：反向涓，指法倒用"),
+            ..Default::default()
+        }),
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "叠涓",
+            string: "三",
+            note: Some("叠涓：涓法叠加，声繁"),
+            ..Default::default()
+        }),
+        mk(Spec {
+            tone: "按",
+            left: Some("食"),
+            hui: Some("九"),
+            action: "连涓",
+            string: "三",
+            note: Some("连涓：涓法连作，声相续"),
+            ..Default::default()
+        }),
     ]
 }
 
@@ -885,7 +1004,7 @@ pub fn filter_dictionary(filter: &DictFilter) -> Vec<JianziDictEntry> {
 /// wasm 入口：接收筛选 JSON，返回 `{ total, entries }` JSON 字符串。
 ///
 /// 输入：`{"tone":"","left":"","action":"","string":"","query":""}`（各字段均可省略）。
-/// 输出：`{"total":50,"entries":[{id,state,note?,common,searchText},...]}`。
+/// 输出：`{"total":59,"entries":[{id,state,note?,common,searchText},...]}`。
 pub fn get_jianzi_dictionary_json(input_json: &str) -> Result<String, String> {
     #[derive(Deserialize)]
     struct Req {
@@ -987,7 +1106,7 @@ mod tests {
 
     #[test]
     fn test_catalog_count_is_50() {
-        assert_eq!(catalog().len(), 50);
+        assert_eq!(catalog().len(), 59);
     }
 
     #[test]
@@ -1002,7 +1121,7 @@ mod tests {
     fn test_tone_groups() {
         assert_eq!(by_tone("散").len(), 8);
         assert_eq!(by_tone("泛").len(), 8);
-        assert_eq!(by_tone("按").len(), 34);
+        assert_eq!(by_tone("按").len(), 43);
         for e in by_tone("散") {
             assert_eq!(e.state.tone_type, "散");
             assert!(e.state.left_finger.is_none());
@@ -1094,7 +1213,7 @@ mod tests {
     #[test]
     fn test_empty_filter_returns_all() {
         let got = filter_dictionary(&DictFilter::default());
-        assert_eq!(got.len(), 50);
+        assert_eq!(got.len(), 59);
     }
 
     #[test]
@@ -1181,7 +1300,7 @@ mod tests {
     fn test_get_json_roundtrip() {
         let out = get_jianzi_dictionary_json(r#"{"tone":"散"}"#).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["total"], 50);
+        assert_eq!(v["total"], 59);
         assert_eq!(v["entries"].as_array().unwrap().len(), 8);
         // 条目含必要字段
         let first = &v["entries"][0];

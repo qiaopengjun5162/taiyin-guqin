@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 成块复合指法可录入：9 个 GSUB 连字真身接进产品（2026-11-11）
+
+「字形覆盖窄」再下一截。上轮只接了能内折成块的**单**指法，本轮把字体里经 GSUB 实锤能成块的**复合**指法接进录入面。关键判断：单指法 拨/跪/撮/扶/掐 单独都不成块（撮 U+64B0 是 `placeholder`、扶/掐 只在复合里成块、拨/跪 落在 `xl_*`/`sm_*` 需修饰件而偏宽），所以本批只接复合指法本身，不接它们的单字。
+
+- **GSUB 核验（fontTools 读 cmap + 连字目标 + glyf 轮廓）**：半扶/长锁/短锁/背锁/圆锁/半涓/反涓/叠涓/连涓 均由 GSUB 连字映射到 `lgw_*` 整字外壳，9 个部件逐一确认 `numberOfContours > 0` 且有真实 bbox，不是占位框。
+- **明确不接**：偏宽 4 个（拨/跪/大撮/反撮）、字体缺口 5 个（撮 U+64B0，及因 蠲 占位而连锁缺的 半蠲/反蠲/连蠲）、掐拂历（5 部件连字含三/二/四弦数变体，需单独设计输入模型，留 Batch 2b）。
+- **码表**：`jianzi_code.rs` 新增 9 个 2 字母码（半扶 `ek`、长锁 `il`、短锁 `kq`、背锁 `lr`、圆锁 `qx`、半涓 `wi`、反涓 `xe`、叠涓 `ki`、连涓 `eq`），首字母取自空闲池 `e/i/k/l/q/r/w/x`，不占任何单字母槽；`ACTION_TOKENS` 长码排在单字母前（`match_longest` 最长前缀优先已有测试守序），新增 9 复合 roundtrip 与「半涓 `wi` 与 涓 `v` 不互串」断言。
+- **字典目录（上轮漏改点，本批补齐）**：`jianzi_dictionary.rs` 的 `ACTION_GROUPS` 加 9 分组、`build_catalog` 加 9 个按音条目，字全表 50→59；同步 Rust 内 4 处计数断言与 `verify-wasm.mjs` 2 处。`right_action_glyph` 无需显式加——复合指法整字走 `other => other` 兜底原样透传给字体 GSUB。
+- **前端 5 处同源 + SVG 降级**：`types.ts` / `jianzi.ts`（GLYPH + NAMES）/ `jianzi-rapid.ts`（TOKENS + 速查表）/ `jianzi-explain.ts` / `svg-jianzi-block.tsx` 各登记 9 条；fontTools 增量提取 9 个 `lgw_*` 部件到 `svg-paths.ts`（**未跑全量 extract**，护住齊伋體 22 字），SVG 键 68→77，同步 `extract-svg-paths.py` / `preview-jianzi-gallery.py` / `svg-paths.test.ts`。
+- **真产物断言**：`verify-wasm.mjs` 补第 11 节，在真 wasm 上锁 9 复合可编可解、长短码不互串，并补「9 复合都在字全表」。
+
+**验证**：`cargo test -p taiyin-core --lib` 106 项全绿；前端 6 文件逐文件 `--no-isolate` 共 190 项全绿；`tsc --noEmit` 0 错误；`just rebuild-probe-wasm` 三份 wasm + provenance 同源重建（234916 字节、9 导出）；`verify-wasm.mjs`（含新增断言）与 `verify-probe`（7 校验器）全绿。
+
 ### 成块单指法可录入：轮/锁/涓/历/拂 五指法接进产品（2026-11-11）
 
 「字形覆盖窄」下一截：字体 GSUB 认得大量右手指法连字，但产品录入面只接了 8 个单指法 + 4 复合。

@@ -165,6 +165,16 @@ const TOKENS: Record<ValueSlot, Array<[string, string]>> = {
     ["gt", "勾剔"],
     ["mg", "抹勾"],
     ["dz", "打摘"],
+    // 复合指法（成块，GSUB 连字 lgw_* 已核验真身）：2 字母码，空闲池 e/i/k/l/q/r/w/x
+    ["ek", "半扶"],
+    ["il", "长锁"],
+    ["kq", "短锁"],
+    ["lr", "背锁"],
+    ["qx", "圆锁"],
+    ["wi", "半涓"],
+    ["xe", "反涓"],
+    ["ki", "叠涓"],
+    ["eq", "连涓"],
     ["ti", "剔"],
     ["tu", "乇"],
     ["t", "乚"],
@@ -415,7 +425,7 @@ export const RAPID_CHEATSHEET = [
   },
   {
     title: "右手",
-    text: "挑 t · 勾 g · 抹 m · 打 d · 摘 z · 托 tu · 剔 ti · 擘 b · 抹挑 mt · 勾剔 gt；成块单指法 轮 u · 锁 o · 涓 v · 历 h · 拂 p",
+    text: "挑 t · 勾 g · 抹 m · 打 d · 摘 z · 托 tu · 剔 ti · 擘 b · 抹挑 mt · 勾剔 gt；成块单指法 轮 u · 锁 o · 涓 v · 历 h · 拂 p；复合指法 半扶 ek · 长锁 il · 短锁 kq · 背锁 lr · 圆锁 qx · 半涓 wi · 反涓 xe · 叠涓 ki · 连涓 eq",
   },
   { title: "弦序", text: "数字 1–7；或 三 s、四 ss" },
 ] as const;

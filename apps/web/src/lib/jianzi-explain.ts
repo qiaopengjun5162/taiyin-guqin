@@ -170,6 +170,61 @@ const RIGHT_ACTIONS: Record<string, RightAction> = {
     direction: "外",
     note: "三指依次向外拂过数弦",
   },
+  // 复合指法（成块，GSUB 连字 lgw_* 已核验真身）
+  半扶: {
+    name: "半扶",
+    finger: "食指、中指",
+    direction: "内",
+    note: "半扶：食指抹扶相连，一弦得两声",
+  },
+  长锁: {
+    name: "长锁",
+    finger: "食指、中指",
+    direction: null,
+    note: "长锁：抹勾剔连作，三声相系，节奏较长",
+  },
+  短锁: {
+    name: "短锁",
+    finger: "食指、中指",
+    direction: null,
+    note: "短锁：抹勾剔短促相连",
+  },
+  背锁: {
+    name: "背锁",
+    finger: "食指、中指",
+    direction: null,
+    note: "背锁：反向锁铃，指法相背",
+  },
+  圆锁: {
+    name: "圆锁",
+    finger: "食指、中指",
+    direction: null,
+    note: "圆锁：锁铃圆转连贯",
+  },
+  半涓: {
+    name: "半涓",
+    finger: "食指",
+    direction: "内",
+    note: "半涓：抹勾相连，一弦得两声",
+  },
+  反涓: {
+    name: "反涓",
+    finger: "食指",
+    direction: "内",
+    note: "反涓：反向涓，指法倒用",
+  },
+  叠涓: {
+    name: "叠涓",
+    finger: "食指",
+    direction: "内",
+    note: "叠涓：涓法叠加，声繁",
+  },
+  连涓: {
+    name: "连涓",
+    finger: "食指",
+    direction: "内",
+    note: "连涓：涓法连作，声相续",
+  },
 };
 
 /**

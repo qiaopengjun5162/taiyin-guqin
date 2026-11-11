@@ -133,6 +133,17 @@ fn action_letter(action: &str) -> Option<&'static str> {
         "涓" => Some("v"),
         "历" => Some("h"),
         "拂" => Some("p"),
+        // 复合指法（成块，GSUB 连字 lgw_* 真身）：2 字母码，首字母取自空闲池
+        // e/i/k/l/q/r/w/x（均不在任何单字母槽位，故 2 字母码不会与单字母 token 前缀冲突）。
+        "半扶" => Some("ek"),
+        "长锁" => Some("il"),
+        "短锁" => Some("kq"),
+        "背锁" => Some("lr"),
+        "圆锁" => Some("qx"),
+        "半涓" => Some("wi"),
+        "反涓" => Some("xe"),
+        "叠涓" => Some("ki"),
+        "连涓" => Some("eq"),
         _ => None,
     }
 }
@@ -143,6 +154,16 @@ const ACTION_TOKENS: &[(&str, &str)] = &[
     ("gt", "勾剔"),
     ("mg", "抹勾"),
     ("dz", "打摘"),
+    // 复合指法（成块，GSUB 连字 lgw_* 真身）：2 字母码，空闲池 e/i/k/l/q/r/w/x。
+    ("ek", "半扶"),
+    ("il", "长锁"),
+    ("kq", "短锁"),
+    ("lr", "背锁"),
+    ("qx", "圆锁"),
+    ("wi", "半涓"),
+    ("xe", "反涓"),
+    ("ki", "叠涓"),
+    ("eq", "连涓"),
     ("tu", "托"),
     ("ti", "剔"),
     ("t", "挑"),
@@ -837,11 +858,60 @@ mod tests {
         ];
         for (letter, action) in cases {
             let note = san(action, "四");
-            assert_eq!(encode(&note).unwrap(), format!("s{letter}4"), "{action} 编码");
+            assert_eq!(
+                encode(&note).unwrap(),
+                format!("s{letter}4"),
+                "{action} 编码"
+            );
             let decoded =
                 decode(&format!("s{letter}4")).unwrap_or_else(|e| panic!("s{letter}4 解不开：{e}"));
-            assert_eq!(decoded.right_action.as_deref(), Some(*action), "{action} 解码");
-            assert_eq!(encode(&decoded).unwrap(), format!("s{letter}4"), "{action} 编回");
+            assert_eq!(
+                decoded.right_action.as_deref(),
+                Some(*action),
+                "{action} 解码"
+            );
+            assert_eq!(
+                encode(&decoded).unwrap(),
+                format!("s{letter}4"),
+                "{action} 编回"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compound_right_actions_roundtrip() {
+        // 复合指法（成块，GSUB 连字 lgw_* 真身）：半扶/长锁/短锁/背锁/圆锁/半涓/反涓/叠涓/连涓。
+        // 2 字母码取空闲池 e/i/k/l/q/r/w/x，与单指法互不撞车。
+        let cases: &[(&str, &str)] = &[
+            ("ek", "半扶"),
+            ("il", "长锁"),
+            ("kq", "短锁"),
+            ("lr", "背锁"),
+            ("qx", "圆锁"),
+            ("wi", "半涓"),
+            ("xe", "反涓"),
+            ("ki", "叠涓"),
+            ("eq", "连涓"),
+        ];
+        for (letter, action) in cases {
+            let note = san(action, "四");
+            assert_eq!(
+                encode(&note).unwrap(),
+                format!("s{letter}4"),
+                "{action} 编码"
+            );
+            let decoded =
+                decode(&format!("s{letter}4")).unwrap_or_else(|e| panic!("s{letter}4 解不开：{e}"));
+            assert_eq!(
+                decoded.right_action.as_deref(),
+                Some(*action),
+                "{action} 解码"
+            );
+            assert_eq!(
+                encode(&decoded).unwrap(),
+                format!("s{letter}4"),
+                "{action} 编回"
+            );
         }
     }
 
@@ -868,6 +938,12 @@ mod tests {
         // san / fan / an 与单字母等价
         assert_eq!(decode("sang3").unwrap(), decode("sg3").unwrap());
         assert_eq!(decode("an d9g4").unwrap(), decode("ad9g4").unwrap());
+        // 复合 半涓(wi) 与 单指法 涓(v) 不能互串
+        assert_eq!(
+            decode("swi4").unwrap().right_action.as_deref(),
+            Some("半涓")
+        );
+        assert_eq!(decode("sv4").unwrap().right_action.as_deref(), Some("涓"));
     }
 
     #[test]

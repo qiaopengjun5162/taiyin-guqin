@@ -69,6 +69,18 @@ TARGET_GLYPHS = {
     "rh_juan": "lgw_juan",      # 涓（蠲复用）
     "rh_li": "lg_li",           # 历
     "rh_fu": "lgw_fu",          # 拂
+    # 成块复合指法（2026-11-11 Batch 2 增量追加）：均为 GSUB 连字目标 lgw_*
+    # 整字外壳，glyf 已核验有轮廓。单字 拨/跪/撮/扶/掐 单独不成块，
+    # 半蠲/反蠲/连蠲 因 蠲 是 placeholder 连锁缺口，均不接入。
+    "rh_banfu": "lgw_banfu",       # 半扶
+    "rh_changsuo": "lgw_changsuo", # 长锁
+    "rh_duansuo": "lgw_duansuo",   # 短锁
+    "rh_beisuo": "lgw_beisuo",     # 背锁
+    "rh_yuansuo": "lgw_yuansuo",   # 圆锁
+    "rh_banjuan": "lgw_banjuan",   # 半涓
+    "rh_fanjuan": "lgw_fanjuan",   # 反涓
+    "rh_diejuan": "lgw_diejuan",   # 叠涓
+    "rh_lianjuan": "lgw_lianjuan", # 连涓
     # 弦序内核
     "str_1": "md_1", "str_2": "md_2", "str_3": "md_3",
     "str_4": "md_4", "str_5": "md_5", "str_6": "md_6",

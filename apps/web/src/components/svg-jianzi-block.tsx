@@ -51,6 +51,18 @@ export const RIGHT_ACTION_MAP: Record<string, string | null> = {
   "涓": "rh_juan",
   "历": "rh_li",
   "拂": "rh_fu",
+  // 成块复合指法（GSUB 连字 lgw_* 已核验真身、有轮廓）：
+  // 单字 拨/跪/撮/扶/掐 单独都不成块，故只接复合本身；
+  // 半蠲/反蠲/连蠲 因 蠲 是 placeholder 连锁缺口，不接入。
+  "半扶": "rh_banfu",
+  "长锁": "rh_changsuo",
+  "短锁": "rh_duansuo",
+  "背锁": "rh_beisuo",
+  "圆锁": "rh_yuansuo",
+  "半涓": "rh_banjuan",
+  "反涓": "rh_fanjuan",
+  "叠涓": "rh_diejuan",
+  "连涓": "rh_lianjuan",
 };
 
 const STRING_MAP: Record<string, string> = {

@@ -294,8 +294,24 @@ if (failures > 0) {
 
 // 4. 减字字典（字全表）：返回 total/entries，且筛选生效
 const dictAll = JSON.parse(mod.get_jianzi_dictionary("{}"));
-check("dict: total = 50", dictAll.total === 50, `total=${dictAll.total}`);
-check("dict: returns 50 entries", dictAll.entries?.length === 50);
+// 2026-11-11 Batch 2：字全表从 50 条扩到 59（新增 9 个成块复合指法条目）。
+// 这里同步计数，既挡「改了目录没重编 wasm」，也挡「重编了却漏加条目」。
+check("dict: total = 59", dictAll.total === 59, `total=${dictAll.total}`);
+check("dict: returns 59 entries", dictAll.entries?.length === 59);
+const COMPOUND_IN_DICT = [
+  "半扶", "长锁", "短锁", "背锁", "圆锁", "半涓", "反涓", "叠涓", "连涓",
+];
+check(
+  "dict: 9 个成块复合都进了字全表",
+  COMPOUND_IN_DICT.every((a) =>
+    dictAll.entries?.some((e) => e.state?.rightAction === a),
+  ),
+  JSON.stringify(
+    COMPOUND_IN_DICT.filter((a) =>
+      !dictAll.entries?.some((e) => e.state?.rightAction === a),
+    ),
+  ),
+);
 const entry0 = dictAll.entries[0];
 check(
   "dict: entry has id/state/searchText",
@@ -478,6 +494,55 @@ check(
   "code: 扩表后 z 仍是摘而非注（回溯保留）",
   zBack.entries[0].state?.slide == null && zBack.entries[0].state?.rightAction === "摘",
   JSON.stringify(zBack.entries[0].state),
+);
+
+// 11. Batch 2 成块复合指法：9 个 GSUB 连字真身接进码表后，必须在真 wasm
+//     产物上仍可编可解。挡「改了 jianzi_code.rs 却没重编 wasm」——旧产物
+//     里根本没有这些 2 字母码，编出来是 null、解出来是错指法。
+const COMPOUND_ACTIONS = [
+  ["ek", "半扶"], ["il", "长锁"], ["kq", "短锁"], ["lr", "背锁"],
+  ["qx", "圆锁"], ["wi", "半涓"], ["xe", "反涓"], ["ki", "叠涓"],
+  ["eq", "连涓"],
+];
+const compoundBatch = JSON.parse(
+  mod.encode_jianzi_batch(
+    JSON.stringify({
+      notes: COMPOUND_ACTIONS.map(([, action]) => ({
+        toneType: "按", leftFinger: "大", hui: "九", fen: null,
+        slide: null, rightAction: action, stringNumber: "四",
+      })),
+    }),
+  ),
+);
+const compoundCodes = COMPOUND_ACTIONS.map(([letter]) => `ad9${letter}4`);
+check(
+  "code: 9 个成块复合可编（ad9ek4 … ad9eq4）",
+  compoundBatch.codes?.join(",") === compoundCodes.join(","),
+  `got=${compoundBatch.codes}`,
+);
+const compoundDecode = JSON.parse(
+  mod.decode_jianzi_batch(JSON.stringify({ text: compoundCodes.join(" ") })),
+);
+check(
+  "code: 9 个成块复合可解回原指法",
+  compoundDecode.ok === 9 &&
+    COMPOUND_ACTIONS.every(
+      ([, action], i) => compoundDecode.entries[i].state?.rightAction === action,
+    ),
+  JSON.stringify(compoundDecode.entries.map((e) => e.state?.rightAction)),
+);
+// 2 字母长码不能被单字母短码吃掉：v=涓 / o=锁 与 wi=半涓 / il=长锁 各归各位
+const prefixGuard = JSON.parse(
+  mod.decode_jianzi_batch(JSON.stringify({ text: "ad9v4 ad9o4 ad9wi4 ad9il4" })),
+);
+check(
+  "code: 长短码不互串（v/涓 o/锁 wi/半涓 il/长锁）",
+  prefixGuard.ok === 4 &&
+    prefixGuard.entries[0].state?.rightAction === "涓" &&
+    prefixGuard.entries[1].state?.rightAction === "锁" &&
+    prefixGuard.entries[2].state?.rightAction === "半涓" &&
+    prefixGuard.entries[3].state?.rightAction === "长锁",
+  JSON.stringify(prefixGuard.entries.map((e) => e.state?.rightAction)),
 );
 
 

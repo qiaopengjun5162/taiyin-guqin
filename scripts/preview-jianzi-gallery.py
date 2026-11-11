@@ -85,6 +85,11 @@ RIGHT_ACTION_MAP = {
     # 成块单指法（字体内折成块，GSUB 单字替换已核验真身）
     "轮": "rh_lun", "锁": "rh_suo", "涓": "rh_juan",
     "历": "rh_li", "拂": "rh_fu",
+    # 成块复合指法（GSUB 连字 lgw_* 已核验真身、有轮廓）
+    "半扶": "rh_banfu", "长锁": "rh_changsuo", "短锁": "rh_duansuo",
+    "背锁": "rh_beisuo", "圆锁": "rh_yuansuo",
+    "半涓": "rh_banjuan", "反涓": "rh_fanjuan",
+    "叠涓": "rh_diejuan", "连涓": "rh_lianjuan",
 }
 STRING_MAP = {
     "一": "str_1", "二": "str_2", "三": "str_3", "四": "str_4",

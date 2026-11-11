@@ -13,6 +13,9 @@ const EXPECTED_KEYS = [
   "rh_motiao", "rh_gouti", "rh_mogou", "rh_dazhai",
   // 成块单指法（字体内折成块，GSUB 单字替换已核验真身）：轮/锁/涓/历/拂
   "rh_lun", "rh_suo", "rh_juan", "rh_li", "rh_fu",
+  // 成块复合指法（GSUB 连字 lgw_* 已核验真身、有轮廓）
+  "rh_banfu", "rh_changsuo", "rh_duansuo", "rh_beisuo", "rh_yuansuo",
+  "rh_banjuan", "rh_fanjuan", "rh_diejuan", "rh_lianjuan",
   "str_1", "str_2", "str_3", "str_4", "str_5", "str_6", "str_7",
   // 装饰记号：内折 3 个 + 吟猱族挂尾 18 个（字形从 GSUB 连字目标增量提取）
   "mod_chuo", "mod_zhu", "mod_ji",
@@ -24,8 +27,8 @@ const EXPECTED_KEYS = [
 ];
 
 describe("SVG_PATHS data integrity", () => {
-  it("has 68 entries", () => {
-    expect(Object.keys(SVG_PATHS).length).toBe(68);
+  it("has 77 entries", () => {
+    expect(Object.keys(SVG_PATHS).length).toBe(77);
   });
 
   it("contains all expected keys", () => {
