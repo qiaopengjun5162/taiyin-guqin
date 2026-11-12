@@ -133,6 +133,10 @@ fn action_letter(action: &str) -> Option<&'static str> {
         "涓" => Some("v"),
         "历" => Some("h"),
         "拂" => Some("p"),
+        // 拨 / 撮 / 跪 / 大撮 / 反撮：字体有真身（拨→xl_bo、撮→xl_cuo、跪→sm_gui、
+        // 大撮→xl_dacuo、反撮→sm_fancuo），但 2026-11-12 渲染闸门实测按音块宽：
+        // 拨/撮/大撮/反撮 = 1.533em、跪 = 2.0em（散音下 拨/撮 为 0.866em 合格）。
+        // 按音是主用场景，硬接会撑破 1em 方块，故不接入产品；要接需先按音色分槽（另排）。
         // 复合指法（成块，GSUB 连字 lgw_* 真身）：2 字母码，首字母取自空闲池
         // e/i/k/l/q/r/w/x（均不在任何单字母槽位，故 2 字母码不会与单字母 token 前缀冲突）。
         "半扶" => Some("ek"),
@@ -875,6 +879,20 @@ mod tests {
                 format!("s{letter}4"),
                 "{action} 编回"
             );
+        }
+    }
+
+    #[test]
+    fn test_action_tokens_are_sorted_longest_first() {
+        // 与 SLIDE_TOKENS 同一条契约：`match_longest` 取第一个前缀命中，
+        // 短码若排在长码前面就会被先吃掉（`tu`→`t`、`lr` 被 `r` 截断）。
+        for (i, (a, _)) in ACTION_TOKENS.iter().enumerate() {
+            for (b, _) in ACTION_TOKENS.iter().skip(i + 1) {
+                assert!(
+                    a.len() >= b.len(),
+                    "ACTION_TOKENS 顺序错：{a} 排在 {b} 前面，长码必须靠前"
+                );
+            }
         }
     }
 

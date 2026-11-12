@@ -5,11 +5,12 @@
   "articles": [
     {
       "slug": "taiyin-what-is-it",
-      "state": "pending",
+      "state": "published",
       "media_id": "100018549",
+      "share_url": "https://mp.weixin.qq.com/s/0bKS4J0tKkCaEjaji97I7g",
       "repo_path": "docs/articles/drafts/03-太音到底是什么-一个说不清自己的产品想明白的过程.md",
       "vault_path": "Articles/ready/taiyin-what-is-it.md",
-      "note": "2026-11-09 沿公众号历史消息与 WebSearch 均未检索到该标题已群发的迹象，按待发处理。若你确认已发，把 state 改成 published"
+      "note": "【已群发】2026-11-12 15:04（公众号「寻月隐君」，share https://mp.weixin.qq.com/s/0bKS4J0tKkCaEjaji97I7g），用户在 2026-11-12 提供链接确认。线上正文与 v1.2 口径一致：第六节「数字与诚实」明写图片录入 0/27 判定、257 复合指法符号不是真实减字谱。此前 2026-11-09 沿历史消息与 WebSearch 未检索到群发迹象、按待发处理；现更正为 published。"
     },
     {
       "slug": "taiyin-guqin-5-months",

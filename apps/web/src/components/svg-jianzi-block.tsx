@@ -52,7 +52,7 @@ export const RIGHT_ACTION_MAP: Record<string, string | null> = {
   "历": "rh_li",
   "拂": "rh_fu",
   // 成块复合指法（GSUB 连字 lgw_* 已核验真身、有轮廓）：
-  // 单字 拨/跪/撮/扶/掐 单独都不成块，故只接复合本身；
+  // 单字 拨/跪/撮/大撮/反撮 经渲染闸门实测按音块宽 1.533~2.0em（超 1em 方块），故不接；
   // 半蠲/反蠲/连蠲 因 蠲 是 placeholder 连锁缺口，不接入。
   "半扶": "rh_banfu",
   "长锁": "rh_changsuo",
