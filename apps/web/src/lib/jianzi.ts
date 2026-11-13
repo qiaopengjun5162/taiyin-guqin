@@ -58,6 +58,9 @@ export function isComplete(state: JianziState): boolean {
 
 /** 创建空状态。 */
 export function createEmptyState(): JianziState {
+  // 注意：structureMark 故意不写进空状态。它是可选谱面记号，缺省即「无」；
+  // 写上 `structureMark: null` 会让 `to.deep.equal` 的测试字面量（不含该键）整体失配。
+  // 读取处一律按「undefined / null 都当无记号」处理，故缺省省略与显式 null 等价。
   return {
     toneType: null,
     rhythmMode: null,
@@ -65,7 +68,6 @@ export function createEmptyState(): JianziState {
     hui: null,
     fen: null,
     slide: null,
-    structureMark: null,
     rightAction: null,
     stringNumber: null,
   };

@@ -370,6 +370,8 @@ describe("parseRapidInput · 谱面结构记号", () => {
   it("末尾无法解析的记号字符不算完整（保持旧容错）", () => {
     const r = parseRapidInput("d9g4xy", "按");
     expect(r.complete).toBe(false);
-    expect(r.state.structureMark).toBeNull();
+    // structureMark 是可选字段：createEmptyState() 不预置该键，没解析出记号时就是 undefined。
+    // 断言「缺省即无」，别把它写死成 null——那样会把可选字段重新钉成必填。
+    expect(r.state.structureMark ?? null).toBeNull();
   });
 });

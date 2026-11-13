@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 谱面结构记号 5 个可录入：新增独立记号槽位，不塞进减字方块（2026-11-13）
+
+上轮结论里「结构记号 5 个属谱面记号、需新槽位」这一条落地。少息 / 大息 / 再作 / 从头再作 / 入拍 不是减字部件（气口、反复、入拍），`SLIDE_MARKS` 是走手音也塞不进去，所以给音符加一个独立的谱面层标记，而不是再拼一个减字。
+
+- **两道闸门先过，再接线**：① fontTools 核验 5 个记号各有专属 GSUB 字形（`sm_shaoxi` / `sm_daxi` / `sm_zaizuo` / `sm_ctouzaiz` / `sm_rupai`）；② `scripts/measure-jianzi-block.mjs` 真渲染量宽 少息/大息/再作/入拍 = **0.5em**、从头再作 = **1.0em**，全部 ≤1.05em 判据 → **字体直渲**，不进 SVG 四象限降级。顺序不能反：placeholder 占位框约 1.03em **也会通过宽度闸门**，单靠量宽抓不出「字体根本没做」，所以先走 GSUB 判真身、再走渲染判布局。
+- **契约（向后兼容）**：Rust 新增 `StructureMark` 枚举与 `GuqinNote.structure_mark: Option<…>`，带 `#[serde(default)]` —— 旧曲谱 JSON 没这个键就反序列化成 `None`，已存的谱一个都不用改。ts-rs 重生 `GuqinNote.ts` / `StructureMark.ts`。
+- **前端同源五处**：`types.ts`（`JianziState.structureMark` 可选 + `DEFAULT_KEYBOARD.structureMarks`）、`jianzi.ts`（`STRUCTURE_MARKS`）、`jianzi-block.tsx`（`StructureMarkBadge` 字体直渲）、`score-view.tsx`（减字下方徽章）、`jianzipu-keyboard.tsx`（「结构记号」按键组，散/泛/按 通用）。
+- **可查可解释**：`jianzi-explain.ts` 单列「结构记号」组，5 个记号各给人话读法（短气口 / 长气口 / 重复片段 / 从头反复 / 进入严格节拍），漏登记一个测试就红。**记号不参与「减字是否完整」判定** —— 带少息的勾四照样是可弹的整字。
+- **连打与导出**：`jianzi-rapid.ts` 加末尾可选槽（`xx` 少息 / `dx` 大息 / `zz` 再作 / `cz` 从头再作 / `rp` 入拍，首字母互异不会被最长匹配截断）；文本谱导出挂 `〔记号〕` 后缀，避免导出再读回把记号无声吞掉。**结构记号不是减字，不进 `jianzi_code` 的减字码体系**（码有损是既有边界，不为它破「一码一义」）。
+- **一个全量才暴露的坑**：`createEmptyState()` 一度预置 `structureMark: null`，让全量 `to.deep.equal` 的既有测试字面量整体失配。可选字段**缺省即无**，空状态不该预置该键；读取处统一按 `?? null` / truthy 判断，`undefined` 与 `null` 等价。
+
+**验证**：`cargo test -p taiyin-core --lib` 109 项全绿、`cargo fmt --check` 干净、`gen_types` 重生与提交物一致（CI 的 wire 类型闸门）；`node scripts/verify-wasm.mjs` 与 `verify-probe`（7 校验器）全绿；前端 `tsc --noEmit` / `eslint --max-warnings 0` / `next build`（8 静态页）均过；改动相关测试逐文件全绿。
+
 ### 字形线收口：渲染闸门判死 Batch 2b，顺带把「出门」状态校准到真实（2026-11-12）
 
 「字形覆盖窄」到此收口：**能一次批量接的干净字形已经用完**。剩下的候选逐个过两道闸门，结论是「没有一个能直接接」，而不是「还没查」。
