@@ -11,7 +11,6 @@
  */
 
 import type { JianziState } from "./types";
-import { STRUCTURE_MARKS } from "./jianzi";
 import { chineseNumToHui, huiFraction, jianziToJianpu, type PitchContext } from "./jianzi-pitch";
 import { DEFAULT_TUNING, getTuningById, openStringMidi } from "./tuning";
 
