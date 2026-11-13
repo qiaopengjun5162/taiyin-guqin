@@ -49,6 +49,15 @@ export type TailMark =
  */
 export type SlideMark = InlineMark | TailMark;
 
+/**
+ * 谱面结构记号——独立于「减字四宫格」的谱面层标记。
+ *
+ * 不与减字部件混排：少息/大息是音后气口，再作/从头再作是重复记号，
+ * 入拍是进入严格节拍。挂到音符的 `structure_mark` 字段（可选，向后兼容旧谱）。
+ * 与 Rust `StructureMark` 枚举同源（5 个值一一对应）。
+ */
+export type StructureMark = "少息" | "大息" | "再作" | "从头再作" | "入拍";
+
 /** 减字键盘状态——一个正在拼装中的谱字。 */
 export interface JianziState {
   toneType: NoteType | null;
@@ -58,6 +67,8 @@ export interface JianziState {
   fen: string | null;
   /** 装饰记号（21 个之一）；绰/注/急 写在分数后右手法前，吟猱族挂字尾。 */
   slide: SlideMark | null;
+  /** 谱面结构记号（5 个之一）；独立于减字四宫格，挂在音符上作为谱面层标记。可选。 */
+  structureMark?: StructureMark | null;
   rightAction: string | null;
   stringNumber: string | null;
 }
@@ -70,6 +81,7 @@ export interface KeyboardConfig {
   huiPositions: string[];
   fenOptions: string[];
   slides: SlideMark[];
+  structureMarks: StructureMark[];
   rightActions: string[];
   stringNumbers: string[];
 }
@@ -113,6 +125,8 @@ export const DEFAULT_KEYBOARD: KeyboardConfig = {
     "荡吟", "荡猱", "飞吟", "飞猱",
     "圆吟", "圆猱", "定吟", "定猱",
   ],
+  // 谱面结构记号 5 个：独立于减字部件，作为谱面层标记（少息/大息=气口，再作/从头再作=重复，入拍=进入严格节拍）。
+  structureMarks: ["少息", "大息", "再作", "从头再作", "入拍"],
   // 传统减字偏旁写法：乇=托 尸=劈/擘 木=抹 乚=挑 勹=勾 剔 丁=打 倽=摘
   // 复合指法（双指字连字）：字体 GSUB 原生支持 抹挑/勾剔/抹勾/打摘
   // （"仰托"字体无连字规则，仅解析器容错支持，不提供录入）

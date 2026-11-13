@@ -264,6 +264,45 @@ pub enum RhythmMode {
     Drop,
 }
 
+/// 谱面结构记号——减字谱中**独立于「减字四宫格」**的谱面标记。
+///
+/// 它们不进入减字拼装（不走 GSUB 连字、不进 SVG 四象限），而是作为谱面层记号
+/// 独立呈现。传统减字谱靠这类文字提示传达节奏与结构：
+///
+/// - `ShaoXi`（少息）：小息，短气口，音后略顿。
+/// - `DaXi`（大息）：大息，长气口，音后明显停顿。
+/// - `ZaiZuo`（再作）：重复前一乐句 / 片段。
+/// - `CongTouZaiZuo`（从头再作）：从头反复。
+/// - `RuPai`（入拍）：进入严格节拍。与 `RhythmMode::Strict` 语义相邻，
+///   但这里是显式「谱面记号」标注（写在谱上），二者不冲突。
+///
+/// 落点选择：挂在 `GuqinNote.structure_mark`（`Option`，旧曲谱反序列化默认 `None`），
+/// 完全向后兼容，不破坏任何现有 score。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+#[ts(export_to = "StructureMark.ts")]
+pub enum StructureMark {
+    /// 少息：短气口。
+    #[serde(rename = "少息")]
+    #[ts(rename = "少息")]
+    ShaoXi,
+    /// 大息：长气口。
+    #[serde(rename = "大息")]
+    #[ts(rename = "大息")]
+    DaXi,
+    /// 再作：重复前一片段。
+    #[serde(rename = "再作")]
+    #[ts(rename = "再作")]
+    ZaiZuo,
+    /// 从头再作：从头反复。
+    #[serde(rename = "从头再作")]
+    #[ts(rename = "从头再作")]
+    CongTouZaiZuo,
+    /// 入拍：进入严格节拍。
+    #[serde(rename = "入拍")]
+    #[ts(rename = "入拍")]
+    RuPai,
+}
+
 /// 复合右手指法——右手八法的组合与变体。
 ///
 /// 古琴右手指法极为丰富，基本八法（擘托抹挑勾剔打摘）
@@ -411,6 +450,12 @@ pub struct GuqinNote {
     /// 散板/跌宕下仅表示相对长短。
     /// 使用 `f64`（JSON 数字本就是 f64，避免 f32 往返有损；亦为更细时值/负值留空间）。
     pub duration: f64,
+    /// 谱面结构记号（少息/大息/再作/从头再作/入拍），非必填。
+    ///
+    /// 独立于减字四宫格，作为谱面层记号。旧曲谱无此字段时反序列化默认 `None`，
+    /// 因此加这个字段**不破坏任何已存 score**。
+    #[serde(default)]
+    pub structure_mark: Option<StructureMark>,
 }
 
 // ──────────────────────────────────────────────
@@ -465,6 +510,7 @@ impl GuqinNote {
             ornaments: Vec::new(),
             rhythm_mode: RhythmMode::default(),
             duration: 1.0,
+            structure_mark: None,
         }
     }
 
@@ -487,6 +533,7 @@ impl GuqinNote {
             ornaments: Vec::new(),
             rhythm_mode: RhythmMode::default(),
             duration: 1.0,
+            structure_mark: None,
         }
     }
 
@@ -509,6 +556,7 @@ impl GuqinNote {
             ornaments: Vec::new(),
             rhythm_mode: RhythmMode::default(),
             duration: 1.0,
+            structure_mark: None,
         }
     }
 
@@ -538,6 +586,12 @@ impl GuqinNote {
     /// 设置时值并返回自身（链式调用）。
     pub fn with_duration(mut self, duration: f64) -> Self {
         self.duration = duration;
+        self
+    }
+
+    /// 设置谱面结构记号并返回自身（链式调用）。
+    pub fn with_structure_mark(mut self, mark: StructureMark) -> Self {
+        self.structure_mark = Some(mark);
         self
     }
 }
@@ -770,5 +824,37 @@ mod tests {
         let json = r#"{"note_type":"散","left_finger":null,"hui":null,"right_action":"Tiao","string_number":5,"compound":null,"ornaments":[],"duration":1.0}"#;
         let note: GuqinNote = serde_json::from_str(json).unwrap();
         assert_eq!(note.rhythm_mode, RhythmMode::Strict);
+    }
+
+    #[test]
+    fn test_structure_mark_default_none_and_roundtrip() {
+        // 旧版 JSON 没有 structure_mark 字段 → 默认 None（向后兼容，不破坏旧 score）
+        let json = r#"{"note_type":"散","left_finger":null,"hui":null,"right_action":"Tiao","string_number":5,"compound":null,"ornaments":[],"duration":1.0}"#;
+        let note: GuqinNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.structure_mark, None);
+
+        // 带 structure_mark 可序列化往返
+        let note2 = GuqinNote::open_string(RightAction::Tiao, StringNumber::new(5).unwrap())
+            .with_structure_mark(StructureMark::ShaoXi);
+        let json2 = serde_json::to_value(&note2).unwrap();
+        assert_eq!(json2.get("structure_mark").unwrap(), "少息");
+        let back: GuqinNote = serde_json::from_value(json2).unwrap();
+        assert_eq!(back.structure_mark, Some(StructureMark::ShaoXi));
+    }
+
+    #[test]
+    fn test_all_structure_marks_serialize() {
+        let marks = [
+            StructureMark::ShaoXi,
+            StructureMark::DaXi,
+            StructureMark::ZaiZuo,
+            StructureMark::CongTouZaiZuo,
+            StructureMark::RuPai,
+        ];
+        let labels = ["少息", "大息", "再作", "从头再作", "入拍"];
+        for (mark, label) in marks.iter().zip(labels.iter()) {
+            let json = serde_json::to_value(mark).unwrap();
+            assert_eq!(json, *label, "StructureMark 序列化标签不符");
+        }
     }
 }

@@ -11,6 +11,7 @@
  */
 
 import type { JianziState } from "./types";
+import { STRUCTURE_MARKS } from "./jianzi";
 import { chineseNumToHui, huiFraction, jianziToJianpu, type PitchContext } from "./jianzi-pitch";
 import { DEFAULT_TUNING, getTuningById, openStringMidi } from "./tuning";
 
@@ -67,6 +68,22 @@ const SLIDE_EXPLAIN: Record<string, ExplainPart> = {
   圆猱: { label: "走手音", text: "圆猱（圆转无棱角的猱）" },
   定吟: { label: "走手音", text: "定吟（本位不移动、指力微颤的吟）" },
   定猱: { label: "走手音", text: "定猱（本位不移动而幅度内收的猱）" },
+};
+
+/**
+ * 谱面结构记号读法（5 个，与 Rust `StructureMark` 枚举、前端 `StructureMark` 类型同源）。
+ *
+ * 结构记号和减字不是一回事：少息/大息是音后气口，再作/从头再作是反复记号，
+ * 入拍是从自由节奏切回严格拍速。它们挂在音符上、属于谱面层标记，不参与
+ * 「这个减字本身弹不弹得出来」的判定——一个带少息的勾四照样是可弹的整字。
+ * 所以解释里单列一组「结构记号」，漏登记一个就靠测试兜底（见 jianzi-explain.test.ts）。
+ */
+export const STRUCTURE_MARK_EXPLAIN: Record<string, ExplainPart> = {
+  少息: { label: "结构记号", text: "少息（短气口：此处略作停顿、换气，时值上等同一个短休止，一般不计拍）" },
+  大息: { label: "结构记号", text: "大息（长气口：比少息更明显的呼吸停顿，谱面留出一段宽气口）" },
+  再作: { label: "结构记号", text: "再作（重复记号：把紧邻的前一个片段或乐句再弹一遍）" },
+  从头再作: { label: "结构记号", text: "从头再作（反复记号：从本曲开头处重新弹奏一遍）" },
+  入拍: { label: "结构记号", text: "入拍（进入严格节拍：此前可自由节奏，自此句起按固定拍速弹奏）" },
 };
 
 /** 左手指法：减字偏旁 → 名称与补充说明 */
@@ -501,6 +518,17 @@ export function explainJianzi(state: JianziState, ctx: PitchContext = {}): Jianz
       label: "弦序",
       text: detail ? `${state.stringNumber}弦（${detail}）` : `${state.stringNumber}弦`,
     });
+  }
+
+  // 谱面结构记号：独立于减字四宫格，挂在音符上的谱面层标记（气口/反复/入拍）。
+  // 不参与「减字是否完整」的判定——带少息的勾四照样是可弹的整字。
+  if (state.structureMark) {
+    parts.push(
+      STRUCTURE_MARK_EXPLAIN[state.structureMark] ?? {
+        label: "结构记号",
+        text: `${state.structureMark}（谱面记号）`,
+      },
+    );
   }
 
   // 音高（散/按/泛都能推，按当前定弦与基准音）

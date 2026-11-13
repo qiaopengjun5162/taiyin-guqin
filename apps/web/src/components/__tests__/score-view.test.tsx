@@ -554,4 +554,45 @@ describe("ScoreView", () => {
       expect(col.querySelector("[data-lianmei-tie]")).toBeNull();
     });
   });
+
+  /**
+   * 谱面结构记号（少息/大息/再作/从头再作/入拍）：挂在减字下方的小注释，
+   * 独立于减字四宫格，由忘机字体 sm_* 字形直渲。无记号时整块不渲染。
+   */
+  describe("谱面结构记号", () => {
+    function noteWithMark(mark: NoteColumn["jianzi"]["structureMark"]): NoteColumn {
+      return makeNote({
+        jianzi: {
+          ...createEmptyState(),
+          toneType: "散",
+          rightAction: "勹",
+          stringNumber: "五",
+          structureMark: mark,
+        },
+      });
+    }
+
+    it("有记号时在减字下方渲染徽章", () => {
+      const { container } = render(
+        <ScoreView notes={[noteWithMark("少息")]} />,
+      );
+      const badge = container.querySelector("[data-structure-mark='少息']");
+      expect(badge).not.toBeNull();
+      expect(badge!.textContent).toBe("少息");
+    });
+
+    it("四字记号「从头再作」也作为独立紧凑字形渲染", () => {
+      const { container } = render(
+        <ScoreView notes={[noteWithMark("从头再作")]} />,
+      );
+      expect(
+        container.querySelector("[data-structure-mark='从头再作']"),
+      ).not.toBeNull();
+    });
+
+    it("无记号时不渲染任何结构记号节点", () => {
+      const { container } = render(<ScoreView notes={[makeNote()]} />);
+      expect(container.querySelector("[data-structure-mark-host]")).toBeNull();
+    });
+  });
 });

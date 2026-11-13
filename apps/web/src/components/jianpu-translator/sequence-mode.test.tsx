@@ -54,6 +54,7 @@ function makeCandidate(
       ornaments: [],
       rhythm_mode: "板",
       duration: 1,
+      structure_mark: null,
     },
   };
 }

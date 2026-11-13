@@ -26,8 +26,8 @@ describe("parseRapidInput · 散音", () => {
     expect(r.state.hui).toBeNull();
   });
 
-  it("散音只有两槽，顺序为右手→弦序", () => {
-    expect(RAPID_SLOTS_BY_TONE["散"]).toEqual(["rightAction", "stringNumber"]);
+  it("散音槽位为右手→弦序→结构记号（结构记号是末尾可选槽）", () => {
+    expect(RAPID_SLOTS_BY_TONE["散"]).toEqual(["rightAction", "stringNumber", "structureMark"]);
   });
 
   it("散音槽位里没有走手音——空弦滑不动", () => {
@@ -322,5 +322,54 @@ describe("parseRapidInput · 吟猱族 18 个记号", () => {
     expect(r.complete).toBe(true);
     expect(r.state.slide).toBe("细吟");
     expect(jianziToText(r.state)).toBe("大九六勾四细吟");
+  });
+});
+
+describe("parseRapidInput · 谱面结构记号", () => {
+  it("5 个记号接在弦序之后，连打整字成字", () => {
+    const cases: [string, string][] = [
+      ["xx", "少息"],
+      ["dx", "大息"],
+      ["zz", "再作"],
+      ["cz", "从头再作"],
+      ["rp", "入拍"],
+    ];
+    for (const [letter, mark] of cases) {
+      const r = parseRapidInput(`d9g4${letter}`, "按");
+      expect(r.complete, `${letter} → ${mark}`).toBe(true);
+      expect(r.state.structureMark, letter).toBe(mark);
+      expect(r.state.rightAction, letter).toBe("勹");
+      expect(r.state.hui, letter).toBe("九");
+    }
+  });
+
+  it("结构记号独立于减字：带少息的勾四仍是完整减字", () => {
+    const r = parseRapidInput("d9g4xx", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.structureMark).toBe("少息");
+    // 减字本身不含记号（jianziToText 只拼四宫格）
+    expect(jianziToText(r.state)).toBe("大九勾四");
+  });
+
+  it("散音串也能挂结构记号", () => {
+    const r = parseRapidInput("g4zz", "散");
+    expect(r.complete).toBe(true);
+    expect(r.state.toneType).toBe("散");
+    expect(r.state.structureMark).toBe("再作");
+  });
+
+  it("记号首字母互不相同，不会被误拆：cz 是「从头再作」而非 注+某", () => {
+    const r = parseRapidInput("d9g4cz", "按");
+    expect(r.complete).toBe(true);
+    expect(r.state.structureMark).toBe("从头再作");
+    // 确认没有把 c 当走手音、z 当摘
+    expect(r.state.slide).toBeNull();
+    expect(r.state.rightAction).toBe("勹");
+  });
+
+  it("末尾无法解析的记号字符不算完整（保持旧容错）", () => {
+    const r = parseRapidInput("d9g4xy", "按");
+    expect(r.complete).toBe(false);
+    expect(r.state.structureMark).toBeNull();
   });
 });

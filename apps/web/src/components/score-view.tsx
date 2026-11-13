@@ -22,7 +22,7 @@ import {
   type DurationValue,
 } from "@/lib/duration-drag";
 import { lianmeiRoleAt } from "@/lib/lianmei";
-import { JianziBlock } from "./jianzi-block";
+import { JianziBlock, StructureMarkBadge } from "./jianzi-block";
 
 const SERIF_FONT =
   "var(--font-serif), 'Noto Serif SC', 'Songti SC', 'SimSun', 'STSong', serif";
@@ -436,6 +436,13 @@ function NoteColumnView({
         >
           <JianziBlock state={jianzi} fontSize="24px" compact={compact} />
         </div>
+
+        {/* ── 谱面结构记号（少息/大息/再作/从头再作/入拍）：减字下方小注释 ── */}
+        {jianzi.structureMark && (
+          <div className="mt-0.5 flex justify-center" data-structure-mark-host>
+            <StructureMarkBadge mark={jianzi.structureMark} />
+          </div>
+        )}
 
         {/* ── 节奏线区域 ── */}
         <RhythmView duration={note.duration} />

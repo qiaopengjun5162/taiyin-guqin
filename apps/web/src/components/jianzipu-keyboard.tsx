@@ -37,6 +37,7 @@ type Section =
   | "hui"
   | "fen"
   | "slide"
+  | "structureMark"
   | "rightAction"
   | "stringNumber";
 
@@ -398,6 +399,14 @@ export function JianzipuKeyboard({
                   />
                 </>
               )}
+              {/* 谱面结构记号（少息/大息/再作/从头再作/入拍）：独立于减字四宫格，
+                  与音色无关，散/泛/按 都该能标。放在指法区末尾、右手之前。 */}
+              <SectionGroup
+                label="结构记号"
+                items={DEFAULT_KEYBOARD.structureMarks}
+                active={state.structureMark ?? null}
+                onSelect={(v) => handleSelect("structureMark", v)}
+              />
               <SectionGroup
                 label="右手"
                 items={DEFAULT_KEYBOARD.rightActions}

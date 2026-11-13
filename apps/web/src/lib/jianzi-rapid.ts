@@ -41,7 +41,8 @@ export type RapidSlot =
   | "fen"
   | "slide"
   | "rightAction"
-  | "stringNumber";
+  | "stringNumber"
+  | "structureMark";
 
 /** 除音色前缀之外的取值槽（音色由串首前缀决定，不在槽位链里走） */
 type ValueSlot = Exclude<RapidSlot, "toneType">;
@@ -52,9 +53,9 @@ type ValueSlot = Exclude<RapidSlot, "toneType">;
  * 泛音要虚按徽位取音，同样滑不动（见 jianzi.canHaveSlide），所以也不给走手音槽。
  */
 export const RAPID_SLOTS_BY_TONE: Record<NoteType, ValueSlot[]> = {
-  散: ["rightAction", "stringNumber"],
-  泛: ["leftFinger", "hui", "fen", "rightAction", "stringNumber"],
-  按: ["leftFinger", "hui", "fen", "slide", "rightAction", "stringNumber"],
+  散: ["rightAction", "stringNumber", "structureMark"],
+  泛: ["leftFinger", "hui", "fen", "rightAction", "stringNumber", "structureMark"],
+  按: ["leftFinger", "hui", "fen", "slide", "rightAction", "stringNumber", "structureMark"],
 };
 
 /** 全槽位顺序（含可选的音色前缀），供 UI 说明用 */
@@ -66,6 +67,7 @@ export const RAPID_SLOT_ORDER: readonly RapidSlot[] = [
   "slide",
   "rightAction",
   "stringNumber",
+  "structureMark",
 ];
 
 /** 槽位中文名，供 UI 提示 */
@@ -77,6 +79,7 @@ export const RAPID_SLOT_LABEL: Record<RapidSlot, string> = {
   slide: "走手音",
   rightAction: "右手",
   stringNumber: "弦序",
+  structureMark: "结构记号",
 };
 
 /**
@@ -208,6 +211,17 @@ const TOKENS: Record<ValueSlot, Array<[string, string]>> = {
     ["l", "六"],
     ["q", "七"],
   ],
+  // 谱面结构记号：独立于减字四宫格的谱面层标记（气口/反复/入拍）。
+  // 作为连打串的【末尾可选槽】接在弦序之后；码字首字母彼此不同（x/d/z/c/r），
+  // 故任一记号都不会是另一个的前缀，最长匹配不会误截断。
+  // 与 Rust `StructureMark` 枚举、前端 `StructureMark` 类型同源（5 个值一一对应）。
+  structureMark: [
+    ["xx", "少息"],
+    ["dx", "大息"],
+    ["zz", "再作"],
+    ["cz", "从头再作"],
+    ["rp", "入拍"],
+  ],
 };
 
 /** 解析出的一个槽位取值 */
@@ -271,12 +285,13 @@ function better(a: Candidate & { complete: boolean }, b: Candidate & { complete:
   return a.filled > b.filled;
 }
 
-/** 未填的必填槽（fen / slide 可省） */
+/** 未填的必填槽（fen / slide / structureMark 可省） */
 function firstMissing(state: JianziState, tone: NoteType): RapidSlot | null {
   const order = RAPID_SLOTS_BY_TONE[tone];
   return (
     order.find(
-      (slot) => slot !== "fen" && slot !== "slide" && state[slot] === null,
+      (slot) =>
+        slot !== "fen" && slot !== "slide" && slot !== "structureMark" && state[slot] === null,
     ) ?? null
   );
 }
@@ -428,4 +443,8 @@ export const RAPID_CHEATSHEET = [
     text: "挑 t · 勾 g · 抹 m · 打 d · 摘 z · 托 tu · 剔 ti · 擘 b · 抹挑 mt · 勾剔 gt；成块单指法 轮 u · 锁 o · 涓 v · 历 h · 拂 p；复合指法 半扶 ek · 长锁 il · 短锁 kq · 背锁 lr · 圆锁 qx · 半涓 wi · 反涓 xe · 叠涓 ki · 连涓 eq",
   },
   { title: "弦序", text: "数字 1–7；或 三 s、四 ss" },
+  {
+    title: "结构记号",
+    text: "接在弦序之后：少息 xx · 大息 dx · 再作 zz · 从头再作 cz · 入拍 rp（谱面层记号，独立于减字四宫格）",
+  },
 ] as const;

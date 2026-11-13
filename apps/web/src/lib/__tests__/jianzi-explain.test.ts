@@ -4,7 +4,9 @@ import {
   describeHuiPosition,
   describeRightAction,
   shortCaption,
+  STRUCTURE_MARK_EXPLAIN,
 } from "../jianzi-explain";
+import { STRUCTURE_MARKS } from "../jianzi";
 import type { JianziState } from "../types";
 
 function state(partial: Partial<JianziState>): JianziState {
@@ -268,6 +270,44 @@ describe("吟猱族 18 个记号的释义", () => {
     for (const tone of ["散", "泛"] as const) {
       const parts = explainJianzi(state({ ...anYin, toneType: tone, slide: "细吟" })).parts;
       expect(parts.find((p) => p.label === "走手音" || p.label === "弹法")).toBeUndefined();
+    }
+  });
+});
+
+describe("谱面结构记号 5 个的释义与露出", () => {
+  it("5 个记号全部登记，漏一个就红（与 Rust StructureMark 同源）", () => {
+    expect(STRUCTURE_MARKS).toHaveLength(5);
+    for (const m of STRUCTURE_MARKS) {
+      const part = STRUCTURE_MARK_EXPLAIN[m];
+      expect(part, m).toBeDefined();
+      expect(part!.label, m).toBe("结构记号");
+      expect(part!.text, m).toContain(m);
+    }
+  });
+
+  it("减字带结构记号时，释义里单列一项「结构记号」", () => {
+    const exp = explainJianzi(state({ ...anYin, structureMark: "少息" }));
+    const part = exp.parts.find((p) => p.label === "结构记号");
+    expect(part).toBeDefined();
+    expect(part!.text).toContain("少息");
+  });
+
+  it("结构记号不参与「减字是否完整」的判定——带少息的勾四仍是整字", () => {
+    const plain = explainJianzi(anYin);
+    const withMark = explainJianzi(state({ ...anYin, structureMark: "再作" }));
+    expect(plain.complete).toBe(true);
+    expect(withMark.complete).toBe(true);
+    expect(withMark.summary).toBe(plain.summary);
+    // 多出来的只是结构记号那一项，不污染减字本身
+    expect(withMark.parts.filter((p) => p.label === "结构记号")).toHaveLength(1);
+  });
+
+  it("每个记号都能被解释出来（覆盖从短气口到入拍）", () => {
+    for (const m of ["少息", "大息", "再作", "从头再作", "入拍"] as const) {
+      const part = explainJianzi(state({ ...anYin, structureMark: m })).parts.find(
+        (p) => p.label === "结构记号",
+      );
+      expect(part!.text, m).toContain(m);
     }
   });
 });

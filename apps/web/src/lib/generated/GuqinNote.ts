@@ -7,6 +7,7 @@ import type { Ornament } from "./Ornament";
 import type { RhythmMode } from "./RhythmMode";
 import type { RightAction } from "./RightAction";
 import type { StringNumber } from "./StringNumber";
+import type { StructureMark } from "./StructureMark";
 
 /**
  * 一个完整的减字谱音符——数字时代的减字。
@@ -82,4 +83,11 @@ rhythm_mode: RhythmMode,
  * 散板/跌宕下仅表示相对长短。
  * 使用 `f64`（JSON 数字本就是 f64，避免 f32 往返有损；亦为更细时值/负值留空间）。
  */
-duration: number, };
+duration: number,
+/**
+ * 谱面结构记号（少息/大息/再作/从头再作/入拍），非必填。
+ *
+ * 独立于减字四宫格，作为谱面层记号。旧曲谱无此字段时反序列化默认 `None`，
+ * 因此加这个字段**不破坏任何已存 score**。
+ */
+structure_mark: StructureMark | null, };

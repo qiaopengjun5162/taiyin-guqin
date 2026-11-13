@@ -72,3 +72,34 @@ export function JianziBlock({
     </div>
   );
 }
+
+/**
+ * 谱面结构记号徽章——独立于减字四宫格的谱面层标记（少息/大息/再作/从头再作/入拍）。
+ *
+ * 字体直渲：忘机字体里有专属 `sm_*` 字形（sm_shaoxi 等），输入纯文本即触发 GSUB 合成，
+ * 不需要 SVG 四象限提取（已用 measure-jianzi-block 量过：0.5~1.0em 紧凑真身，非占位框）。
+ * 渲染在减字块下方作为小注释，琥珀色与减字区分。
+ */
+export function StructureMarkBadge({
+  mark,
+  size = "16px",
+}: {
+  mark: string;
+  size?: string;
+}) {
+  return (
+    <span
+      data-structure-mark={mark}
+      className="inline-block select-none leading-none"
+      style={{
+        fontFamily: JIANZI_FONT,
+        fontSize: size,
+        color: "#b45309",
+        fontVariantLigatures: "common-ligatures",
+        fontFeatureSettings: '"liga" on, "clig" on',
+      }}
+    >
+      {mark}
+    </span>
+  );
+}

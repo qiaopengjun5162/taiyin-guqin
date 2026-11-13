@@ -142,6 +142,25 @@ describe("formatScoreAsText", () => {
     expect(lines).toHaveLength(4); // 简谱 / 减字 / 空行 / 共 N 音
   });
 
+  it("减字上的结构记号导出时挂在减字串之后，不丢记号", () => {
+    const notes = [
+      makeNote({ jianzi: { ...createEmptyState(), toneType: "散", rightAction: "乚", stringNumber: "一", structureMark: "少息" } }),
+      makeNote({ jianzi: { ...createEmptyState(), toneType: "散", rightAction: "乚", stringNumber: "二", structureMark: "再作" } }),
+    ];
+    const lines = formatScoreAsText(notes).split("\n");
+    expect(lines[1]).toContain("散挑一〔少息〕");
+    expect(lines[1]).toContain("散挑二〔再作〕");
+  });
+
+  it("没有结构记号时减字行与从前一致（不带多余的括号）", () => {
+    const notes = [makeNote({ jianzi: { ...createEmptyState(), toneType: "散", rightAction: "乚", stringNumber: "一" } })];
+    const lines = formatScoreAsText(notes).split("\n");
+    // 末尾的 pad 空格会被 join 后的 trimEnd 收掉，所以行尾就是「散挑一」；
+    // 关键是不该多出〔…〕括号。
+    expect(lines[1]).toBe("散挑一");
+    expect(lines[1]).not.toContain("〔");
+  });
+
   // 码尾时值：不标就没有节奏，粘回去整首谱被拍平成一串四分音符。
   // 这里的写法必须与 Rust `decode_batch_json` 的解析一致（verify-wasm 验那一侧）。
   it("annotateRhythm：每个码尾带时值，附点加 .", () => {

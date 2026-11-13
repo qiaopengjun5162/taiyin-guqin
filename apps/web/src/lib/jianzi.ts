@@ -1,4 +1,4 @@
-import type { JianziState, Duration, PitchSlide, SlideMark, NoteType } from "./types";
+import type { JianziState, Duration, PitchSlide, SlideMark, NoteType, StructureMark } from "./types";
 
 /**
  * 21 个装饰记号，**按长度降序**（两字复合在前、单字在后），供最长匹配。
@@ -12,6 +12,16 @@ export const SLIDE_MARKS: readonly SlideMark[] = [
   "绰吟", "绰猱", "注吟", "注猱", "细吟", "细猱", "游吟", "游猱",
   "荡吟", "荡猱", "飞吟", "飞猱", "圆吟", "圆猱", "定吟", "定猱",
   "绰", "注", "急", "吟", "猱",
+];
+
+/**
+ * 5 个谱面结构记号——独立于减字四宫格的谱面层标记。
+ *
+ * 与 Rust `StructureMark` 枚举同源（5 个值一一对应）；与 `SLIDE_MARKS` 不同，
+ * 它们不进减字拼装、不参与 `jianziToText` 的字体连字，只作为谱面记号独立呈现。
+ */
+export const STRUCTURE_MARKS: readonly StructureMark[] = [
+  "少息", "大息", "再作", "从头再作", "入拍",
 ];
 
 /** 字体压在「分数后、右手法前」槽里的三个内折记号；其余 18 个挂字尾。 */
@@ -55,6 +65,7 @@ export function createEmptyState(): JianziState {
     hui: null,
     fen: null,
     slide: null,
+    structureMark: null,
     rightAction: null,
     stringNumber: null,
   };

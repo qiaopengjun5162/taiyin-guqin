@@ -111,7 +111,10 @@ export function formatScoreAsText(
     }
 
     jianpuLine.push(jianpuToAscii(note.jianpuNumber, note.jianpuOctave).padEnd(4));
-    jianziLine.push(jianziToText(note.jianzi).padEnd(4));
+    // 结构记号是谱面层标记、不在减字四宫格内；导出时挂到减字串后面，
+    // 避免「导出再读回」把少息/再作这类记号无声吞掉（它本就不在减字码体系里）。
+    const mark = note.jianzi.structureMark;
+    jianziLine.push(`${jianziToText(note.jianzi)}${mark ? `〔${mark}〕` : ""}`.padEnd(4));
     lyricLine.push((note.lyric ?? "").trim().padEnd(4));
     codeLine.push(codeCell(codes?.[index] ?? null, note, annotateRhythm).padEnd(4));
 
