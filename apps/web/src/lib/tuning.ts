@@ -11,7 +11,10 @@
  * f = concertPitch × 2^((midi−69)/12)。这样「换调」和「换基准音」互不干扰，
  * 425Hz 的正调与 440Hz 的慢角调是两个独立维度。
  *
- * 只收录能确证的三种。宁缺毋滥：定弦表错一个音，比没有这个功能更糟。
+ * 收录能确证的六种（正调/慢角/蕤宾/清商/太簇/凄凉，见下方的 TuningId 与 TUNINGS）。
+ * 注意：简谱编排引擎只建模前三种（1=F 清乐七声），后三种只用于存谱/调音/播放；
+ * 四份名单由 scripts/verify-tuning-contract.mjs 钉死，改一处必须同步另外三处。
+ * 宁缺毋滥：定弦表错一个音，比没有这个功能更糟。
  */
 
 export type TuningId = "zhengdiao" | "ruibin" | "manjiao" | "qingshang" | "taicu" | "qiliang";

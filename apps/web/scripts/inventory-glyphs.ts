@@ -97,7 +97,7 @@ console.log(`示例谱里不同的减字            ${signatures.size} 个`);
  * 而文档（competitive-analysis 二十章、pitch 4.3）里的数字会跟着过期。
  * 改了就同步改这里，别让「对外数字」和「实际存量」各说各的。
  */
-const EXPECTED = { fontGlyphs: 471, svgParts: 45 };
+const EXPECTED = { fontGlyphs: 471, svgParts: 77 };
 
 let failed = false;
 if (fontGlyphs !== EXPECTED.fontGlyphs) {
