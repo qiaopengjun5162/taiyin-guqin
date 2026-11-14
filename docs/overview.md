@@ -124,7 +124,7 @@
 
 ### 代码规模（现场数出来的）
 
-| | 数字 |
+| | 数字（2026-11-12 静态快照；口径与 2026-11-14 复核值见文末「附：代码规模口径」） |
 |---|---|
 | Rust（核心 + 后端） | 16,427 行 / **247 条测试**（165 `#[test]` + 82 `#[tokio::test]`，2026-11-12 现场复核；旧写的 11,615 / 242 是过时口径） |
 | 前端 | 41,870 行 / 28 个组件 / 4 个页面 / 83 个测试文件 / **1,320 条测试**（`it(`/`test(` 计数，2026-11-12 现场复核；旧写的 41,191 / 1,306 是过时口径） |
@@ -314,9 +314,25 @@
 ---
 
 *核对依据（都是现场数出来的，不是估计）：
-`crates/*/src`（16,427 行 / 247 个测试属性 = 165 `#[test]` + 82 `#[tokio::test]`，2026-11-12 `grep -rE` 复核）、`apps/web/src`（41,870 行 / 83 测试文件 / 1,320 用例，2026-11-12 计数）、
-`crates/taiyin-server/src/routes.rs`（21 路由）、`apps/web/scripts/inventory-glyphs.ts`（字形 471 + 部件 77 + 实测减字 27）、
+`crates` 下全部 `.rs`（含 `src` / `tests` / `examples`；16,427 行 / 247 个测试属性 = 165 `#[test]` + 82 `#[tokio::test]`，2026-11-12 `grep -rE` 复核；统计口径与当前值见 `scripts/measure-codebase.mjs`）、`apps/web/src`（41,870 行 / 83 测试文件 / 1,320 用例，2026-11-12 计数）、
+`crates/taiyin-server/src/routes.rs`（21 路由）、`apps/web/scripts/glyph-inventory.ts`（字形 471 + 部件 77 + 分组明细 + 实测减字 27；闸门 `apps/web/src/lib/glyph-inventory.test.ts`）、
 GitHub Pages HTTP 200（2026-11-07 实测）、`docs/entry-point-strategy.md`（现状核对表）、
-`CHANGELOG.md`（[0.40.1]）、`docs/articles/README.md`（草稿箱状态）、
-`tools/eval-jianzi/verify-real-score.py`（模板库 257 / 385 与扰动实测）、
+`CHANGELOG.md`（[0.40.3] 版本发布、[0.40.1] 两道闸门）、`docs/articles/README.md`（草稿箱状态）、
+`tools/eval-jianzi/verify-real-score.py`（扰动实测）、`tools/eval-jianzi/README.md:368` 与 `tools/eval-jianzi/verify-full-jianzi.py:7`（模板库 257 / 385）、
 `docs/competitive-analysis.md`（十八/十九/二十章的学术史与竞品事实）。*
+
+---
+
+### 附：代码规模口径与 2026-11-14 复核
+
+上面「代码规模」表与第十节「三句结论」里的 5.8 万行 / 1,567 条测试，是 **2026-11-12 的静态计数快照**，按「历史实测数字一律保留」的规矩不随每次提交刷新；`docs/team-healthcheck.md` 的 A-1 回执也以这两处一致为准。当前值请跑 `node scripts/measure-codebase.mjs`（零依赖、只读，统计口径写死在脚本里，与工作目录无关）：
+
+| | 2026-11-12 快照（保留） | 2026-11-14 复核 |
+|---|---|---|
+| Rust | 16,427 行 / 247 个测试属性（165 + 82） | 16,531 行 / 251 个（168 + 83） |
+| 前端 | 41,870 行 / 83 测试文件 / 1,320 用例 | 42,273 行 / 84 测试文件 / 1,339 用例 |
+| 合计 | 约 5.8 万行 / 1,567 条 | 58,804 行 / 1,590 条 |
+
+组件 28（顶层 `.tsx`）、页面 4、后端路由 21 三项复核无变化。**别拿 CI 的执行数判文档错**：CI 的 `84 passed` / `1,347 passed` 是参数化用例展开后的实际执行数，与「`it(` / `test(` 调用点」的静态计数口径不同（本次还数到 1 处 `it.each` 入口）。规模快照不设硬阈值——每加一个测试就要改十处文档，反而会诱发漂移；真正必须钉死的对外字形数字另有闸门 `apps/web/src/lib/glyph-inventory.test.ts`。
+
+复核顺带校准了「核对依据」的三处引用：Rust 行数口径是 `crates` 下全部 `.rs`（含 `src` / `tests` / `examples`，只数 `src` 会得到 12,112 行）；模板库 257 / 385 的出处是 `tools/eval-jianzi/README.md:368` 与 `verify-full-jianzi.py:7`，不在 `verify-real-score.py`（该文件承载的是扰动实测）；字形数字的唯一真相源在 2026-11-14 改为 `scripts/glyph-inventory.ts`。

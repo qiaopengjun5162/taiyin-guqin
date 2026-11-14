@@ -81,7 +81,7 @@
 
 | 编号 | 要查什么 | 去哪看 | 谁去查 | 什么算有问题 | 回执 |
 |---|---|---|---|---|---|
-| A-1 | 全项目「多少行代码、多少测试」两处要一样 | `docs/overview.md:131` 与 `:310` | 懂文档的同学 | 一处写 5.8 万 / 1,567、另一处写 5.3 万 / 1,548 | A-1 ✅/⚠️ + 抄两处数字 |
+| A-1 | 全项目「多少行代码、多少测试」两处要一样 | `docs/overview.md:131` 与 `:310`；口径与当前值见文末「附：代码规模口径」及 `node scripts/measure-codebase.mjs` | 懂文档的同学 | 一处写 5.8 万 / 1,567、另一处写 5.3 万 / 1,548；**拿 CI 的 84 / 1,347 判文档错属误判**（执行数 ≠ 静态调用点） | A-1 ✅/⚠️ + 抄两处数字 |
 | A-2 | 「字形家底」几处要一致，且与脚本跑出来的一样 | `docs/overview.md:177,318`、`docs/competitive-analysis.md:1695-1710`、`docs/pitch.md:163,222`；脚本 `apps/web/scripts/inventory-glyphs.ts` | 懂文档的同学 | 任一处写 45；或 `:1695` 括号里 7 个数字加起来不是 77 | A-2 ✅/⚠️ + 贴分组行 |
 | A-3 | 小程序到底几页 | `docs/overview.md:60,105,194`；`apps/miniprogram-wasm-probe/app.json:2-7` | 管小程序的同学 | 文档写「三页」但 `app.json` 列了 4 页 | A-3 |
 | A-4 | 「6 种定弦」和「编排只认 3 种」别混成一件事 | `apps/web/src/lib/tuning.ts:14-17`、`components/jianpu-translator/types.ts:38-46`、`docs/overview.md:120-123,197` | 懂前端的同学 | 界面没有「不支持编排」的可见提示（提示条在 `jianpu-translator.tsx:72-73`） | A-4 |
@@ -248,3 +248,9 @@
 **预检新发现（不改，交拍板）**：`docs/udywang-comparison.md:17` 写有「正是我们实现"AI 识别减字谱"时可对照的设计准则」，是竞品分析旧稿里的肯定式旧口径，与 `docs/pitch.md:211` 禁语表同类，但不在 F-1 原列的三处里。按「竞品文档旧口径别擅自改」，本轮不动，建议并入 F-1 一起拍板（改 / 标注勿外引 / 不动）。
 
 **顺手修 2 处清单自身的可执行性**：C-2 原写「`git diff --stat` 应只有 7 个文件」，但改动已提交、该命令现在恒为空，会让同事误填 ⚠️，已改为 `git show --stat 65e714f` 并注明；C-3 补了可跑的 `git log --oneline -- .github/workflows/`。回执表仍留空给认领人。
+
+**2026-11-14 第二轮复核（补充，不覆盖上表历史输出）**：跑 `node scripts/measure-codebase.mjs`（新增，零依赖只读）得 Rust 16,531 行 / 251 个测试属性（168 `#[test]` + 83 `#[tokio::test]`）、前端 42,273 行 / 28 组件 / 4 页面 / 84 测试文件 / 1,339 条静态用例、后端 21 路由，合计 58,804 行 / 1,590 条。与上表 11-12 快照的差属**正常滞后**，按「历史实测数字一律保留」不刷新那 10 处引用——一旦刷新，第 3 节订正表与第 7 节预检就不再是当时的真实输出，A-1 回执也会失去基准。`overview.md` 文末新增「附：代码规模口径」并列两组数字、解释 CI 执行数与静态计数的口径差，A-1 的「什么算有问题」也补了防误判提示。
+
+顺带修 3 处**引用错误**（不是数字过期）：Rust 行数统计范围是 `crates` 下全部 `.rs`（含 `src` / `tests` / `examples`），原文写成各 crate 的 `src`，照它复核只会数出 12,112 行；模板库 257 / 385 的出处是 `tools/eval-jianzi/README.md:368` 与 `verify-full-jianzi.py:7`，不在 `verify-real-score.py`（那个文件承载扰动实测）；字形数字的真相源自 2026-11-14 起在 `apps/web/scripts/glyph-inventory.ts`。
+
+**再提醒一处可执行性**：A-2 的 `npx jiti scripts/inventory-glyphs.ts` 是 65e714f 时点写法，jiti 并非项目依赖，离线 / CI 里会报 `command not found`（历史表格按规矩不改）。当前人工检查走 `cd apps/web && pnpm exec vitest run src/lib/glyph-inventory.test.ts`，离线可用，测试内会打印同一张分组表。
