@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 字形统计哨兵接进 CI 闸门：D-7 销项（2026-11-14）
+
+`apps/web/scripts/inventory-glyphs.ts` 原先是个「没接 CI 的哨兵」：SVG 部件表从 45 涨到 77 时它 `exit 1`，却因为没人跑，漂移一直没被发现（体检清单 D-7）。本轮把统计逻辑抽成唯一真相源，让**现有** vitest 闸门直接断言——不新增 CI step、不新增依赖、不动覆盖率阈值。
+
+- **唯一真相源**：新增 `scripts/glyph-inventory.ts`，`collectGlyphInventory()` 现场读真实 TTF 的 `maxp.numGlyphs` 与源码表，`checkGlyphInventory()` 返回漂移说明；模块无副作用（不打印、不 `process.exit`），CLI 与 CI 共用同一份，杜绝「两边各写一份又漂移」。
+- **闸门接法**：`src/lib/glyph-inventory.test.ts` 落在 `vitest.config.ts` 的 `include` 口径内，CI 的 `pnpm --filter web exec vitest run --coverage` 直接收编；`scripts/` 不在 coverage `include`，阈值 94/91/84/92 不受影响。
+- **钉四项对外数字**：字体 471、SVG 部件 77、示例谱 4 首、不同减字 27。后两项同样写进了 `overview.md:318` / `pitch.md:163`，此前只钉了前两项，是真实缺口。现场复核：分组 `4+13+4+26+7+2+21=77`、4 首谱 71 个音、27 个不同减字，与对外口径一致；音数只作诊断打印、不设阈值。
+- **防假绿**：5 项非空断言排除字体 / 源码缺失造成的假通过；分组和等于部件总数；四项各错 1 的变异验证断言错误条数与文本，避免「解析崩溃」被误当成「抓到了」。
+- **CLI 降为辅助**：`inventory-glyphs.ts` 只负责打印表格与退出码。人工检查优先 `cd apps/web && pnpm exec vitest run src/lib/glyph-inventory.test.ts`（离线可用，测试内打印同样表格）；`npx jiti` 仍可用，但 jiti 不是项目依赖、需联网下载，CI 与离线环境不依赖它。
+- **体检清单校准**：`docs/team-healthcheck.md` 是 `65e714f` 时点快照，其中「D-7 尚未接 CI」为当时事实；本轮已销项，填回执时按「已销项」处理，不要再立项。
+
+**验证**：`pnpm exec vitest run src/lib/glyph-inventory.test.ts` 4 tests passed；CI 同款 `tsc --noEmit` 与全量 `eslint --max-warnings 0` 均 0；本地 jiti 直跑 CLI `exit 0`。未改 `crates/taiyin-core/src/**`，WASM 三份同源产物不变。
+
 ### 小程序探针补上「会话超时」兜底：堵住切后台后的永久转圈（2026-11-14）
 
 `pages/index` 自检页自带 12 秒超时，但走 `lib/wasm-client.js` 的「查音位」页**没有**。微信切后台回收 Worker 后，`postMessage` 不报错、消息也永远不回来 → Promise 永久 pending、页面 `loading` 不复位，连「失败」都判不出来。`REAL-DEVICE-CHECKLIST.md` 第六节第 4 项原本把两页混写成「12 秒超时」，实际只有自检页成立。
