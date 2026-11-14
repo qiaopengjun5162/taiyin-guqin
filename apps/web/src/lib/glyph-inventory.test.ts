@@ -20,6 +20,7 @@ import {
 } from "../../scripts/glyph-inventory";
 
 type Inventory = Parameters<typeof checkGlyphInventory>[0];
+type CountKey = Exclude<keyof typeof EXPECTED_GLYPH_INVENTORY, "svgGroups">;
 
 const inventory = collectGlyphInventory();
 
@@ -44,13 +45,15 @@ describe("字形家底闸门", () => {
     expect(inventory.scoreCount).toBeGreaterThan(0);
     expect(inventory.noteCount).toBeGreaterThan(0);
     expect(inventory.distinctGlyphs).toBeGreaterThan(0);
+    expect(Object.keys(inventory.svgGroups).length).toBeGreaterThan(0);
   });
 
-  it("四项对外数字与真实存量一致", () => {
+  it("对外数字（含分组明细）与真实存量一致", () => {
     expect(inventory.fontGlyphs).toBe(EXPECTED_GLYPH_INVENTORY.fontGlyphs);
     expect(inventory.svgParts).toBe(EXPECTED_GLYPH_INVENTORY.svgParts);
     expect(inventory.distinctGlyphs).toBe(EXPECTED_GLYPH_INVENTORY.distinctGlyphs);
     expect(inventory.scoreCount).toBe(EXPECTED_GLYPH_INVENTORY.scoreCount);
+    expect(inventory.svgGroups).toEqual(EXPECTED_GLYPH_INVENTORY.svgGroups);
     expect(checkGlyphInventory(inventory)).toEqual([]);
   });
 
@@ -62,7 +65,7 @@ describe("字形家底闸门", () => {
   // 变异验证：逐项把数字改错 1，证明闸门真能抓到漂移，而不是恒返回 []。
   // 断言具体错误文本与条数，避免「解析崩溃 / 环境缺失」被误当成「抓到了」。
   it("变异：四项对外数字各错 1 都能被抓到，且错误文本明确", () => {
-    const cases: Array<[keyof typeof EXPECTED_GLYPH_INVENTORY, RegExp]> = [
+    const cases: Array<[CountKey, RegExp]> = [
       ["fontGlyphs", /字体字形数漂移/],
       ["svgParts", /SVG 部件数漂移/],
       ["distinctGlyphs", /示例谱不同减字数漂移/],
@@ -74,5 +77,22 @@ describe("字形家底闸门", () => {
       expect(errors, `字段 ${key} 漂移未被抓到`).toHaveLength(1);
       expect(errors[0]).toMatch(pattern);
     }
+  });
+
+  // 这条是补分组明细闸门的理由：把 fen 的一个部件挪到 hui，
+  // svgParts 仍是 77、分组和仍是 77，两道旧检查都绿，只有明细比对会红。
+  it("变异：分组间挪一个部件（总数不变）也能被抓到", () => {
+    const drifted = {
+      ...inventory,
+      svgGroups: {
+        ...inventory.svgGroups,
+        fen: inventory.svgGroups.fen - 1,
+        hui: inventory.svgGroups.hui + 1,
+      },
+    } as Inventory;
+    const errors = checkGlyphInventory(drifted);
+    expect(errors).toHaveLength(2);
+    expect(errors.join("\n")).toMatch(/SVG 分组 fen 漂移/);
+    expect(errors.join("\n")).toMatch(/SVG 分组 hui 漂移/);
   });
 });

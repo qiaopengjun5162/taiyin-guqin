@@ -8,12 +8,13 @@
 
 - **唯一真相源**：新增 `scripts/glyph-inventory.ts`，`collectGlyphInventory()` 现场读真实 TTF 的 `maxp.numGlyphs` 与源码表，`checkGlyphInventory()` 返回漂移说明；模块无副作用（不打印、不 `process.exit`），CLI 与 CI 共用同一份，杜绝「两边各写一份又漂移」。
 - **闸门接法**：`src/lib/glyph-inventory.test.ts` 落在 `vitest.config.ts` 的 `include` 口径内，CI 的 `pnpm --filter web exec vitest run --coverage` 直接收编；`scripts/` 不在 coverage `include`，阈值 94/91/84/92 不受影响。
-- **钉四项对外数字**：字体 471、SVG 部件 77、示例谱 4 首、不同减字 27。后两项同样写进了 `overview.md:318` / `pitch.md:163`，此前只钉了前两项，是真实缺口。现场复核：分组 `4+13+4+26+7+2+21=77`、4 首谱 71 个音、27 个不同减字，与对外口径一致；音数只作诊断打印、不设阈值。
-- **防假绿**：5 项非空断言排除字体 / 源码缺失造成的假通过；分组和等于部件总数；四项各错 1 的变异验证断言错误条数与文本，避免「解析崩溃」被误当成「抓到了」。
+- **钉四项对外数字 + 分组明细**：字体 471、SVG 部件 77、示例谱 4 首、不同减字 27，以及 `svgGroups`（`fen:4 hui:13 lh:4 rh:26 str:7 top:2 mod:21`）。后两项数字写在 `overview.md:318` / `pitch.md:163`，分组明细写在 `competitive-analysis.md:1695,1707`；此前只钉了前两项，都是真实缺口。现场复核：分组和 `4+13+4+26+7+2+21=77`、4 首谱 71 个音、27 个不同减字，与对外口径一致；音数只作诊断打印、不设阈值。**只验总数与分组和挡不住「fen 少一个、hui 多一个」这类结构变化**（两道旧检查仍绿、文档已错），故分组明细做双向比对，新增组 / 组消失 / 组内数量变都报。
+- **防假绿**：6 项非空断言排除字体 / 源码缺失造成的假通过；分组和等于部件总数；四项各错 1 的变异验证断言错误条数与文本；另有一条专门把 fen 的一个部件挪到 hui（总数与分组和都不变），证明只有明细比对会红。
+- **闸门有效性复核**：本地单文件跑过不等于 CI 真收到。查 `9f1ddf8` 的 web job 日志，`src/lib/glyph-inventory.test.ts (4 tests)` 确实在 `vitest run --coverage` 里执行，`Test Files 84 passed` / `Tests 1347 passed` —— 排除「假销项」。
 - **CLI 降为辅助**：`inventory-glyphs.ts` 只负责打印表格与退出码。人工检查优先 `cd apps/web && pnpm exec vitest run src/lib/glyph-inventory.test.ts`（离线可用，测试内打印同样表格）；`npx jiti` 仍可用，但 jiti 不是项目依赖、需联网下载，CI 与离线环境不依赖它。
 - **体检清单校准**：`docs/team-healthcheck.md` 是 `65e714f` 时点快照，其中「D-7 尚未接 CI」为当时事实；本轮已销项，填回执时按「已销项」处理，不要再立项。
 
-**验证**：`pnpm exec vitest run src/lib/glyph-inventory.test.ts` 4 tests passed；CI 同款 `tsc --noEmit` 与全量 `eslint --max-warnings 0` 均 0；本地 jiti 直跑 CLI `exit 0`。未改 `crates/taiyin-core/src/**`，WASM 三份同源产物不变。
+**验证**：闸门补强后 `pnpm exec vitest run src/lib/glyph-inventory.test.ts` **5 tests passed**；`tsc --noEmit` 与全量 `eslint --max-warnings 0` 均 0；本地 jiti 直跑 CLI `exit 0`。未改 `crates/taiyin-core/src/**`，WASM 三份同源产物不变。
 
 ### 小程序探针补上「会话超时」兜底：堵住切后台后的永久转圈（2026-11-14）
 

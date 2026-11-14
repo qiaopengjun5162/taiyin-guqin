@@ -26,13 +26,19 @@ const DEFAULT_FONT = resolve(HERE, "../public/fonts/WangJiJianZiPuKaiTi.ttf");
  * - fontGlyphs / svgParts：overview.md:318、competitive-analysis.md:13,1695、pitch.md:163,222
  * - distinctGlyphs / scoreCount：overview.md:318「实测减字 27」、
  *   pitch.md「内置 4 首谱加起来只用到 27 个不同的减字」
+ * - svgGroups：competitive-analysis.md:1695 括号（徽 13 / 右手 26 / 弦 7 / 左手 4 /
+ *   分 4 / 装饰 21 / 起首 2）与 :1707 代码块的「分组」行
  * noteCount 只做诊断打印、不设阈值：它没写进对外材料，别让闸门为一个内部数字吵。
+ *
+ * 为什么连分组明细也钉：只验「部件总数 77」和「分组和 = 77」挡不住
+ * 「fen 少一个、hui 多一个」这类结构变化 —— 两道旧检查都还是绿的，文档却已错。
  */
 export const EXPECTED_GLYPH_INVENTORY = {
   fontGlyphs: 471,
   svgParts: 77,
   distinctGlyphs: 27,
   scoreCount: 4,
+  svgGroups: { fen: 4, hui: 13, lh: 4, rh: 26, str: 7, top: 2, mod: 21 },
 } as const;
 
 export interface GlyphInventory {
@@ -44,11 +50,8 @@ export interface GlyphInventory {
   distinctGlyphs: number;
 }
 
-/** 只钉「写进了对外文档」的四项；noteCount 与分组明细是诊断信息。 */
-type Expected = Pick<
-  GlyphInventory,
-  "fontGlyphs" | "svgParts" | "distinctGlyphs" | "scoreCount"
->;
+/** 四个数值键，用于逐项比对与变异验证；svgGroups 是对象，单独处理。 */
+type CountKey = Exclude<keyof typeof EXPECTED_GLYPH_INVENTORY, "svgGroups">;
 
 /** 读 TTF 的 maxp.numGlyphs。不引第三方字体库：只要这一个字段。 */
 function countFontGlyphs(path: string): number {
@@ -123,10 +126,10 @@ export function collectGlyphInventory(fontPath: string = DEFAULT_FONT): GlyphInv
  */
 export function checkGlyphInventory(
   inventory: GlyphInventory,
-  expected: Expected = EXPECTED_GLYPH_INVENTORY,
+  expected: typeof EXPECTED_GLYPH_INVENTORY = EXPECTED_GLYPH_INVENTORY,
 ): string[] {
   const errors: string[] = [];
-  const checks: Array<[keyof Expected, string]> = [
+  const checks: Array<[CountKey, string]> = [
     ["fontGlyphs", "字体字形数"],
     ["svgParts", "SVG 部件数"],
     ["distinctGlyphs", "示例谱不同减字数"],
@@ -135,6 +138,18 @@ export function checkGlyphInventory(
   for (const [key, label] of checks) {
     if (inventory[key] !== expected[key]) {
       errors.push(`${label}漂移：期望 ${expected[key]}，实际 ${inventory[key]}`);
+    }
+  }
+
+  // 分组明细双向比对：新增分组、分组消失、组内数量变化都要报。
+  // 用 Map 而不是动态索引，绕开具体字面量类型缺 index signature 的 TS 限制。
+  const expectedGroups = new Map<string, number>(Object.entries(expected.svgGroups));
+  const actualGroups = new Map<string, number>(Object.entries(inventory.svgGroups));
+  for (const key of new Set([...expectedGroups.keys(), ...actualGroups.keys()])) {
+    const want = expectedGroups.get(key);
+    const got = actualGroups.get(key);
+    if (want !== got) {
+      errors.push(`SVG 分组 ${key} 漂移：期望 ${want ?? "无"}，实际 ${got ?? "无"}`);
     }
   }
   return errors;
