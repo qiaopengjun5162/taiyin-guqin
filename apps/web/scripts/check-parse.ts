@@ -4,10 +4,16 @@
 // 曾经各自维护一份右手指法表。散音那份只有单指法，于是谱本里常见的「散勾剔二」
 // 只吃掉一个「勾」，剩下「剔二」对不上，最后返回一个**缺弦序的半残对象**；
 // 而识别面板是按「非 null 即成功」统计的，就把它算成了解析成功——
-// 到播放时才因为没弦序静默不出声。这类错误没有任何现有测试盯着。
+// 到播放时才因为没弦序静默不出声。这类错误当时没有任何现有测试盯着；
+// 现在 `src/lib/__tests__/jianzi.test.ts` 等已有覆盖，CI 以 vitest 为准。
 //
-// 用法：cd apps/web && npx jiti scripts/check-parse.ts
+// 用法（推荐，CI 同款、离线可用）：
+//   cd apps/web && env -u NODE_OPTIONS pnpm exec vitest run src/lib/__tests__/jianzi.test.ts --pool=threads
+// 本地快捷版：npx jiti scripts/check-parse.ts
 //   退出码 1 = 有样例与预期不符（正例解析失败 / 负例意外成功 / 字段不对）。
+//   ⚠️ jiti 不是项目依赖，npx 需联网下载；离线请改用上面的 vitest 命令，
+//   或用本地 pnpm store 里的 jiti-cli.mjs 直接跑（版本以 `ls ../../node_modules/.pnpm/jiti@*` 为准）。
+//   本脚本不接 CI；解析规则改动以 vitest 测试为准，两边样例要同步。
 //
 // 注意：本模型的按音与泛音**同形**（泛音字也带左手指法，见 jianzi.test.ts 的「泛 名十勾三」），
 // 所以「泛七勾二」这种不带左手的写法本来就该失败，不要当成 bug。

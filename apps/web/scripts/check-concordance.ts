@@ -1,12 +1,19 @@
 /**
- * 谱例溯源的本地校验（jiti 跑真源码）。
+ * 谱例溯源的本地快捷校验（jiti 跑真源码，不启 worker、几秒出结果）。
  *
- * 为什么不用 vitest：这台机器上 vitest 起不来 worker（`Timeout waiting for worker`），
- * 而 `src/lib/__tests__/score-concordance.test.ts` 只能在 CI 里跑。
- * 本地要立刻知道「改坏了没有」，就走这个脚本——它和那个测试文件覆盖同一批行为，
- * 谁改了规则，两边都要动。
+ * 它是 `src/lib/__tests__/score-concordance.test.ts` 的本地版：两者覆盖同一批行为，
+ * 谁改了规则两边都要动；**CI 由那个 vitest 测试把关，本脚本不接 CI**。
  *
- * 用法：npx jiti scripts/check-concordance.ts
+ * 2026-11-14 订正：旧注释写「这台机器上 vitest 起不来 worker」，根因已定位为
+ * 环境变量 NODE_OPTIONS 注入的 shim 让 fork worker 的 IPC 不通，去掉注入即可
+ * （`env -u NODE_OPTIONS`，或改用 --pool=threads）；不是 vitest 本身跑不起来，
+ * 也没有「只能在 CI 里跑」这回事。
+ *
+ * 用法（推荐，CI 同款、离线可用）：
+ *   cd apps/web && env -u NODE_OPTIONS pnpm exec vitest run src/lib/__tests__/score-concordance.test.ts --pool=threads
+ * 本地快捷版：npx jiti scripts/check-concordance.ts
+ *   ⚠️ jiti 不是项目依赖，npx 需联网；离线请用本地 pnpm store 里的 jiti-cli.mjs，
+ *   或直接用上面的 vitest 命令。
  */
 
 import {

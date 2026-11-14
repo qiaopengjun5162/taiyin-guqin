@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### CI 闸门覆盖审计：确认没有第二个 D-7（2026-11-14）
+
+D-7 的教训是「没接闸门的哨兵会漂移」。本轮把全库校验脚本与 CI / just / package 的引用对了一遍，结论：**核心闸门都在 `build.yml` 的 web job 里** —— `verify-wasm.mjs`（真产物契约）、`verify-publish.mjs --copy-only`、`verify-tuning-contract.mjs --self-test` + 正式跑，外加 lint / tsc / `vitest run --coverage` / next build；rust job 含 fmt / clippy / gen_types diff / audit / test，另有 MSRV 真 1.88 与 Rust 覆盖率 `--fail-under-lines 75`。
+
+- **6 个 workflow 最近一次全部 success**：`build` / `pages`（每次 push 触发）、`miniprogram-probe`（11-14 `40f3515`）、`backend-image`（11-13 `e8ae370`）、`runbook-smoke`（11-10）、`deploy-smoke`（11-04）。后 4 个带 path filter，久未触发是对应目录没改，不是红；5 个带 `workflow_dispatch`，可手动复跑。
+- **三份 WASM 产物与指纹都在探针 filter 内**：`apps/web/wasm/`、`apps/web/public/wasm/`、`apps/miniprogram-wasm-probe/wasm/`（含 `scripts/wasm-provenance.json`）分别被 `apps/web/wasm/**`、`apps/web/public/wasm/**`、`apps/miniprogram-wasm-probe/**` 覆盖，改 `crates/taiyin-core/**` 也触发。旧笔记里的 `public/wasm` 是 `apps/web/public/wasm` 的简写，filter 没漏。
+- **没有第二个孤儿闸门**：`audit-bundle-freshness` / `verify-article-bundle` / `verify-concordance` / `verify-score-concordance` / `measure-jianzi-block` / `derive-tunings` / `measure-codebase` 都需要额外参数（vault / slug / 浏览器 / 字体）或只作诊断打印，是特定场景的人工工具，不接 CI 属合理，不是每次提交必须跑的哨兵。
+
+**顺手修两处可执行性**：`apps/web/scripts/check-parse.ts` 与 `check-concordance.ts` 的用法注释仍写 `npx jiti`（jiti 不是项目依赖，离线报 `command not found`），后者还写着「这台机器上 vitest 起不来 worker、只能在 CI 里跑」——那是 11-14 已定位的 `NODE_OPTIONS` shim 问题，去掉注入即可。两处改为优先给 CI 同款 vitest 命令、CLI 降为本地快捷方式并标注 jiti 需联网。二者各自的 CI 闸门是 `src/lib/__tests__/jianzi.test.ts` 与 `score-concordance.test.ts`，属有覆盖的本地副本，不是孤儿。
+
+**验证**：本地 jiti 直跑两脚本均 `exit 0`（19 例 / 22 通过）；注释里推荐的 vitest 命令实测 `2 files / 82 tests passed`（1.27s）；`tsc --noEmit` 与全量 `eslint --max-warnings 0` 均 0。未碰 `crates/**`，WASM 三份同源产物不变。
+
 ### 家底统计口径固化：修 3 处引用错误，不刷新历史快照（2026-11-14）
 
 体检清单 A-1 让同事复核「多少行代码、多少测试」，但 `overview.md` 只给了数字、没给统计命令。按各自习惯数会得出完全不同的结果：只数各 crate 的 `src` 是 12,112 行（文档 16,427 的口径是 `crates` 下全部 `.rs`，含 `tests` / `examples`）；macOS 的 BSD grep 不认 `\s` 与 `\b`，会把 `#[test]` 数成 0；组件按顶层 `.tsx` 是 28、递归含子目录与测试是 56。同事照此填回执必然误判。
