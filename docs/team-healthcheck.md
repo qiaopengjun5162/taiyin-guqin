@@ -97,8 +97,8 @@
 | 编号 | 要查什么 | 去哪看 | 谁去查 | 什么算有问题 | 回执 |
 |---|---|---|---|---|---|
 | C-1 | 历史数字有没有被「顺手统一」 | `CHANGELOG.md:449-450`、`docs/overview.md:177,196`、`docs/articles/material/2026-11-09-真谱适用性判定-识别结构性失效.md:199-201` | 懂文档的同学 | 里面的 45 / 97.6% / 100% 被改成新数 | C-1 |
-| C-2 | 业务代码 / WASM 产物有没有被动过 | `git diff --stat` 应只有 7 个文件（清单 + 6 个订正文件，见第 3 节） | 管 CI 的同学 | 出现 `crates/**`、`.github/**`、`app.json`、`CHANGELOG.md`、`docs/articles/**` | C-2 |
-| C-3 | 有没有偷偷新增 CI 闸门 | `.github/workflows/**` | 管 CI 的同学 | 出现新 step（本轮明确不新增闸门，建议留给下一轮） | C-3 |
+| C-2 | 业务代码 / WASM 产物有没有被动过 | 跑 `git show --stat 65e714f`，应只有 7 个文件（清单 + 6 个订正文件，见第 3 节）。⚠️ 改动**已提交**，现在跑 `git diff --stat` 是**空的**，属正常，别据此填 ⚠️ | 管 CI 的同学 | 出现 `crates/**`、`.github/**`、`app.json`、`CHANGELOG.md`、`docs/articles/**` | C-2 |
+| C-3 | 有没有偷偷新增 CI 闸门 | `git show --stat 65e714f`、`git log --oneline -- .github/workflows/`，或直接看 `.github/workflows/**` | 管 CI 的同学 | 出现新 step（本轮明确不新增闸门，建议留给下一轮） | C-3 |
 | C-4 | 3 条安全公告豁免有没有被删/加 | `.cargo/audit.toml:3-35` 与 `.github/workflows/build.yml:75` | 管 CI 的同学 | 数量不是 3、两份清单不一致、或理由注释被删 | C-4 |
 
 ### D 组 · 值得优化，但**本轮不许动**（只判断「要不要排期」）
@@ -133,7 +133,7 @@
 
 | 编号 | 争议点 | 对照两处 | 谁拍板 | 回执 |
 |---|---|---|---|---|
-| F-1 | 竞品文档里还留着旧的识别卖点说法 | `docs/competitive-analysis.md:119,174,177` ↔ `docs/overview.md:143-144,163-165`（不得对外引用）、`docs/pitch.md:213,222`（禁语表） | **拍板人** | F-1 改 / 标注勿外引 / 不动 |
+| F-1 | 竞品文档里还留着旧的识别卖点说法（预检又找到 1 处，见第 7 节） | `docs/competitive-analysis.md:119,174,177`、`docs/udywang-comparison.md:17` ↔ `docs/overview.md:143-144,163-165`（不得对外引用）、`docs/pitch.md:213,222`（禁语表） | **拍板人** | F-1 改 / 标注勿外引 / 不动 |
 | F-2 | 草稿头部仍写「待后台手动群发」，台账已标 published | `docs/articles/drafts/03-太音到底是什么-一个说不清自己的产品想明白的过程.md:3` ↔ `docs/articles/material/pending-copy.json:13`、`docs/overview.md:175` | 管内容的同学 + 拍板人 | F-2 改 / 不动 |
 | F-3 | 识别能力已判定结构性失效，代码在但不可用 | `docs/overview.md:135-165,195,223`；`tools/eval-jianzi/verify-full-jianzi.py:6-9` | 拍板人 | F-3 是否立项重建（等真实用户提出「要扫老谱」） |
 
@@ -219,3 +219,30 @@
 | F-1 ~ F-3 | | | | | 写拍板结论 |
 
 > 填表提示：`⚠️` 请一定贴出**两处原文或数字**，只写「不对」没法复查。`❓` 直接找对应的「谁去查」角色，不用自己硬猜。
+
+---
+
+## 7. AI 只读预检（2026-11-14 补，供复核，**不替代第 6 节回执**）
+
+> 下面只记录「跑命令 / 读文件」得到的客观输出，不是人工回执。第 6 节回执表仍请认领人自己填。
+> 只预检 A / B / C / D 中能静态核实的项；**E 组（真人 / 真机 / 花钱）与 F 组（拍板）一律不预填**。
+
+| 编号 | 预检结论 | 证据（命令与原文） |
+|---|---|---|
+| A-1 | ✅ | `overview.md:131` = 「约 5.8 万行、1,567 条测试」；`:310` 同值 |
+| A-2 | ✅ | `cd apps/web && npx jiti scripts/inventory-glyphs.ts` → **exit 0**，字体 471 / 部件 77，分组 `fen:4 hui:13 lh:4 rh:26 str:7 top:2 mod:21`（合计 77）；`overview.md:177,318`、`competitive-analysis.md:13,1695,1706`、`pitch.md:163,222` 均为 77；`:1695` 括号 13+26+7+4+4+21+2 = 77。`articles/material/2026-11-07…:44` 的 45 是历史实测数字，按规矩保留 |
+| A-3 | ✅ | `apps/miniprogram-wasm-probe/app.json:2-7` 列 4 页；`overview.md:60,105,194` 均写「四页 / 4 个页面」 |
+| A-4 | ✅ | `tuning.ts:17` 6 种 `TuningId`；`jianpu-translator/types.ts:38-40` 3 种编排调式；`jianpu-translator.tsx:68-73` 有 `role="status"` 提示条，明写「弹出来会差半音 / 建议先把上方定弦切回这三种之一」，是可见提示、非静默回退 |
+| B-1 | ✅ | `overview.md:175` = 「三篇均已群发（定位文 2026-11-12 15:04）」；`CHANGELOG.md` 及草稿头部的历史状态行按规矩未改（见 F-2） |
+| B-2 | ✅（有 1 处边界情况，见下） | 全库 `.md` 搜「小程序已上线 / AI 识别减字谱 / 100% 准确 / 快 N 倍」等，命中项均为禁语表、否定句、历史工程记录或内部复盘，对外材料无肯定式宣称。唯一近似肯定式在 `docs/udywang-comparison.md:17`，已单列交拍板 |
+| B-3 | ✅ | `overview.md:85,174,193,310` 真实用户均为 **0** |
+| C-1 | ✅ | `CHANGELOG.md:449-450` 规矩原文仍在；`articles/material/2026-11-09-真谱适用性判定…:199-201` 的 97.6% / 100%、`2026-11-07-竞品情报四连…:44` 的 45 均未被改 |
+| C-2 | ✅ | `git show --stat 65e714f` = 7 文件（`inventory-glyphs.ts`、`tuning.ts`、4 个 docs、`team-healthcheck.md`），无 `crates/**`、`.github/**`、`app.json`、`CHANGELOG.md`、`docs/articles/**`；后续 `3be5202` 只新增 `docs/teacher-trial-kit.md` 1 个文件 |
+| C-3 | ✅ | 两提交都不含 `.github/workflows/**` |
+| C-4 | ✅ | `.cargo/audit.toml:33-35` 与 `.github/workflows/build.yml:75` 同为 3 个 ID：`RUSTSEC-2023-0071` / `RUSTSEC-2026-0381` / `RUSTSEC-2026-0459`；`:6-29` 三条理由注释完好 |
+| D-1 ~ D-6 | 现状成立 | 只复核「现状描述是否属实」，**不代判断排 / 不排** |
+| D-7 | 现状成立 | 全库搜 `inventory-glyphs` 只命中 **6 个文件**（脚本自身 + 5 篇 docs），**没有任何 `.github/workflows/**` / `justfile` / `package.json` 引用**，脚本确实仍未接 CI |
+
+**预检新发现（不改，交拍板）**：`docs/udywang-comparison.md:17` 写有「正是我们实现"AI 识别减字谱"时可对照的设计准则」，是竞品分析旧稿里的肯定式旧口径，与 `docs/pitch.md:211` 禁语表同类，但不在 F-1 原列的三处里。按「竞品文档旧口径别擅自改」，本轮不动，建议并入 F-1 一起拍板（改 / 标注勿外引 / 不动）。
+
+**顺手修 2 处清单自身的可执行性**：C-2 原写「`git diff --stat` 应只有 7 个文件」，但改动已提交、该命令现在恒为空，会让同事误填 ⚠️，已改为 `git show --stat 65e714f` 并注明；C-3 补了可跑的 `git log --oneline -- .github/workflows/`。回执表仍留空给认领人。
