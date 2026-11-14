@@ -31,7 +31,7 @@ const checks = [
     file: "scripts/verify-worker-transport.cjs",
   },
   {
-    name: "兜底变异验证：三处静默失败",
+    name: "兜底变异验证：四处静默失败",
     file: "scripts/verify-guards.cjs",
   },
   {

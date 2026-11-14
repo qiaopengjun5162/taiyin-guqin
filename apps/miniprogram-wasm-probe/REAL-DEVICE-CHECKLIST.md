@@ -92,7 +92,10 @@ node apps/miniprogram-wasm-probe/scripts/prepare-realdevice-copy.mjs --appid wx�
 
 > **第 4 项为什么不判「过 / 坏」**：探针页面只有 `onLoad` / `onUnload`，
 > **没有 `onShow` 重探测**。微信在切后台后可能回收 Worker，切回来点一下
-> 就会一直转圈直到 12 秒超时、然后显示 FAIL。这是**当前实现的已知行为**，不是真机缺陷。
+> 会等到超时后给出明确失败 —— 自检页本来就是 12 秒，「查音位」页走
+> `lib/wasm-client.js`，**2026-11-14 起也补上了同样的 12 秒兜底**，
+> 两页都不会再无限转圈（以前「查音位」页会永久停在 loading）。
+> 这是**当前实现的已知行为**，不是真机缺陷。
 > 所以这一项只记录三件事：
 > ① 切回来后原本的结果还在吗？② 点一下是立刻出结果，还是转圈后 12 秒超时？
 > ③ 如果是超时，点「重新探测」能不能恢复？
@@ -141,4 +144,4 @@ node apps/miniprogram-wasm-probe/scripts/prepare-realdevice-copy.mjs --appid wx�
 | 手机上一直加载中 | Worker 没起来 / WASM 路径不对 | 看控制台；`app.json` 必须声明 `"workers": "workers"`（已声明） |
 | 模拟器能跑、手机不行 | 真机 `WXWebAssembly` 差异 | 记下机型 + 基础库版本，这是本次要抓的重点 |
 | 导入项目报「不是小程序项目」 | 目录选错 | 要选到含 `app.json` 的那一层 |
-| 切后台回来点不动、12 秒后 FAIL | 已知行为：没有 `onShow` 重探测 | 点「重新探测」；把现象记进回执第 4 项 |
+| 切后台回来点不动、12 秒后明确 FAIL | 已知行为：没有 `onShow` 重探测；两页都有 12 秒超时兜底，不会无限转圈 | 点「重新探测」；把现象记进回执第 4 项 |
