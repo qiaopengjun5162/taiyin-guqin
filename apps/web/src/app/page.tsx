@@ -1462,7 +1462,19 @@ export default function Home() {
   }
 
   return (
-    <main className="flex flex-col items-center min-h-dvh py-10 px-4 xl:grid xl:grid-cols-[minmax(0,576px)_360px] xl:gap-6 xl:items-start xl:justify-center xl:max-w-[1280px] xl:mx-auto xl:px-6 xl:mt-6">
+    <>
+      {/* 键盘用户 Tab 第一下就能跳过顶栏与示例，直接进主内容。
+          放在 main 之外：跳进去之后 Tab 才会继续往内容里走，而不是又回到这条链接。
+          用 translate 移出视口而不是 sr-only：sr-only 的 not-sr-only 会把 position 重置成
+          static，与 fixed 打架，焦点态会跑位。 */}
+      <a
+        href="#main-content"
+        className="no-print fixed left-4 top-4 z-[60] -translate-y-24 rounded border border-amber-700/40 bg-[var(--paper)] px-3 py-2 text-[12px] text-[var(--ink)] shadow-lg transition-transform focus:translate-y-0"
+      >
+        跳到主内容
+      </a>
+      <main id="main-content" tabIndex={-1} className="flex flex-col items-center min-h-dvh py-10 px-4 xl:grid xl:grid-cols-[minmax(0,576px)_360px] xl:gap-6 xl:items-start xl:justify-center xl:max-w-[1280px] xl:mx-auto xl:px-6 xl:mt-6">
+
       {/* ── 品牌：国风科技主视觉顶栏 ── */}
       <header className="ty-hero no-print mt-2 w-full max-w-xl flex items-center justify-between gap-4 px-5 py-3 xl:col-span-2 xl:max-w-none">
         <div className="flex min-w-0 items-center gap-3.5">
@@ -1636,6 +1648,7 @@ export default function Home() {
         </div>
       )}
 
+      <h2 className="sr-only">曲谱</h2>
       {/* ── 乐谱流（导出截图目标） ── */}
       <div
         id="score-area"
@@ -1732,6 +1745,7 @@ export default function Home() {
       />
       </div>
 
+      <h2 className="sr-only">录入减字</h2>
       {/* ── 主卡片 —— 宣纸质感 ── */}
       <div
         id="keyboard-area"
@@ -1887,7 +1901,7 @@ export default function Home() {
       {/* ── 演奏控制台 ── */}
       <div id="sec-console" className="ty-panel no-print mt-4 w-full max-w-xl p-4 xl:col-start-2">
         <div className="mb-3 flex items-center gap-2">
-          <span className="ty-section-title">演奏控制台</span>
+          <h2 className="ty-section-title">演奏控制台</h2>
           <span className="ty-section-sub">速度 · 节拍 · 定弦 · 基准音</span>
         </div>
         <div className="ty-console">
@@ -2106,8 +2120,10 @@ export default function Home() {
       <div id="sec-recognizer" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
+          <h2 className="sr-only">谱字识别</h2>
           <button
             onClick={() => setShowRecognizer((v) => !v)}
+            aria-expanded={showRecognizer}
             className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showRecognizer ? "收起识别" : "＋ 识别减字图片"}
@@ -2152,8 +2168,10 @@ export default function Home() {
       <div id="sec-board" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
+          <h2 className="sr-only">琴面音位</h2>
           <button
             onClick={() => setShowBoard((v) => !v)}
+            aria-expanded={showBoard}
             className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showBoard ? "收起琴面" : "＋ 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音）"}
@@ -2170,8 +2188,10 @@ export default function Home() {
       <div id="sec-tuner" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
+          <h2 className="sr-only">调音定弦</h2>
           <button
             onClick={() => setShowTuner((v) => !v)}
+            aria-expanded={showTuner}
             className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showTuner ? "收起调音" : "＋ 调音 / 定弦（麦克风校弦 · 换调式）"}
@@ -2188,8 +2208,10 @@ export default function Home() {
       <div id="sec-practice" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
+          <h2 className="sr-only">跟奏</h2>
           <button
             onClick={() => setShowPractice((v) => !v)}
+            aria-expanded={showPractice}
             className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showPractice ? "收起跟录音练" : "＋ 跟录音练（导入音频 / AB 循环 / 变速）"}
@@ -2206,8 +2228,10 @@ export default function Home() {
       <div id="sec-log" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
+          <h2 className="sr-only">练琴日志</h2>
           <button
             onClick={() => setShowPracticeLog((v) => !v)}
+            aria-expanded={showPracticeLog}
             className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showPracticeLog ? "收起练琴记录" : "＋ 练琴记录（录音回听 · 打卡 · 周月统计）"}
@@ -2303,5 +2327,6 @@ export default function Home() {
         </button>
       )}
     </main>
+    </>
   );
 }

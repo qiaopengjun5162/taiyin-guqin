@@ -37,9 +37,9 @@ export default function ZidianPage() {
       <section className="mt-8 w-full max-w-md xl:max-w-3xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             为什么要一份减字字典
-          </p>
+          </h2>
           <div className="space-y-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             <p>
               减字谱诞生千年，至今未纳入 Unicode 编码，录入仍靠手写或复制图片。要把它数字化，第一步是摸清「到底有多少个减字、每个字由哪些部件拼成、有哪些写法变体」。
@@ -68,9 +68,9 @@ export default function ZidianPage() {
       <section className="mt-8 w-full max-w-md xl:max-w-3xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             量化分析 · 字频与变体
-          </p>
+          </h2>
           <div className="space-y-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             <p>
               有了结构化字全表，就能再往前走一步：统计一首曲子里哪些减字用得最多、各占多少；同一指法在不同抄本里有几种写法（名/夕、食/亻、勾/勹、挑/乚……）。

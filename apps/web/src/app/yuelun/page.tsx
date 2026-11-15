@@ -50,9 +50,9 @@ export default function YuelunPage() {
       <section className="w-full max-w-md xl:max-w-none rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             原 文
-          </p>
+          </h2>
           <div className="space-y-4 text-[13px] leading-[2] text-[var(--ink)]" style={{ fontFamily: "var(--font-serif)" }}>
             {ORIGINAL_PASSAGES.map((p, i) => (
               <p key={i}>{p}</p>
@@ -69,9 +69,9 @@ export default function YuelunPage() {
       <section className="w-full rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             释 义
-          </p>
+          </h2>
           <div className="space-y-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             {PARAPHRASE.map((p, i) => (
               <p key={i}>{p}</p>
@@ -84,9 +84,9 @@ export default function YuelunPage() {
       <section className="w-full rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             乐论 × 太音
-          </p>
+          </h2>
           <div className="space-y-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             <p>
               《荀子》说「先王恶其乱也，故制雅颂之声以道之」——音乐需要规范，否则人们便「放浪形骸、混乱不堪」。

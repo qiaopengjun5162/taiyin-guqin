@@ -59,9 +59,9 @@ export default function JianzipuPage() {
       <section className="mt-4 w-full max-w-md xl:max-w-none break-inside-avoid rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             什么是减字谱
-          </p>
+          </h2>
           <div className="space-y-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             {INTRO.map((p, i) => (
               <p key={i}>{p}</p>
@@ -74,9 +74,9 @@ export default function JianzipuPage() {
       <section className="mt-4 w-full max-w-md xl:max-w-none break-inside-avoid rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             一个减字怎么读
-          </p>
+          </h2>
           <p className="mb-4 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             以谱字「名十勾五」为例：左手无名指按五弦十徽，同时右手中指勾五弦得音。一个减字，可拆为上、下两部分来读——
           </p>
@@ -103,9 +103,9 @@ export default function JianzipuPage() {
       <section className="mt-4 w-full max-w-md xl:max-w-none break-inside-avoid rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             打字即打谱 · 键盘速录
-          </p>
+          </h2>
           <p className="mb-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             按减字的书写顺序打「音色 + 左手 + 徽位数字 + 分数 + 走手音 + 右手 + 弦数」，
             打满自动成字，不必碰鼠标。例：大九勾四 →{" "}
@@ -144,9 +144,9 @@ export default function JianzipuPage() {
       <section className="mt-4 w-full max-w-md xl:max-w-none break-inside-avoid rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
-          <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
             减字谱 × 太音
-          </p>
+          </h2>
           <div className="space-y-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             <p>
               减字谱把「怎么弹」凝成一个方块字，是古琴传承千年的「规范」——恰如《乐论》所言「先王立乐之术」。

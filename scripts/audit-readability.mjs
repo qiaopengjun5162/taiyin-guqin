@@ -107,10 +107,25 @@ const analyze = () => {
     if (n.textContent.trim().length > 0 && n.parentElement) parents.add(n.parentElement);
   }
 
+  // 屏幕阅读器专用内容（sr-only：1×1 + clip-path + overflow hidden）视觉上不可见。
+  // WCAG 1.4.3 只约束「看得见的文字」，把它算进对比度会产出假警报——
+  // 但排除条件必须卡紧：只认绝对定位 + 裁剪 + ≤1px 三条同时成立。
+  const srOnly = (el) => {
+    const cs = getComputedStyle(el);
+    const clipped = cs.clipPath && cs.clipPath !== "none";
+    return (
+      cs.position === "absolute" &&
+      cs.overflow === "hidden" &&
+      (parseFloat(cs.width) <= 1 || parseFloat(cs.height) <= 1) &&
+      Boolean(clipped)
+    );
+  };
+
   const texts = [];
   for (const el of parents) {
     const cs = getComputedStyle(el), r = el.getBoundingClientRect();
     if (cs.display === "none" || cs.visibility === "hidden" || r.width <= 0 || r.height <= 0) continue;
+    if (srOnly(el)) continue;
     const bg = effBg(el);
     let fg = toRgb(cs.color, bg);
     const op = opacityProduct(el);

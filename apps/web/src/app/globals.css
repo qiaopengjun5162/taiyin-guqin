@@ -478,6 +478,14 @@ button:disabled {
   border-radius: 4px;
 }
 
+/* 「跳到主内容」的落点：main 只是接收焦点的容器，不是可操作控件。
+   给它套全局描边会在整页外围画一个 2px 青框，看着像布局 bug。
+   必须在 :focus-visible 之后写，同层级靠顺序取胜。 */
+main[tabindex="-1"]:focus,
+main[tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
 /* 锚点跳转平滑滚动；尊重「减少动态效果」系统偏好 */
 @media (prefers-reduced-motion: no-preference) {
   html {

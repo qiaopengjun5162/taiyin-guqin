@@ -133,6 +133,52 @@ afterEach(() => {
   cleanup();
 });
 
+describe("主页语义结构（屏幕阅读器 / 键盘）", () => {
+  it("标题大纲：唯一 h1，各主区块都有 h2 可跳转", () => {
+    render(<Home />);
+
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    // 区块名与右栏页内导航一致；改文案时两边一起改
+    for (const name of [
+      "曲谱",
+      "录入减字",
+      "演奏控制台",
+      "谱字识别",
+      "琴面音位",
+      "调音定弦",
+      "跟奏",
+      "练琴日志",
+    ]) {
+      expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
+    }
+  });
+
+  it("折叠按钮用 aria-expanded 播报开合状态", () => {
+    render(<Home />);
+
+    const toggle = screen.getByRole("button", { name: "＋ 识别减字图片" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "收起识别" })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
+  });
+
+  it("跳转主内容链接指向可聚焦的 main", () => {
+    render(<Home />);
+
+    const skip = screen.getByRole("link", { name: "跳到主内容" });
+    expect(skip).toHaveAttribute("href", "#main-content");
+
+    const main = document.getElementById("main-content");
+    expect(main).toBeInTheDocument();
+    // tabindex=-1 才能让锚点跳转把焦点交给 main，而不是留在链接上
+    expect(main).toHaveAttribute("tabindex", "-1");
+  });
+});
+
 describe("主页折叠面板", () => {
   it("默认全部收起：只留入口，不挂子组件", () => {
     render(<Home />);
