@@ -471,6 +471,20 @@ button:disabled {
   opacity: 0.55;
 }
 
+/* 键盘焦点可见描边：让「点得动」一目了然（鼠标点击不画框，避免干扰） */
+:focus-visible {
+  outline: 2px solid var(--jade);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 锚点跳转平滑滚动；尊重「减少动态效果」系统偏好 */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 /* ── 打印/导出 PDF 样式 ── */
 @media print {
   @page {

@@ -222,6 +222,16 @@ export default function Home() {
   const [showTuner, setShowTuner] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [recognizerTab, setRecognizerTab] = useState<"single" | "sheet">("single");
+  // 回到顶部：页面滚过约一屏后出现浮动按钮
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  useEffect(() => {
+    function onScroll() {
+      setShowBackToTop(window.scrollY > window.innerHeight * 0.8);
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   // 录入区两种进法：点选简谱转减字，或把减字码整段粘回来。
   const [inputTab, setInputTab] = useState<"jianpu" | "code">("jianpu");
   // 分句：句界由 Rust 切（与编排同一套判据），前端只提供时值。
@@ -1452,12 +1462,12 @@ export default function Home() {
   }
 
   return (
-    <main className="flex flex-col items-center min-h-dvh py-10 px-4">
+    <main className="flex flex-col items-center min-h-dvh py-10 px-4 xl:grid xl:grid-cols-[minmax(0,576px)_360px] xl:gap-6 xl:items-start xl:justify-center xl:max-w-[1280px] xl:mx-auto xl:px-6 xl:mt-6">
       {/* ── 品牌：国风科技主视觉顶栏 ── */}
-      <header className="ty-hero no-print mt-2 w-full max-w-xl flex items-center justify-between gap-4 px-5 py-3">
-        <div className="flex items-center gap-3.5">
+      <header className="ty-hero no-print mt-2 w-full max-w-xl flex items-center justify-between gap-4 px-5 py-3 xl:col-span-2 xl:max-w-none">
+        <div className="flex min-w-0 items-center gap-3.5">
           <div className="ty-seal font-calligraphy">太音</div>
-          <div className="leading-tight">
+          <div className="min-w-0 leading-tight">
             {/* 对外口径 = 「古琴打谱」（对仗「AI 释谱」：释谱是看懂，打谱是弹出）。
                 改这行先同步 page.test.tsx 的断言与 docs/pitch.md 档 1。 */}
             <h1 className="ty-title">太音 · 古琴打谱</h1>
@@ -1465,11 +1475,13 @@ export default function Home() {
           </div>
         </div>
         {/* 免安装是真卖点；「AI 驱动」是超口径（识别是模板匹配，AI 只做候选择优兜底），已撤下 */}
-        <div className="ty-ai-badge" title="打开网页就能用，不用装任何软件">
+        <div className="ty-ai-badge shrink-0 whitespace-nowrap" title="打开网页就能用，不用装任何软件">
           <span className="ty-ai-dot" />
           免安装
         </div>
       </header>
+
+      <div className="xl:col-start-1 w-full min-w-0 flex flex-col items-center">
 
       {/*
        * ── 「太音是什么」介绍区：只在空谱时出现 ──
@@ -1480,7 +1492,7 @@ export default function Home() {
       {score.length === 0 && (
         <section
           aria-label="太音是什么"
-          className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm"
+          className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm xl:col-start-1"
         >
           <div className="ty-panel-accent" />
           <div className="p-4">
@@ -1526,7 +1538,7 @@ export default function Home() {
       {/* ── 全局错误 / 中性提示 ── */}
       {/* ── 未保存草稿恢复提示（只在编辑区还空着时出现） ── */}
       {showDraftBanner && pendingDraft && (
-        <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/30 bg-[var(--paper)] shadow-sm">
+        <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/30 bg-[var(--paper)] shadow-sm xl:col-start-1">
           <div className="ty-panel-accent" />
           <div className="flex items-center gap-2 px-3 py-2">
             <p className="flex-1 text-[11px] leading-relaxed tracking-wider text-stone-700">
@@ -1551,19 +1563,19 @@ export default function Home() {
         </div>
       )}
       {errorMessage && (
-        <div className="no-print mt-4 w-full max-w-xl px-3 py-2 rounded border border-red-400/30 bg-red-900/20 text-[11px] tracking-wider text-red-200/80">
+        <div className="no-print mt-4 w-full max-w-xl px-3 py-2 rounded border border-red-400/30 bg-red-900/20 text-[11px] tracking-wider text-red-200/80 xl:col-start-1">
           {errorMessage}
         </div>
       )}
       {infoMessage && (
-        <div className="no-print mt-4 w-full max-w-xl px-3 py-2 rounded border border-emerald-500/30 bg-emerald-900/20 text-[11px] tracking-wider text-emerald-200/80">
+        <div className="no-print mt-4 w-full max-w-xl px-3 py-2 rounded border border-emerald-500/30 bg-emerald-900/20 text-[11px] tracking-wider text-emerald-200/80 xl:col-start-1">
           {infoMessage}
         </div>
       )}
 
       {/* ── 谱面排版：布局 / 疏密 / 行宽（只影响显示与导出，不进打印稿） ── */}
       {score.length > 0 && (
-        <div className="no-print mt-6 flex w-full max-w-xl flex-wrap items-center justify-end gap-1.5">
+        <div className="no-print mt-6 flex w-full max-w-xl flex-wrap items-center justify-end gap-1.5 xl:col-start-1">
           <span className="text-[10px] tracking-wider text-amber-600/50 mr-1">
             谱面
           </span>
@@ -1628,7 +1640,7 @@ export default function Home() {
       <div
         id="score-area"
         ref={exportRef}
-        className="mt-8 w-full"
+        className="mt-8 w-full xl:col-start-1"
         style={{ maxWidth: `${WIDTH_MAX_REM[layoutPref.width]}rem` }}
       >
         <ScoreView notes={score} beatsPerBar={beatsPerBar} layout={layoutPref.layout} density={layoutPref.density} onRemove={handleRemove} onEdit={handleEdit} onSeekLyric={handleSeekLyric} onChangeDuration={handleChangeDuration} editingIndex={editingIndex} playingIndex={playingIndex ?? followHighlight} />
@@ -1662,7 +1674,7 @@ export default function Home() {
       {score.length === 0 && (
         <section
           aria-label="只想记一个字"
-          className="no-print mt-5 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm"
+          className="no-print mt-5 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm xl:col-start-1"
         >
           <div className="ty-panel-accent" />
           <div className="p-4">
@@ -1690,6 +1702,7 @@ export default function Home() {
       )}
 
       {/* ── 工具栏：标题 + 保存 / 加载 / 导出 ── */}
+      <div className="xl:col-start-1 w-full flex justify-center">
       <SaveLoadToolbar
         title={scoreTitle}
         storageMode={storageMode}
@@ -1717,9 +1730,162 @@ export default function Home() {
         onUndo={undo}
         onRedo={redo}
       />
+      </div>
+
+      {/* ── 主卡片 —— 宣纸质感 ── */}
+      <div
+        id="keyboard-area"
+        className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel"
+      >
+        {/* 卡片顶部装饰线（朱砂色） */}
+        <div className="ty-panel-accent" />
+
+        <div className="p-5">
+          {editingIndex !== null && (
+            <div className="mb-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] tracking-wider text-amber-600/60">
+                  正在编辑第 {editingIndex + 1} 音 · 确认后更新
+                </p>
+                <button
+                  onClick={() => setEditingIndex(null)}
+                  className="text-[10px] tracking-wider text-stone-400 hover:text-stone-600 transition-colors underline underline-offset-2"
+                >
+                  取消编辑
+                </button>
+              </div>
+
+              {/* ── 联袂指法：与后一个音成组 ── */}
+              {editingIndex + 1 < score.length && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[9px] tracking-wider text-rose-700/70">
+                    与后一音联袂
+                  </span>
+                  {LIANMEI_OPTIONS.map((o) => {
+                    const linked = score[editingIndex].lianmei;
+                    const isThisHead =
+                      linked?.kind === o.kind &&
+                      linked.headId === score[editingIndex].id;
+                    const fits =
+                      lianmeiRelationInfo &&
+                      relationFits(o.kind, lianmeiRelationInfo.relation);
+                    return (
+                      <button
+                        key={o.kind}
+                        onClick={() => handleLinkLianmei(o.kind)}
+                        aria-pressed={isThisHead}
+                        title={o.hint}
+                        className={`px-2 py-1 min-h-[32px] text-[10px] tracking-wider rounded border transition-all ${
+                          isThisHead
+                            ? "border-rose-500/60 bg-rose-100 text-rose-800"
+                            : fits
+                              ? "border-rose-400/30 text-rose-700/70 hover:border-rose-500/60"
+                              : "border-stone-400/30 text-stone-400"
+                        }`}
+                      >
+                        {o.kind}
+                      </button>
+                    );
+                  })}
+                  {score[editingIndex].lianmei && (
+                    <button
+                      onClick={handleClearLianmei}
+                      className="px-2 py-1 min-h-[32px] text-[10px] tracking-wider rounded border border-stone-400/30 text-stone-500 hover:text-stone-700 transition-all"
+                    >
+                      解组
+                    </button>
+                  )}
+                </div>
+              )}
+              {lianmeiRelationInfo && (
+                <p
+                  data-lianmei-relation
+                  className={`mt-1 text-[9px] tracking-wider ${
+                    lianmeiRelationInfo.relation === "不合"
+                      ? "text-rose-700/80"
+                      : "text-emerald-800/70"
+                  }`}
+                >
+                  {lianmeiRelationInfo.description}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* 录入入口：简谱转减字 / 减字码入谱（同一块地方，两种进法） */}
+          {editingIndex === null && (
+            <div className="mb-4 p-3 rounded border border-amber-700/20 bg-amber-900/10">
+              <div className="mb-2 flex items-center gap-2">
+                {[
+                  { key: "jianpu", label: "简谱转减字" },
+                  { key: "code", label: "减字码入谱" },
+                ].map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={() => setInputTab(t.key as "jianpu" | "code")}
+                    aria-pressed={inputTab === t.key}
+                    className={`min-h-[32px] px-2 py-0.5 text-[10px] tracking-wider rounded border transition-colors ${
+                      inputTab === t.key
+                        ? "border-amber-600/60 bg-amber-100 text-amber-900"
+                        : "border-amber-700/25 text-stone-500 hover:text-stone-700"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mb-1 text-[9px] leading-relaxed tracking-wider text-amber-700/70">
+                提示：在「简谱转减字」里输入简谱（如{" "}
+                <code className="rounded bg-amber-900/10 px-1">5 6 1 2 | 3 5 6 -</code>
+                ），可一键生成多套减字谱候选并智能编排指法；也支持「减字码入谱」整段粘入。
+              </p>
+              {inputTab === "jianpu" ? (
+                <JianpuTranslator
+                  onSelect={(notes) => {
+                    commitScore((prev) => [...prev, ...notes]);
+                  }}
+                />
+              ) : (
+                <JianziCodeImport
+                  onImport={(notes) => commitScore((prev) => [...prev, ...notes])}
+                />
+              )}
+            </div>
+          )}
+
+          {/*
+           * key 随 editingIndex 变化强制键盘组件完全重建，确保 useState 初始值携带新数据。
+           * defaultNote 为 undefined 时键盘表现正常（追加模式）。
+           */}
+          <JianzipuKeyboard
+            key={editingIndex ?? "default"}
+            defaultNote={editingIndex !== null ? score[editingIndex] : undefined}
+            onAppend={handleAppend}
+          />
+        </div>
+      </div>
+      </div>
+
+      <div className="xl:col-start-2 w-full min-w-0 flex flex-col items-stretch">
+      {/* ── 本页导航（仅桌面双栏时显示） ── */}
+      <nav aria-label="本页导航" className="no-print hidden xl:block xl:sticky xl:top-4 xl:z-10">
+        <div className="rounded-lg border border-amber-700/25 bg-[#211f1c]/90 p-3">
+          <p className="ty-section-sub mb-2">本页导航</p>
+          <ul className="flex flex-col gap-1 text-[12px]">
+            <li><a href="#score-area" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">谱面</a></li>
+            <li><a href="#keyboard-area" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">录入减字</a></li>
+            <li><a href="#sec-console" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">演奏控制台</a></li>
+            <li><a href="#sec-recognizer" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">识别减字</a></li>
+            <li><a href="#sec-board" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">琴面音位</a></li>
+            <li><a href="#sec-tuner" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">调音定弦</a></li>
+            <li><a href="#sec-practice" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">跟奏</a></li>
+            <li><a href="#sec-log" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">练琴日志</a></li>
+          </ul>
+        </div>
+      </nav>
 
       {/* ── 演奏控制台 ── */}
-      <div className="ty-panel no-print mt-4 w-full max-w-xl p-4">
+      <div id="sec-console" className="ty-panel no-print mt-4 w-full max-w-xl p-4 xl:col-start-2">
         <div className="mb-3 flex items-center gap-2">
           <span className="ty-section-title">演奏控制台</span>
           <span className="ty-section-sub">速度 · 节拍 · 定弦 · 基准音</span>
@@ -1909,7 +2075,9 @@ export default function Home() {
       </div>
 
       {/* ── 社区后端设置（可选）：填了就能浏览 / 发布社区曲谱 ── */}
-      <BackendSettings />
+      <div className="xl:col-start-2 w-full flex justify-center">
+        <BackendSettings />
+      </div>
 
       {/* ── 加载对话框 ── */}
       <LoadDialog
@@ -1933,141 +2101,9 @@ export default function Home() {
         onCommunityFilterChange={handleCommunityFilterChange}
       />
 
-      {/* ── 主卡片 —— 宣纸质感 ── */}
-      <div
-        id="keyboard-area"
-        className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel"
-      >
-        {/* 卡片顶部装饰线（朱砂色） */}
-        <div className="ty-panel-accent" />
-
-        <div className="p-5">
-          {editingIndex !== null && (
-            <div className="mb-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] tracking-wider text-amber-600/60">
-                  正在编辑第 {editingIndex + 1} 音 · 确认后更新
-                </p>
-                <button
-                  onClick={() => setEditingIndex(null)}
-                  className="text-[10px] tracking-wider text-stone-400 hover:text-stone-600 transition-colors underline underline-offset-2"
-                >
-                  取消编辑
-                </button>
-              </div>
-
-              {/* ── 联袂指法：与后一个音成组 ── */}
-              {editingIndex + 1 < score.length && (
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[9px] tracking-wider text-rose-700/70">
-                    与后一音联袂
-                  </span>
-                  {LIANMEI_OPTIONS.map((o) => {
-                    const linked = score[editingIndex].lianmei;
-                    const isThisHead =
-                      linked?.kind === o.kind &&
-                      linked.headId === score[editingIndex].id;
-                    const fits =
-                      lianmeiRelationInfo &&
-                      relationFits(o.kind, lianmeiRelationInfo.relation);
-                    return (
-                      <button
-                        key={o.kind}
-                        onClick={() => handleLinkLianmei(o.kind)}
-                        aria-pressed={isThisHead}
-                        title={o.hint}
-                        className={`px-2 py-1 min-h-[32px] text-[10px] tracking-wider rounded border transition-all ${
-                          isThisHead
-                            ? "border-rose-500/60 bg-rose-100 text-rose-800"
-                            : fits
-                              ? "border-rose-400/30 text-rose-700/70 hover:border-rose-500/60"
-                              : "border-stone-400/30 text-stone-400"
-                        }`}
-                      >
-                        {o.kind}
-                      </button>
-                    );
-                  })}
-                  {score[editingIndex].lianmei && (
-                    <button
-                      onClick={handleClearLianmei}
-                      className="px-2 py-1 min-h-[32px] text-[10px] tracking-wider rounded border border-stone-400/30 text-stone-500 hover:text-stone-700 transition-all"
-                    >
-                      解组
-                    </button>
-                  )}
-                </div>
-              )}
-              {lianmeiRelationInfo && (
-                <p
-                  data-lianmei-relation
-                  className={`mt-1 text-[9px] tracking-wider ${
-                    lianmeiRelationInfo.relation === "不合"
-                      ? "text-rose-700/80"
-                      : "text-emerald-800/70"
-                  }`}
-                >
-                  {lianmeiRelationInfo.description}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* 录入入口：简谱转减字 / 减字码入谱（同一块地方，两种进法） */}
-          {editingIndex === null && (
-            <div className="mb-4 p-3 rounded border border-amber-700/20 bg-amber-900/10">
-              <div className="mb-2 flex items-center gap-2">
-                {[
-                  { key: "jianpu", label: "简谱转减字" },
-                  { key: "code", label: "减字码入谱" },
-                ].map((t) => (
-                  <button
-                    key={t.key}
-                    onClick={() => setInputTab(t.key as "jianpu" | "code")}
-                    aria-pressed={inputTab === t.key}
-                    className={`min-h-[32px] px-2 py-0.5 text-[10px] tracking-wider rounded border transition-colors ${
-                      inputTab === t.key
-                        ? "border-amber-600/60 bg-amber-100 text-amber-900"
-                        : "border-amber-700/25 text-stone-500 hover:text-stone-700"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-              <p className="mb-1 text-[9px] leading-relaxed tracking-wider text-amber-700/70">
-                提示：在「简谱转减字」里输入简谱（如{" "}
-                <code className="rounded bg-amber-900/10 px-1">5 6 1 2 | 3 5 6 -</code>
-                ），可一键生成多套减字谱候选并智能编排指法；也支持「减字码入谱」整段粘入。
-              </p>
-              {inputTab === "jianpu" ? (
-                <JianpuTranslator
-                  onSelect={(notes) => {
-                    commitScore((prev) => [...prev, ...notes]);
-                  }}
-                />
-              ) : (
-                <JianziCodeImport
-                  onImport={(notes) => commitScore((prev) => [...prev, ...notes])}
-                />
-              )}
-            </div>
-          )}
-
-          {/*
-           * key 随 editingIndex 变化强制键盘组件完全重建，确保 useState 初始值携带新数据。
-           * defaultNote 为 undefined 时键盘表现正常（追加模式）。
-           */}
-          <JianzipuKeyboard
-            key={editingIndex ?? "default"}
-            defaultNote={editingIndex !== null ? score[editingIndex] : undefined}
-            onAppend={handleAppend}
-          />
-        </div>
-      </div>
 
       {/* ── 减字谱识别（模板匹配主路径；「AI 识别」是超口径，按钮文案不说 AI） ── */}
-      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+      <div id="sec-recognizer" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
           <button
@@ -2113,7 +2149,7 @@ export default function Home() {
       </div>
 
       {/* ── 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音） ── */}
-      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+      <div id="sec-board" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
           <button
@@ -2131,7 +2167,7 @@ export default function Home() {
       </div>
 
       {/* ── 调音 · 定弦（定弦决定减字反推的音高） ── */}
-      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+      <div id="sec-tuner" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
           <button
@@ -2149,7 +2185,7 @@ export default function Home() {
       </div>
 
       {/* ── 跟录音练琴（对标华夏古琴网的「古琴播放器」） ── */}
-      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+      <div id="sec-practice" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
           <button
@@ -2167,7 +2203,7 @@ export default function Home() {
       </div>
 
       {/* ── 练琴记录（对标「古琴助手」的录音器 + 打卡 + 统计） ── */}
-      <div className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel">
+      <div id="sec-log" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
         <div className="ty-panel-accent" />
         <div className="p-5">
           <button
@@ -2216,8 +2252,10 @@ export default function Home() {
         </div>
       </div>
 
+      </div>
+
       {/* ── 页脚 ── */}
-      <div className="no-print mt-auto pt-10 flex flex-col items-center gap-2">
+      <div className="no-print mt-auto pt-10 flex flex-col items-center gap-2 xl:col-span-2">
         <p className="text-[11px] tracking-[0.15em] text-amber-200/40">
           先选音色，再依次拼出完整减字
         </p>
@@ -2254,6 +2292,16 @@ export default function Home() {
           减字谱字形：忘机减字谱楷体（OFL 1.1）
         </a>
       </div>
+      {showBackToTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          aria-label="回到顶部"
+          className="no-print fixed bottom-6 right-6 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-amber-700/40 bg-[#211f1c]/90 text-amber-200/80 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:text-amber-100 hover:border-amber-600/60"
+        >
+          <span aria-hidden className="text-[16px] leading-none">↑</span>
+        </button>
+      )}
     </main>
   );
 }

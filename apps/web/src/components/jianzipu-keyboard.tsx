@@ -301,8 +301,8 @@ export function JianzipuKeyboard({
                         onClick={() => setJianpuOctave(jianpuOctave === oct ? "" : oct)}
                         className={`px-2.5 py-1.5 text-xs rounded border transition-all duration-150 active:scale-95 ${
                           jianpuOctave === oct
-                            ? "border-amber-700/60 bg-amber-700/90 text-amber-50 shadow-sm"
-                            : "border-stone-300/50 text-stone-600 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-800"
+                            ? "border-amber-800/70 bg-amber-700 text-amber-50 shadow-sm"
+                            : "border-stone-300/50 text-stone-700 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-900"
                         }`}
                       >
                         {oct === "··" ? "高二" : oct === "·" ? "高" : oct === "," ? "低" : oct === ",," ? "低二" : "中"}
@@ -318,8 +318,8 @@ export function JianzipuKeyboard({
                     onClick={() => setJianpuDot(!jianpuDot)}
                     className={`px-3 py-1.5 text-xs rounded border transition-all duration-150 active:scale-95 ${
                       jianpuDot
-                        ? "border-amber-700/60 bg-amber-700/90 text-amber-50 shadow-sm"
-                        : "border-stone-300/50 text-stone-600 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-800"
+                        ? "border-amber-800/70 bg-amber-700 text-amber-50 shadow-sm"
+                        : "border-stone-300/50 text-stone-700 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-900"
                     }`}
                   >
                     {jianpuDot ? "· 开启" : "— 关闭"}
@@ -504,8 +504,8 @@ function SectionGroup({
             onClick={() => onSelect(active === item ? "" : item)}
             className={`px-3 py-1.5 text-sm rounded border transition-all duration-150 active:scale-95 ${
               active === item
-                ? "border-amber-700/60 bg-amber-700/90 text-amber-50 shadow-sm"
-                : "border-stone-300/50 text-stone-600 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-800"
+                ? "border-amber-800/70 bg-amber-700 text-amber-50 shadow-sm"
+                : "border-stone-300/50 text-stone-700 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-900"
             }`}
           >
             {item}
