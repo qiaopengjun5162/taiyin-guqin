@@ -1872,14 +1872,14 @@ export default function Home() {
         <div className="rounded-lg border border-amber-700/25 bg-[#211f1c]/90 p-3">
           <p className="ty-section-sub mb-2">本页导航</p>
           <ul className="flex flex-col gap-1 text-[12px]">
-            <li><a href="#score-area" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">谱面</a></li>
-            <li><a href="#keyboard-area" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">录入减字</a></li>
-            <li><a href="#sec-console" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">演奏控制台</a></li>
-            <li><a href="#sec-recognizer" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">识别减字</a></li>
-            <li><a href="#sec-board" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">琴面音位</a></li>
-            <li><a href="#sec-tuner" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">调音定弦</a></li>
-            <li><a href="#sec-practice" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">跟奏</a></li>
-            <li><a href="#sec-log" className="text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">练琴日志</a></li>
+            <li><a href="#score-area" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">谱面</a></li>
+            <li><a href="#keyboard-area" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">录入减字</a></li>
+            <li><a href="#sec-console" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">演奏控制台</a></li>
+            <li><a href="#sec-recognizer" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">识别减字</a></li>
+            <li><a href="#sec-board" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">琴面音位</a></li>
+            <li><a href="#sec-tuner" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">调音定弦</a></li>
+            <li><a href="#sec-practice" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">跟奏</a></li>
+            <li><a href="#sec-log" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">练琴日志</a></li>
           </ul>
         </div>
       </nav>
@@ -2108,7 +2108,7 @@ export default function Home() {
         <div className="p-5">
           <button
             onClick={() => setShowRecognizer((v) => !v)}
-            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showRecognizer ? "收起识别" : "＋ 识别减字图片"}
           </button>
@@ -2154,7 +2154,7 @@ export default function Home() {
         <div className="p-5">
           <button
             onClick={() => setShowBoard((v) => !v)}
-            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showBoard ? "收起琴面" : "＋ 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音）"}
           </button>
@@ -2172,7 +2172,7 @@ export default function Home() {
         <div className="p-5">
           <button
             onClick={() => setShowTuner((v) => !v)}
-            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showTuner ? "收起调音" : "＋ 调音 / 定弦（麦克风校弦 · 换调式）"}
           </button>
@@ -2190,7 +2190,7 @@ export default function Home() {
         <div className="p-5">
           <button
             onClick={() => setShowPractice((v) => !v)}
-            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showPractice ? "收起跟录音练" : "＋ 跟录音练（导入音频 / AB 循环 / 变速）"}
           </button>
@@ -2208,7 +2208,7 @@ export default function Home() {
         <div className="p-5">
           <button
             onClick={() => setShowPracticeLog((v) => !v)}
-            className="text-[10px] tracking-wider text-amber-800/80 hover:text-amber-900 transition-colors"
+            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
           >
             {showPracticeLog ? "收起练琴记录" : "＋ 练琴记录（录音回听 · 打卡 · 周月统计）"}
           </button>
@@ -2261,19 +2261,19 @@ export default function Home() {
         </p>
         <Link
           href="/yuelun"
-          className="text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
+          className="inline-block py-1 text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
         >
           乐论 · 《荀子》读书
         </Link>
         <Link
           href="/jianzipu"
-          className="text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
+          className="inline-block py-1 text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
         >
           减字谱 · 科普
         </Link>
         <Link
           href="/zidian"
-          className="text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
+          className="inline-block py-1 text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
         >
           减字字典 · 字全表
         </Link>
@@ -2287,7 +2287,7 @@ export default function Home() {
           href="https://www.wjjzp.com/jzpWeb/index.html"
           target="_blank"
           rel="noreferrer noopener"
-          className="text-[10px] tracking-[0.15em] text-amber-200/45 hover:text-amber-100 transition-colors underline underline-offset-2"
+          className="inline-block py-1 text-[10px] tracking-[0.15em] text-amber-200/45 hover:text-amber-100 transition-colors underline underline-offset-2"
         >
           减字谱字形：忘机减字谱楷体（OFL 1.1）
         </a>
