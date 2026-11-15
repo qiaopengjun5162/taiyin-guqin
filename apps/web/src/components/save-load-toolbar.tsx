@@ -66,7 +66,7 @@ export function SaveLoadToolbar({
         onClick={onUndo}
         disabled={!canUndo}
         aria-label="撤销"
-        title="撤销 (Ctrl+Z / Cmd+Z)"
+        title={canUndo ? "撤销 (Ctrl+Z / Cmd+Z)" : "先敲一个音或改动曲谱，才有可撤销的操作"}
         className="px-2 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500
                    hover:text-stone-300 hover:border-amber-600/50
                    disabled:opacity-30 disabled:cursor-not-allowed transition-all"
@@ -78,7 +78,7 @@ export function SaveLoadToolbar({
         onClick={onRedo}
         disabled={!canRedo}
         aria-label="重做"
-        title="重做 (Ctrl+Shift+Z / Cmd+Shift+Z)"
+        title={canRedo ? "重做 (Ctrl+Shift+Z / Cmd+Shift+Z)" : "撤销一次之后，才能重做"}
         className="px-2 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500
                    hover:text-stone-300 hover:border-amber-600/50
                    disabled:opacity-30 disabled:cursor-not-allowed transition-all"
@@ -107,6 +107,7 @@ export function SaveLoadToolbar({
         onClick={onSave}
         disabled={!hasNotes || saveStatus === "saving"}
         aria-label={storageMode === "server" ? "发布到社区" : "保存"}
+        title={!hasNotes ? "先敲一个音，或点「先听一首」载入示例曲，才能保存" : storageMode === "server" ? "保存即发布到社区共享池（公开）" : "保存到本机浏览器，换设备或清缓存会丢失"}
         className="px-3 py-1.5 min-h-[44px] text-[10px] tracking-wider whitespace-nowrap rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
       >
         {saveStatus === "saving"

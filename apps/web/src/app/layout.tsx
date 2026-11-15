@@ -64,7 +64,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   // 与 manifest 的 theme_color、图标底色一致：状态栏和图标不会两个颜色
   themeColor: "#1c1b1a",
-  colorScheme: "light",
+  // 全站是深墨底。声明 light 会让浏览器把表单控件、滚动条、默认焦点框
+  // 按浅色主题绘制，在深底上发白/发灰，也与 themeColor 矛盾。
+  colorScheme: "dark",
 };
 
 /**

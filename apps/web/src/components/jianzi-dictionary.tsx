@@ -157,13 +157,14 @@ function SelectFilter({
   return (
     <label className="flex items-center gap-1.5 text-[10px] tracking-wider text-amber-700/60">
       {label}
+      {/* 收起态显示在浅色宣纸卡片上用深字；展开的原生下拉是深底，选项另设亮字。 */}
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-[34px] rounded border border-amber-700/20 bg-transparent px-2 text-[10px] text-amber-100/80 outline-none focus:border-amber-600/50"
+        className="min-h-[34px] rounded border border-amber-700/20 bg-transparent px-2 text-[10px] text-[var(--ink)] outline-none focus:border-amber-600/50"
       >
         {options.map((o) => (
-          <option key={o.value || "all"} value={o.value} className="bg-stone-900">
+          <option key={o.value || "all"} value={o.value} className="bg-stone-900 text-amber-100">
             {o.label}
           </option>
         ))}

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### 前端可读性 P0 修复：让「看得清、点得动」达标（2026-11-15）
+
+11-15 审查实测 4 页 × 桌面/手机：最低对比度 1.07:1（字与背景几乎同色）、384 处文字 <12px、中文最小 6px、空谱禁用按钮淡到 1.17:1；而 84 个测试文件 / 1,347 用例里**零条可读性断言**。本轮修 P0，不动业务逻辑、不新增 CI step。
+
+- **集中在 `globals.css` 加「P0 可读性兜底层」**：早期组件把「宣纸浅底专用」的深琥珀 / 深灰小字连 25~80% 透明度直接写在墨底上，且这些 token 散在 20+ 组件里，逐个替换既易错又会撑破减字方块。改用 CSS 自定义属性按 DOM 继承：`--ty-aux` / `--ty-aux-strong` 在 `:root` 是墨底浅米 / 浅金，浅色卡片（`bg-[var(--paper)]` / `bg-amber-50` 等）内自动翻成深棕；低透明度文字类统一 `color: var(--ty-aux)`。选择器全用属性 token 精确匹配，不误伤 hover 变体。**P2 抽设计 token 时应删本节**，注释里已写明。
+- **半透明宣纸卡片是独立坑**：`bg-[var(--paper)]/40|50|60|70` 叠在墨底变成中间调，深色字、浅色字都不达标（「写法变体对照」1.71:1）。统一改为不透明 `var(--paper)`，深色字才站得住；代价是这几张卡片的 hover 换底效果被盖掉，属可读性优先的取舍。
+- **选中态筛选按钮**（跨 6 组件的 `bg-amber-800/30 + text-amber-100`）改不透明深琥珀配亮字；字典页两个 `<select>` 收起态由亮字改深字、原生下拉项仍用亮字；子页朱砂大标题、品牌印章提亮。
+- **字号**：中文正文最小 12px、字典 59 张卡片网格 11px。**乐谱区 `#score-area` 与减字方块 `[data-jianzi-block]` 内的 6/8/9/8.4px 原样保留**——那是徽位、角标与按方块等比缩放的字形构件，放大就顶破 1.05em 方块宽度闸门。为让审查脚本精确排除，给 `SvgJianziBlock` 根容器加了 `data-jianzi-block` 锚点。
+- **点得动**：禁用态 `opacity` 0.3 → 0.55（仍明显变灰但读得出字）、统一 `cursor: not-allowed`；播放 / 标准音高 / 保存 / 撤销 / 重做 / 确认共 6 个禁用按钮补「为什么不可用」的 `title`；`layout.tsx` 的 `colorScheme` 由 `light` 改 `dark`（与深墨主题、`themeColor` 一致）。
+
+**新增可复跑闸门 `scripts/audit-readability.mjs`**（用根已有的 playwright，零新增依赖、不接 CI）：4 页 × 桌面/手机量对比度、字号、横向溢出，并**单独量表单控件**——原生 select 的显示值不在文本节点里，普通 DOM 审查抓不到（字典页那两个下拉实测 1.02:1 就是这么漏出来的）。硬红线：非禁用文字或控件 <3:1、<10px 正文、横向溢出 → exit 1；禁用态按 WCAG 豁免只打印。用法 `cd apps/web && pnpm dev` 后 `node scripts/audit-readability.mjs`。刻意不接 CI：需要 dev server 与无头浏览器，与 `measure-codebase.mjs` 同为人工复核工具。
+
+**前后同口径实测**（桌面数据）：
+
+| 页面 | <4.5:1 | 最低对比度 | <12px |
+|---|---|---|---|
+| 首页 | 60 → 9（其中 8 个是禁用态） | 1.17 → 2.42 | 83 → 4 |
+| 减字谱 | 20 → 0 | 1.53 → 4.66 | 27 → 0 |
+| 乐论 | 7 → 0 | 1.53 → 6.07 | 6 → 0 |
+| 字典 | 274 → 0 | 1.07 → 6.07 | 342 → 284（字典网格刻意用 11px） |
+
+审查脚本 8/8 PASS。已知余量：首页「散」按钮 4.23:1（深色底亮字，差一点到 AA）、8 个禁用态按钮 2.42~3.88:1（WCAG 豁免），以及触控尺寸与页面长度（首页 3422→3656、字典 5979→6560，手机 7782→8388）——后者属 P1 的分区折叠 / 响应式重排，本轮未做。
+
+**验证**：相关 vitest 12 文件 / 243 用例全过、`tsc --noEmit` 0、全量 `eslint --max-warnings 0` 0、`node scripts/measure-jianzi-block.mjs` 0（减字方块未被撑破）、`cargo fmt --check` 0、`verify-publish.mjs --copy-only` PASS 4 / WARN 1 / FAIL 0、浏览器点「先听一首」后 8 个音正常渲染且 0 报错。未碰 `crates/**` 与 WASM 三份同源产物。
+
 ### CI 闸门覆盖审计：确认没有第二个 D-7（2026-11-14）
 
 D-7 的教训是「没接闸门的哨兵会漂移」。本轮把全库校验脚本与 CI / just / package 的引用对了一遍，结论：**核心闸门都在 `build.yml` 的 web job 里** —— `verify-wasm.mjs`（真产物契约）、`verify-publish.mjs --copy-only`、`verify-tuning-contract.mjs --self-test` + 正式跑，外加 lint / tsc / `vitest run --coverage` / next build；rust job 含 fmt / clippy / gen_types diff / audit / test，另有 MSRV 真 1.88 与 Rust 覆盖率 `--fail-under-lines 75`。

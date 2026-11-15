@@ -180,8 +180,12 @@ export function SvgJianziBlock({
   // fontSize may contain "px" like "36px" or "24px"
   const numPx = parseFloat(fontSize);
 
+  // data-jianzi-block 是「这是一个减字方块」的 DOM 锚点：块内文字构件的字号
+  // 按方块尺寸等比缩放（如 30px 方块的左手指法只有 8.4px），不是正文小字，
+  // 可读性审查脚本据此排除，见 scripts/audit-readability.mjs。
   return (
     <div
+      data-jianzi-block=""
       className="relative inline-flex items-center justify-center select-none"
       style={{ width: numPx, height: numPx * 1.4 }}
     >

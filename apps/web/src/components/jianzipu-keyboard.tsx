@@ -433,6 +433,7 @@ export function JianzipuKeyboard({
             <button
               onClick={handleConfirm}
               disabled={!isComplete(state)}
+              title={isComplete(state) ? "把这个减字放进乐谱" : "还缺部件：把音色、左手指法、右手指法、弦序选齐才能确认"}
               className="flex-1 px-4 py-2.5 text-sm rounded bg-stone-800 text-amber-50 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-stone-700 active:scale-[0.98] transition-all duration-200"
             >
               {defaultNote ? "更新" : "确认"}

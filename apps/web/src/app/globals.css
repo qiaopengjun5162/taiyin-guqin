@@ -231,18 +231,20 @@ body::after {
   }
 }
 
-/* 面板标题（小标题用书法/衬线 + 青碧点缀） */
+/* 面板标题（小标题用书法/衬线 + 青碧点缀）
+ * 原先用浅底专用的深灰写在深墨底的「演奏控制台」面板上，实测 1.52:1
+ * 几乎看不见；改走上下文感知的语义色，见文末「P0 可读性兜底层」。 */
 .ty-section-title {
   font-family: var(--font-serif);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.18em;
-  color: #5b534a;
+  color: var(--ty-aux-strong);
 }
 .ty-section-sub {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.12em;
-  color: rgba(91, 83, 74, 0.55);
+  color: var(--ty-aux);
 }
 
 /* 演奏控制台：桌面双列栅格，移动端单列 */
@@ -283,12 +285,13 @@ body::after {
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  border: 2.5px solid rgba(194, 59, 34, 0.75);
+  border: 2.5px solid rgba(233, 122, 96, 0.8);
   box-shadow: 0 0 16px -2px rgba(194, 59, 34, 0.45);
   font-size: 19px;
   font-weight: 900;
   letter-spacing: 0.12em;
-  color: rgba(194, 59, 34, 0.9);
+  /* 原用深朱砂 90% 透明度，在墨底只有 2.63:1；换亮朱砂，仍是印章红 */
+  color: #e97a60;
   background: rgba(245, 239, 230, 0.04);
 }
 .ty-title {
@@ -300,9 +303,9 @@ body::after {
 }
 .ty-subtitle {
   margin-top: 2px;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.16em;
-  color: rgba(87, 227, 212, 0.62);
+  color: rgba(87, 227, 212, 0.8);
 }
 .ty-ai-badge {
   display: inline-flex;
@@ -351,6 +354,121 @@ input[type="range"]::-webkit-slider-thumb {
   .ty-ai-dot {
     animation: none !important;
   }
+}
+
+/* ============================================================
+   P0 可读性兜底层（2026-11-15）：先让「看得清」达标
+   ------------------------------------------------------------
+   实测根因（4 页 × 桌面/手机，脚本见项目日常审查记录）：
+   1) 早期组件把「宣纸浅底专用」的深琥珀、深灰小字连着 25~80% 透明度
+      直接用在深墨底上，最低 1.07:1，字与背景几乎同色；
+   2) 401 处写死字号里 384 处小于 12px，中文最小 6px；
+   3) 空谱时 disabled:opacity-30 把按钮淡到 1.17:1。
+   这些颜色类散在 20 多个组件里，逐个替换既易错又会撑破减字方块的
+   1.05em 宽度闸门，所以先在这一层按「底色上下文」统一纠正。
+   后续抽设计 token 时，应把组件里的低透明度文字类换成语义类再删本节。
+
+   选择器一律用属性 token 精确匹配，不会误伤 hover 变体；自定义属性
+   按 DOM 继承，浅色卡片内自动把同一组语义色翻成深色。
+   ============================================================ */
+
+:root {
+  --ty-aux: #cfc2ab;         /* 墨底次要文字，约 9:1 */
+  --ty-aux-strong: #e6c487;  /* 墨底强调小字，约 10:1 */
+}
+
+/* 宣纸 / 浅色卡片：同一组语义色翻成深色，浅底仍清晰 */
+:is(
+  [class~="bg-[var(--paper)]"],
+  [class*="bg-[var(--paper)]/"],
+  [class~="bg-amber-50"],
+  [class*="bg-amber-50/"],
+  [class~="bg-[#f8f3eb]"],
+  [class~="bg-stone-300"]
+) {
+  --ty-aux: #5c4a35;
+  --ty-aux-strong: #7a4a12;
+}
+
+/* 低透明度的深色小字：颜色交给上下文决定 */
+:is(
+  [class~="text-amber-600/40"], [class~="text-amber-600/50"],
+  [class~="text-amber-600/60"], [class~="text-amber-600/70"],
+  [class~="text-amber-700/25"], [class~="text-amber-700/30"],
+  [class~="text-amber-700/40"], [class~="text-amber-700/45"],
+  [class~="text-amber-700/50"], [class~="text-amber-700/60"],
+  [class~="text-amber-700/70"], [class~="text-amber-700/80"],
+  [class~="text-amber-800/60"], [class~="text-amber-800/70"],
+  [class~="text-amber-800/80"],
+  [class~="text-stone-400"], [class~="text-stone-400/30"],
+  [class~="text-stone-400/40"], [class~="text-stone-400/50"],
+  [class~="text-stone-400/60"], [class~="text-stone-500"],
+  [class~="text-stone-500/70"], [class~="text-stone-500/80"]
+) {
+  color: var(--ty-aux);
+}
+
+/* 子页大标题的朱砂 85% 透明度在墨底只有 2.65:1，换成亮朱砂 */
+[class~="text-[var(--vermillion)]/85"] {
+  color: #e97a60;
+}
+
+/* 半透明宣纸卡片叠在墨底上会变成「中间调」：深色字、浅色字都不达标
+   （实测 /40 的标题只有 1.71:1）。统一改成不透明宣纸，深色字才站得住。
+   代价是这几张卡片的 hover 换底效果会被盖掉，属于可读性优先的取舍。 */
+:is(
+  [class~="bg-[var(--paper)]/40"], [class~="bg-[var(--paper)]/50"],
+  [class~="bg-[var(--paper)]/60"], [class~="bg-[var(--paper)]/70"]
+) {
+  background-color: var(--paper);
+}
+
+/* amber-200 本来就是中间亮度，再叠 40~50% 透明度在墨底只剩 3.2:1 */
+:is(
+  [class~="text-amber-200/40"], [class~="text-amber-200/45"],
+  [class~="text-amber-200/50"], [class~="text-amber-200/80"]
+) {
+  color: #e8d9b8;
+}
+
+/* 选中态筛选按钮（6 个组件共用「30% 深琥珀 + 亮字」这一组 token）。
+   卡片改成不透明宣纸后，亮字在浅底掉到 1.66:1；换成不透明深琥珀底，
+   亮字恢复约 10:1，选中状态也更明确。 */
+[class~="bg-amber-800/30"][class~="text-amber-100"] {
+  background-color: #6b3410;
+  color: #f5efe6;
+}
+
+/* 中文最小 12px。乐谱区例外见下一条。 */
+:is(
+  [class~="text-[6px]"], [class~="text-[8px]"], [class~="text-[9px]"],
+  [class~="text-[10px]"], [class~="text-[11px]"]
+) {
+  font-size: 12px;
+}
+
+/* 乐谱流里的 6/8/9px 是减字方块内的徽位与绝对定位角标，
+   放大就会顶破 1.05em 方块宽度闸门，必须原样保留。 */
+#score-area [class~="text-[6px]"] { font-size: 6px; }
+#score-area [class~="text-[8px]"] { font-size: 8px; }
+#score-area [class~="text-[9px]"] { font-size: 9px; }
+#score-area [class~="text-[10px]"] { font-size: 10px; }
+#score-area [class~="text-[11px]"] { font-size: 11px; }
+
+/* 字典是 59 张卡片的密集数据网格：9px 提到 11px 而不是 12px，
+   避免卡片内说明文字多换一行、把手机页推到 9000px 以上。 */
+[data-testid="dict-grid"] :is(
+  [class~="text-[6px]"], [class~="text-[8px]"], [class~="text-[9px]"],
+  [class~="text-[10px]"], [class~="text-[11px]"]
+) {
+  font-size: 11px;
+}
+
+/* 禁用态不再淡到 1.17:1：仍明显变灰、但读得出字，并统一「禁止」指针。
+   为什么不可用由各按钮的 title 说明。 */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 /* ── 打印/导出 PDF 样式 ── */

@@ -1758,7 +1758,7 @@ export default function Home() {
           onClick={isPlaying ? handleStop : handlePlay}
           disabled={score.length === 0}
           aria-label={isPlaying ? "停止播放" : "播放"}
-          title="空格键播放 / 停止"
+          title={score.length === 0 ? "先敲一个音，或点上方「先听一首」载入示例曲，才能播放" : "空格键播放 / 停止"}
           className="px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50 disabled:opacity-30 transition-all"
         >
           {isPlaying ? "停止" : "播放"}
@@ -1900,7 +1900,7 @@ export default function Home() {
           onClick={() => setConcertPitch(CONCERT_PITCH_DEFAULT)}
           disabled={concertPitch === CONCERT_PITCH_DEFAULT}
           className="shrink-0 rounded border border-amber-700/25 px-2 py-0.5 text-[10px] tracking-wider text-amber-700/60 transition-colors hover:text-amber-900 disabled:opacity-30 disabled:hover:text-amber-700/60"
-          title="回到标准音高 A4=440"
+          title={concertPitch === CONCERT_PITCH_DEFAULT ? "当前已是标准音高 A4=440" : "回到标准音高 A4=440"}
         >
           标准
         </button>
