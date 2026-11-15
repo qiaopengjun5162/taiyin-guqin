@@ -12,15 +12,9 @@ import {
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
-import { JianziRecognizer } from "@/components/jianzi-recognizer";
-import { JianziSheetRecognizer } from "@/components/jianzi-sheet-recognizer";
-import { PracticePlayer } from "@/components/practice-player";
 import { PhrasePractice } from "@/components/phrase-practice";
 import { FollowPlayPanel } from "@/components/follow-play-panel";
-import { RecorderPanel } from "@/components/recorder-panel";
-import { PracticeLogPanel } from "@/components/practice-log-panel";
-import { TunerPanel } from "@/components/tuner-panel";
-import { QinBoard } from "@/components/qin-board";
+import { PracticePanels } from "@/components/practice-panels";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog, type LoadDialogTab } from "@/components/load-dialog";
 import { BackendSettings } from "@/components/backend-settings";
@@ -215,13 +209,6 @@ export default function Home() {
   const tuningLabel = `${getTuningById(tuning).name} · ${getTuningById(tuning).alias}`;
   const [linkMetronome, setLinkMetronome] = useState(true);
   const [exportWithCountIn, setExportWithCountIn] = useState(true);
-  const [showRecognizer, setShowRecognizer] = useState(false);
-  const [showPractice, setShowPractice] = useState(false);
-  const [showPracticeLog, setShowPracticeLog] = useState(false);
-  const [practiceLogTab, setPracticeLogTab] = useState<"record" | "log">("record");
-  const [showTuner, setShowTuner] = useState(false);
-  const [showBoard, setShowBoard] = useState(false);
-  const [recognizerTab, setRecognizerTab] = useState<"single" | "sheet">("single");
   // 回到顶部：页面滚过约一屏后出现浮动按钮
   const [showBackToTop, setShowBackToTop] = useState(false);
   useEffect(() => {
@@ -2116,165 +2103,13 @@ export default function Home() {
       />
 
 
-      {/* ── 减字谱识别（模板匹配主路径；「AI 识别」是超口径，按钮文案不说 AI） ── */}
-      <div id="sec-recognizer" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
-        <div className="ty-panel-accent" />
-        <div className="p-5">
-          <h2 className="sr-only">谱字识别</h2>
-          <button
-            onClick={() => setShowRecognizer((v) => !v)}
-            aria-expanded={showRecognizer}
-            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
-          >
-            {showRecognizer ? "收起识别" : "＋ 识别减字图片"}
-          </button>
-          {showRecognizer && (
-            <div className="mt-3">
-              <div className="mb-3 flex items-center gap-2">
-                <button
-                  onClick={() => setRecognizerTab("single")}
-                  className={`px-2 py-1 text-[10px] tracking-wider rounded border transition-all ${
-                    recognizerTab === "single"
-                      ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
-                      : "border-amber-700/30 text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  单字
-                </button>
-                <button
-                  onClick={() => setRecognizerTab("sheet")}
-                  className={`px-2 py-1 text-[10px] tracking-wider rounded border transition-all ${
-                    recognizerTab === "sheet"
-                      ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
-                      : "border-amber-700/30 text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  整页
-                </button>
-              </div>
-              {recognizerTab === "single" ? (
-                <JianziRecognizer />
-              ) : (
-                <JianziSheetRecognizer
-                  onImport={(notes) => commitScore((prev) => [...prev, ...notes])}
-                />
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音） ── */}
-      <div id="sec-board" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
-        <div className="ty-panel-accent" />
-        <div className="p-5">
-          <h2 className="sr-only">琴面音位</h2>
-          <button
-            onClick={() => setShowBoard((v) => !v)}
-            aria-expanded={showBoard}
-            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
-          >
-            {showBoard ? "收起琴面" : "＋ 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音）"}
-          </button>
-          {showBoard && (
-            <div className="mt-3">
-              <QinBoard />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── 调音 · 定弦（定弦决定减字反推的音高） ── */}
-      <div id="sec-tuner" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
-        <div className="ty-panel-accent" />
-        <div className="p-5">
-          <h2 className="sr-only">调音定弦</h2>
-          <button
-            onClick={() => setShowTuner((v) => !v)}
-            aria-expanded={showTuner}
-            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
-          >
-            {showTuner ? "收起调音" : "＋ 调音 / 定弦（麦克风校弦 · 换调式）"}
-          </button>
-          {showTuner && (
-            <div className="mt-3">
-              <TunerPanel />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── 跟录音练琴（对标华夏古琴网的「古琴播放器」） ── */}
-      <div id="sec-practice" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
-        <div className="ty-panel-accent" />
-        <div className="p-5">
-          <h2 className="sr-only">跟奏</h2>
-          <button
-            onClick={() => setShowPractice((v) => !v)}
-            aria-expanded={showPractice}
-            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
-          >
-            {showPractice ? "收起跟录音练" : "＋ 跟录音练（导入音频 / AB 循环 / 变速）"}
-          </button>
-          {showPractice && (
-            <div className="mt-3">
-              <PracticePlayer />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── 练琴记录（对标「古琴助手」的录音器 + 打卡 + 统计） ── */}
-      <div id="sec-log" className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30 ty-panel xl:col-start-2">
-        <div className="ty-panel-accent" />
-        <div className="p-5">
-          <h2 className="sr-only">练琴日志</h2>
-          <button
-            onClick={() => setShowPracticeLog((v) => !v)}
-            aria-expanded={showPracticeLog}
-            className="inline-flex min-h-[32px] items-center text-[11px] tracking-wider text-amber-800 hover:text-amber-900 transition-colors"
-          >
-            {showPracticeLog ? "收起练琴记录" : "＋ 练琴记录（录音回听 · 打卡 · 周月统计）"}
-          </button>
-          {showPracticeLog && (
-            <div className="mt-3">
-              <div className="mb-3 flex items-center gap-2">
-                <button
-                  onClick={() => setPracticeLogTab("record")}
-                  aria-pressed={practiceLogTab === "record"}
-                  className={`min-h-[36px] px-2 py-1 text-[10px] tracking-wider rounded border transition-colors ${
-                    practiceLogTab === "record"
-                      ? "border-amber-600/50 bg-amber-800/15 text-stone-900"
-                      : "border-amber-700/25 text-stone-600 hover:border-amber-600/50"
-                  }`}
-                >
-                  录音
-                </button>
-                <button
-                  onClick={() => setPracticeLogTab("log")}
-                  aria-pressed={practiceLogTab === "log"}
-                  className={`min-h-[36px] px-2 py-1 text-[10px] tracking-wider rounded border transition-colors ${
-                    practiceLogTab === "log"
-                      ? "border-amber-600/50 bg-amber-800/15 text-stone-900"
-                      : "border-amber-700/25 text-stone-600 hover:border-amber-600/50"
-                  }`}
-                >
-                  打卡与统计
-                </button>
-              </div>
-              {practiceLogTab === "record" ? (
-                <RecorderPanel scoreTitle={scoreTitle} />
-              ) : (
-                <PracticeLogPanel
-                  scoreTitle={scoreTitle}
-                  sticking={sticking}
-                  onPracticePhrase={handleStickingPractice}
-                />
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      {/* 右栏工具组：五个折叠面板的开合 / tab 状态都收在组件内部 */}
+      <PracticePanels
+        onImportNotes={(notes) => commitScore((prev) => [...prev, ...notes])}
+        scoreTitle={scoreTitle}
+        sticking={sticking}
+        onPracticePhrase={handleStickingPractice}
+      />
 
       </div>
 
