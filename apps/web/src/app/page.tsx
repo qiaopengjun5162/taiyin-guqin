@@ -15,6 +15,7 @@ import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
 import { PhrasePractice } from "@/components/phrase-practice";
 import { FollowPlayPanel } from "@/components/follow-play-panel";
 import { PracticePanels } from "@/components/practice-panels";
+import { SkipLink, SiteHeader, SectionNav, SiteFooter, BackToTop } from "@/components/page-chrome";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog, type LoadDialogTab } from "@/components/load-dialog";
 import { BackendSettings } from "@/components/backend-settings";
@@ -95,7 +96,6 @@ import {
   type TuningId,
 } from "@/lib/tuning";
 import * as api from "@/lib/api";
-import Link from "next/link";
 
 /** useSyncExternalStore 的空订阅：存储模式在页面生命周期内不会变，无需通知。 */
 const subscribeNoop = () => () => {};
@@ -209,16 +209,6 @@ export default function Home() {
   const tuningLabel = `${getTuningById(tuning).name} · ${getTuningById(tuning).alias}`;
   const [linkMetronome, setLinkMetronome] = useState(true);
   const [exportWithCountIn, setExportWithCountIn] = useState(true);
-  // 回到顶部：页面滚过约一屏后出现浮动按钮
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  useEffect(() => {
-    function onScroll() {
-      setShowBackToTop(window.scrollY > window.innerHeight * 0.8);
-    }
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
   // 录入区两种进法：点选简谱转减字，或把减字码整段粘回来。
   const [inputTab, setInputTab] = useState<"jianpu" | "code">("jianpu");
   // 分句：句界由 Rust 切（与编排同一套判据），前端只提供时值。
@@ -1450,35 +1440,10 @@ export default function Home() {
 
   return (
     <>
-      {/* 键盘用户 Tab 第一下就能跳过顶栏与示例，直接进主内容。
-          放在 main 之外：跳进去之后 Tab 才会继续往内容里走，而不是又回到这条链接。
-          用 translate 移出视口而不是 sr-only：sr-only 的 not-sr-only 会把 position 重置成
-          static，与 fixed 打架，焦点态会跑位。 */}
-      <a
-        href="#main-content"
-        className="no-print fixed left-4 top-4 z-[60] -translate-y-24 rounded border border-amber-700/40 bg-[var(--paper)] px-3 py-2 text-[12px] text-[var(--ink)] shadow-lg transition-transform focus:translate-y-0"
-      >
-        跳到主内容
-      </a>
+      <SkipLink />
       <main id="main-content" tabIndex={-1} className="flex flex-col items-center min-h-dvh py-10 px-4 xl:grid xl:grid-cols-[minmax(0,576px)_360px] xl:gap-6 xl:items-start xl:justify-center xl:max-w-[1280px] xl:mx-auto xl:px-6 xl:mt-6">
 
-      {/* ── 品牌：国风科技主视觉顶栏 ── */}
-      <header className="ty-hero no-print mt-2 w-full max-w-xl flex items-center justify-between gap-4 px-5 py-3 xl:col-span-2 xl:max-w-none">
-        <div className="flex min-w-0 items-center gap-3.5">
-          <div className="ty-seal font-calligraphy">太音</div>
-          <div className="min-w-0 leading-tight">
-            {/* 对外口径 = 「古琴打谱」（对仗「AI 释谱」：释谱是看懂，打谱是弹出）。
-                改这行先同步 page.test.tsx 的断言与 docs/pitch.md 档 1。 */}
-            <h1 className="ty-title">太音 · 古琴打谱</h1>
-            <p className="ty-subtitle">把看不懂的老谱，变成能弹的曲子</p>
-          </div>
-        </div>
-        {/* 免安装是真卖点；「AI 驱动」是超口径（识别是模板匹配，AI 只做候选择优兜底），已撤下 */}
-        <div className="ty-ai-badge shrink-0 whitespace-nowrap" title="打开网页就能用，不用装任何软件">
-          <span className="ty-ai-dot" />
-          免安装
-        </div>
-      </header>
+      <SiteHeader />
 
       <div className="xl:col-start-1 w-full min-w-0 flex flex-col items-center">
 
@@ -1868,22 +1833,7 @@ export default function Home() {
       </div>
 
       <div className="xl:col-start-2 w-full min-w-0 flex flex-col items-stretch">
-      {/* ── 本页导航（仅桌面双栏时显示） ── */}
-      <nav aria-label="本页导航" className="no-print hidden xl:block xl:sticky xl:top-4 xl:z-10">
-        <div className="rounded-lg border border-amber-700/25 bg-[#211f1c]/90 p-3">
-          <p className="ty-section-sub mb-2">本页导航</p>
-          <ul className="flex flex-col gap-1 text-[12px]">
-            <li><a href="#score-area" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">谱面</a></li>
-            <li><a href="#keyboard-area" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">录入减字</a></li>
-            <li><a href="#sec-console" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">演奏控制台</a></li>
-            <li><a href="#sec-recognizer" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">识别减字</a></li>
-            <li><a href="#sec-board" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">琴面音位</a></li>
-            <li><a href="#sec-tuner" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">调音定弦</a></li>
-            <li><a href="#sec-practice" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">跟奏</a></li>
-            <li><a href="#sec-log" className="inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline">练琴日志</a></li>
-          </ul>
-        </div>
-      </nav>
+      <SectionNav />
 
       {/* ── 演奏控制台 ── */}
       <div id="sec-console" className="ty-panel no-print mt-4 w-full max-w-xl p-4 xl:col-start-2">
@@ -2113,54 +2063,8 @@ export default function Home() {
 
       </div>
 
-      {/* ── 页脚 ── */}
-      <div className="no-print mt-auto pt-10 flex flex-col items-center gap-2 xl:col-span-2">
-        <p className="text-[11px] tracking-[0.15em] text-amber-200/40">
-          先选音色，再依次拼出完整减字
-        </p>
-        <Link
-          href="/yuelun"
-          className="inline-block py-1 text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
-        >
-          乐论 · 《荀子》读书
-        </Link>
-        <Link
-          href="/jianzipu"
-          className="inline-block py-1 text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
-        >
-          减字谱 · 科普
-        </Link>
-        <Link
-          href="/zidian"
-          className="inline-block py-1 text-[11px] tracking-[0.15em] text-amber-200/50 hover:text-amber-100 transition-colors underline underline-offset-2"
-        >
-          减字字典 · 字全表
-        </Link>
-        {/*
-         * 字体署名。减字谱字形是这个项目的核心，但那套字形不是我们画的：
-         * 是「忘机减字谱楷体」（OFL 1.1）——原样分发，只换引用方式。
-         * 署名挂在每个页面都看得见的页脚，而不是塞进源码注释里，
-         * 不然「字是谁做的」这件事就只存在于 git 历史中。
-         */}
-        <a
-          href="https://www.wjjzp.com/jzpWeb/index.html"
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-block py-1 text-[10px] tracking-[0.15em] text-amber-200/45 hover:text-amber-100 transition-colors underline underline-offset-2"
-        >
-          减字谱字形：忘机减字谱楷体（OFL 1.1）
-        </a>
-      </div>
-      {showBackToTop && (
-        <button
-          type="button"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          aria-label="回到顶部"
-          className="no-print fixed bottom-6 right-6 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-amber-700/40 bg-[#211f1c]/90 text-amber-200/80 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:text-amber-100 hover:border-amber-600/60"
-        >
-          <span aria-hidden className="text-[16px] leading-none">↑</span>
-        </button>
-      )}
+      <SiteFooter />
+      <BackToTop />
     </main>
     </>
   );
