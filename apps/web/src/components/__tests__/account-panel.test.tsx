@@ -113,6 +113,28 @@ describe("AccountPanel 社区账号", () => {
   });
 
   /**
+   * 空表单 / 邮箱写错不再弹浏览器原生气泡（位置随浏览器变、手机上常被软键盘挡住，
+   * 而且只说「请填写此字段」，不说是哪一栏没填）。表单加了 noValidate 接管校验。
+   */
+  it("空邮箱：站内提示且不发请求", async () => {
+    render(<AccountPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("请先填邮箱"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("邮箱缺 @ 或域名：站内提示且不发请求", async () => {
+    render(<AccountPanel />);
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "qin.you.com" } });
+    fireEvent.change(screen.getByLabelText("口令"), { target: { value: "longenough" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("邮箱格式不对"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  /**
    * 后端刻意对「邮箱不存在」与「口令不对」返回同一句话（防账号枚举），
    * 界面必须原样展示，不能自作聪明改成更「友好」的措辞。
    */

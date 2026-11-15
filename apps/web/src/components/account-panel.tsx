@@ -82,11 +82,32 @@ export function AccountPanel() {
     e.preventDefault();
     setError(null);
     setInfo(null);
+    /*
+     * 空表单给站内提示，而不是靠浏览器原生气泡：原生校验气泡的位置随浏览器变、
+     * 手机上还常被软键盘挡住，而且它只说「请填写此字段」，不告诉用户该填什么，
+     * 也看不出是邮箱没填还是口令没填。表单加了 noValidate 接管校验，required
+     * 只保留给读屏软件播报。
+     */
+    const emailTrimmed = email.trim();
+    if (mode !== "reset") {
+      if (!emailTrimmed) {
+        setError("请先填邮箱");
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+        setError("邮箱格式不对——检查一下有没有漏掉 @ 或域名");
+        return;
+      }
+    }
+    if (mode !== "forgot" && !password) {
+      setError("请输入口令");
+      return;
+    }
     if (mode === "forgot") {
       // 不校验「邮箱是否注册过」——后端都不说，界面更不能说（防枚举）
       setBusy(true);
       try {
-        await api.requestPasswordReset(email);
+        await api.requestPasswordReset(emailTrimmed);
         // 统一话术：注册过 / 没注册过都一样，用户也不该从提示里看出差别
         setInfo("如果这个邮箱注册过，重置链接已经寄出（30 分钟内有效）。没收到就检查一下邮箱写没写对。");
       } catch (err) {
@@ -126,9 +147,9 @@ export function AccountPanel() {
     setBusy(true);
     try {
       if (mode === "register") {
-        await api.registerAccount(email, password, displayName);
+        await api.registerAccount(emailTrimmed, password, displayName.trim());
       } else {
-        await api.loginAccount(email, password);
+        await api.loginAccount(emailTrimmed, password);
       }
       setPassword("");
     } catch (err) {
@@ -176,7 +197,7 @@ export function AccountPanel() {
           </button>
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-2">
+        <form onSubmit={submit} noValidate className="space-y-2">
           {mode === "reset" ? (
             <>
               <p className="text-[10px] leading-relaxed text-stone-500">
