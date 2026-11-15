@@ -30,7 +30,7 @@ const GLYPHS: { label: string; pos: string; meaning: string }[] = [
 
 export default function JianzipuPage() {
   return (
-    <main className="flex flex-col items-center min-h-dvh py-10 px-4">
+    <main className="flex flex-col items-center min-h-dvh py-10 px-4 xl:px-6 xl:mt-6">
       {/* ── 品牌：朱砂印章 ── */}
       <div className="flex flex-col items-center gap-4">
         <div className="relative flex items-center justify-center w-20 h-20 rounded-full border-[3px] border-[var(--vermillion)]/50 shadow-xl shadow-[var(--vermillion)]/5">
@@ -53,8 +53,10 @@ export default function JianzipuPage() {
         </div>
       </div>
 
+      {/* 桌面按内容分两栏流；多栏会保持 DOM 顺序（先上后下、先左后右），手机仍单列 */}
+      <div className="mt-4 w-full max-w-md xl:columns-2 xl:gap-6 xl:max-w-[1040px]">
       {/* ── 什么是减字谱 ── */}
-      <section className="mt-8 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="mt-4 w-full max-w-md xl:max-w-none break-inside-avoid rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -69,7 +71,7 @@ export default function JianzipuPage() {
       </section>
 
       {/* ── 一个减字怎么读 ── */}
-      <section className="mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="mt-4 w-full max-w-md xl:max-w-none break-inside-avoid rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -98,7 +100,7 @@ export default function JianzipuPage() {
       </section>
 
       {/* ── 键盘速录：打字即打谱 ── */}
-      <section className="mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="mt-4 w-full max-w-md xl:max-w-none break-inside-avoid rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -139,7 +141,7 @@ export default function JianzipuPage() {
       </section>
 
       {/* ── 减字谱 × 太音 ── */}
-      <section className="mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="mt-4 w-full max-w-md xl:max-w-none break-inside-avoid rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -158,6 +160,7 @@ export default function JianzipuPage() {
           </div>
         </div>
       </section>
+      </div>
 
       {/* ── 页脚：返回编辑器 ── */}
       <div className="no-print mt-8 flex flex-col items-center gap-2">

@@ -321,7 +321,7 @@ export function JianziDictionary() {
       </p>
 
       {/* ── 卡片网格（始终保留容器，便于检索与空态提示） ── */}
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3" data-testid="dict-grid">
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5" data-testid="dict-grid">
         {loading ? (
           wasmState === "error" ? (
             <p className="col-span-full text-center text-[11px] tracking-wider text-red-400/80">

@@ -21,7 +21,7 @@ const PARAPHRASE: string[] = [
 
 export default function YuelunPage() {
   return (
-    <main className="flex flex-col items-center min-h-dvh py-10 px-4">
+    <main className="flex flex-col items-center min-h-dvh py-10 px-4 xl:px-6 xl:mt-6">
       {/* ── 品牌：朱砂印章 ── */}
       <div className="flex flex-col items-center gap-4">
         <div className="relative flex items-center justify-center w-20 h-20 rounded-full border-[3px] border-[var(--vermillion)]/50 shadow-xl shadow-[var(--vermillion)]/5">
@@ -44,8 +44,10 @@ export default function YuelunPage() {
         </div>
       </div>
 
+      {/* 桌面两栏对照：左原文、右释义与结语；手机仍是单列，DOM 顺序不变 */}
+      <div className="mt-8 w-full max-w-md xl:grid xl:max-w-[1040px] xl:grid-cols-2 xl:items-start xl:gap-5">
       {/* ── 原文（宣纸卡） ── */}
-      <section className="mt-8 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="w-full max-w-md xl:max-w-none rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -62,8 +64,9 @@ export default function YuelunPage() {
         </div>
       </section>
 
+      <div className="mt-4 flex w-full max-w-md flex-col gap-4 xl:mt-0 xl:max-w-none">
       {/* ── 现代释义 ── */}
-      <section className="mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="w-full rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -78,7 +81,7 @@ export default function YuelunPage() {
       </section>
 
       {/* ── 乐论 × 太音 ── */}
-      <section className="mt-4 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="w-full rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -100,6 +103,8 @@ export default function YuelunPage() {
           </div>
         </div>
       </section>
+      </div>
+      </div>
 
       {/* ── 页脚：返回编辑器 ── */}
       <Link

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function ZidianPage() {
   return (
-    <main className="flex flex-col items-center min-h-dvh py-10 px-4">
+    <main className="flex flex-col items-center min-h-dvh py-10 px-4 xl:px-6 xl:mt-6">
       {/* ── 品牌：朱砂印章 ── */}
       <div className="flex flex-col items-center gap-4">
         <div className="relative flex items-center justify-center w-20 h-20 rounded-full border-[3px] border-[var(--vermillion)]/50 shadow-xl shadow-[var(--vermillion)]/5">
@@ -34,7 +34,7 @@ export default function ZidianPage() {
       </div>
 
       {/* ── 为什么要这份字全表 ── */}
-      <section className="mt-8 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="mt-8 w-full max-w-md xl:max-w-3xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -60,12 +60,12 @@ export default function ZidianPage() {
       </section>
 
       {/* ── 字典本体 ── */}
-      <section className="mt-4 w-full max-w-md">
+      <section className="mt-4 w-full max-w-md xl:max-w-[1080px]">
         <JianziDictionary />
       </section>
 
       {/* ── 量化分析：字频 + 变体 ── */}
-      <section className="mt-8 w-full max-w-md rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      <section className="mt-8 w-full max-w-md xl:max-w-3xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
         <div className="p-5">
           <p className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
@@ -82,7 +82,7 @@ export default function ZidianPage() {
         </div>
       </section>
 
-      <section className="mt-4 w-full max-w-md">
+      <section className="mt-4 w-full max-w-md xl:max-w-[1080px]">
         <JianziFrequencyPanel />
       </section>
 
