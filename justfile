@@ -97,6 +97,13 @@ verify-wasm:
 verify-tuning:
     node scripts/verify-tuning-contract.mjs --self-test && node scripts/verify-tuning-contract.mjs
 
+# 时值码四处同源校验（纯 Node，只读）；--self-test 跑 8 条变异
+verify-duration:
+    node scripts/verify-duration-code-contract.mjs --self-test && node scripts/verify-duration-code-contract.mjs
+
+# 所有静态契约闸门（本地工具，不接 CI）
+verify-contracts: verify-tuning verify-duration
+
 # 前端测试
 test-web:
     {{pnpm}} --filter web test
