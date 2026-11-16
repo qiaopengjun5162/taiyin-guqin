@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Vercel 子页路由修复：开 `cleanUrls`（2026-11-16）
+
+收口验收用真实浏览器逐站复验时发现：Vercel 上 `/zidian`、`/jianzipu`、`/yuelun` 都返回首页内容（HTTP 200 但 h1 是「太音 · 古琴打谱」），只有 `/zidian.html` 是真页；而站内导航用的正是无扩展名链接，等于从首页点不进任何子页。根因是两份 `vercel.json` 的兜底 rewrite `/(.*) → /index.html` 吃掉了无扩展名路径，静态导出产物却是 `zidian.html` 这类文件；GitHub Pages 会自动映射 `.html`，故只有 Vercel 中招。两份配置各加 `"cleanUrls": true`（文件命中优先于 rewrite），其余不动。Vercel 线上 `/zidian.html` 已含本轮新增的 `<details>`，证明代码是新的、无需重建产物。
+
+同轮收口验收：发布预检 **PASS 14 / WARN 1 / FAIL 0**（唯一 WARN 是未给 `--vault` 的常态项，两站点 HTTP 200、都是新门面、首访播放链路通），`cargo fmt --check` / `just verify-contracts`（11+7+20 项）/ CI `build` + Pages 全绿；GitHub Pages `/zidian` 已复验字典分页改动确实上线（20 张卡、「显示更多 · 还有 39 字」、说明默认收起、4005px、零报错）。
+
 ### 前端「一长串」收口：字典渐进显示 + 说明折叠 + 子页回到顶部（2026-11-16）
 
 11-15 P0 段留的余量「字典页手机 8388px、首屏看不到一个条目」本轮销项。先用真实 Chromium 把 4 页 × 桌面/手机复量一遍：全站零横向溢出、零 console error、零失败请求，唯一扎眼的是字典全表 59 字一次铺完。本轮不改任何业务口径、不碰 `crates/**` 与 WASM 三份同源产物。
