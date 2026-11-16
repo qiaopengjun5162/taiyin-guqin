@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Noto_Serif_SC, Ma_Shan_Zheng } from "next/font/google";
 import { PwaRegister } from "@/components/pwa-register";
+import { WasmBootstrap } from "@/components/wasm-bootstrap";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -108,6 +109,8 @@ export default function RootLayout({
       <body className="min-h-dvh flex flex-col">
         {/* 只负责注册 Service Worker，不渲染任何内容（见 components/pwa-register.tsx） */}
         <PwaRegister />
+        {/* S2 启动预加载 WASM：不渲染内容，让同步 getter 在客户端就绪（见 components/wasm-bootstrap.tsx） */}
+        <WasmBootstrap />
         {/* 墨迹晕染 SVG 滤镜（全局不可见，供 ink-bleed 类引用） */}
         <svg xmlns="http://www.w3.org/2000/svg" className="hidden" aria-hidden>
           <filter id="inkbleed">

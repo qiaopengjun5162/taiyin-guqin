@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### S2 桥接层改造：启动预加载 + 9 个同步 getter（2026-11-16）
+
+**先销项 S1**：逐文件核查后确认 S1（只迁「本来就在 await 后面」的逻辑）已无落点——9 个 WASM 导出（翻译 / 编排 / 分句 / 字典 / 统计 / 变体 / 批量编解码）本就在 Rust；剩下的三个导出模块里，`score-export` 依赖 `jianziToText`（42 处引用的渲染核心）、`midi-export` 依赖 `columnMidi` + `tuning`、`audio-export` 强绑 `AudioBuffer`，都不是小步；批 1 的六个低扇出模块又全是同步调用路径，S1 下迁过去会把 async 传染进渲染热路径。结论：**S1 事实上已完成，运行时迁移只剩 S2**。
+
+本轮实现 S2 的**桥接与预加载部分**（未切换任何业务调用方，下一批才逐个搬）：
+
+- `taiyin-wasm.ts`：新增 `initWasmSync()`（fetch → `WebAssembly.compile` → `initSync({ module })`，无 `initSync` 时回退原 `default(url)`）、`isWasmReady()`、`getWasmSync()`（未就绪直接抛错，**不隐式初始化**，避免把 await 偷带进渲染），以及 9 个 `...Sync` 同步 getter。与原有 async API 共用同一个 instance / loadPromise，谁先成功谁占用。
+- **后处理只写一份**：`splitPhrases` / `arrangeJianpuSequence` / 字典 / 编解码 / 字频 / 变体组的 JSON 解析、缺字段补零、`rhythmMode` 补齐抽成 `parse*` 纯函数，async 与 sync 两条路径共用，不再抄第二遍口径。
+- 新增 `components/wasm-bootstrap.tsx` 并在根 `layout.tsx` 挂载（与 `PwaRegister` 同款、不渲染内容），客户端挂载即预热 WASM；初始化失败静默回退 idle，原 async 路径仍可接手，不把界面卡在 error。
+
+**验证**：桥接层用例 37 → **42**（新增 5 条：未就绪抛错、同步返回非 Promise 且与 async 逐字节一致、无 `initSync` 时回退、分句错误/补空共用、编排 stats 补零共用），原有 37 条**零改动全过**；受影响的 12 个页面/组件测试文件 **178/178**；`tsc --noEmit`、eslint、`pnpm build`（8 页预渲染）、`just verify-contracts`、`cargo fmt --check` 全绿。真实 Chromium 打开 dev server 四个页面：WASM glue 与 `taiyin_core_bg.wasm` 均 200、h1 正确、零横向溢出、零 console / page error。
+
+⚠️ **工具坑**：Vitest 的模块 mock 是 Proxy，访问未声明的导出（这里是 `mod.initSync`）会**直接抛错**而不是返回 `undefined`。探测可选导出必须 `try/catch` 包一层，否则测试替身一跑就进失败回退。
+
+**边界**：本轮未碰 `crates/**`、未重建 WASM 三份产物、未改覆盖率阈值；业务调用方仍走原有 async API，同步 getter 只由新增用例覆盖。下一批才把低扇出模块逐个迁进 Rust 并切到同步 getter。
+
 ### 老师试用包补齐「发得出、收得回」（2026-11-16）
 
 `docs/teacher-trial-kit.md` 自 11-14 落地后一直只是**准备件**（主册口径：准备件 ≠ 销项），真实用户仍是 **0**。本轮不重做一份，而是把最可能卡住动作的两头补上，**纯文档 / 物料，零产品代码改动**。

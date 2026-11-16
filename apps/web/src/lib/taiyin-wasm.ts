@@ -4,6 +4,12 @@
  * WASM 模块需要在客户端动态加载（Next.js SSR 下不可用）。
  * 所有函数接收和返回 JSON 字符串，通过 serde 序列化桥接。
  * 首次调用时自动初始化，后续复用缓存实例。
+ *
+ * S2（2026-11-16）：初始化成功后，wasm-bindgen glue 的 9 个导出本身就是同步的。
+ * 因此这里在保留原 async API（兼容既有调用方与测试）之外，另给 9 个 `...Sync`
+ * 同步 getter：只要初始化就绪，渲染与事件都能直接同步调用，不需要 await。
+ * 同步预加载走 `initSync({ module })`（真实产物）并回退到原 `default(url)`，
+ * 由 `WasmBootstrap` 在客户端挂载时触发；两条路径共用同一个 instance 单例。
  */
 
 "use client";
@@ -96,6 +102,85 @@ async function getWasm(): Promise<WasmModule> {
 }
 
 /**
+ * 同步取已初始化的 WASM 实例。
+ *
+ * 未就绪时直接抛错，不在这里隐式初始化——那会把 await 偷偷带进渲染路径，
+ * 正是 S2 要避免的。调用方要么等 `initWasm()` / `initWasmSync()`，
+ * 要么先用 `isWasmReady()` 走 TS 降级。
+ */
+export function getWasmSync(): WasmModule {
+  if (!instance) {
+    throw new Error("WASM 尚未初始化：请等待 initWasm() 或挂载 WasmBootstrap");
+  }
+  return instance;
+}
+
+/** WASM 是否已就绪；同步调用方据此决定是否走降级。 */
+export function isWasmReady(): boolean {
+  return instance !== null;
+}
+
+/**
+ * S2 同步预加载：fetch → WebAssembly.compile → initSync({ module })。
+ *
+ * 与 `initWasm()` 共用 instance 与 loadPromise，谁先成功谁占用，避免重复初始化 glue。
+ * 失败不把状态钉死在 error：原 async 路径仍可接手，界面不该因为预加载失败卡住。
+ * SSR 下直接返回（模块顶层不能碰 fetch / WebAssembly）。
+ */
+export async function initWasmSync(): Promise<void> {
+  if (instance) return;
+  if (typeof window === "undefined") return;
+  if (loadPromise) {
+    await loadPromise;
+    return;
+  }
+
+  setState("loading", null);
+  loadPromise = (async () => {
+    try {
+      const mod = await import("@/wasm/taiyin_core");
+      const wasmUrl = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/wasm/taiyin_core_bg.wasm`;
+      // Vitest 的模块 mock 是 Proxy：访问未声明的导出会抛错而非返回 undefined。
+      // 真实 glue 有 initSync，测试替身没有，所以这里必须安全探测。
+      let initSync:
+        | ((arg: { module: WebAssembly.Module }) => void)
+        | undefined;
+      try {
+        initSync = (
+          mod as unknown as {
+            initSync?: (arg: { module: WebAssembly.Module }) => void;
+          }
+        ).initSync;
+      } catch {
+        initSync = undefined;
+      }
+
+      if (typeof initSync === "function") {
+        const response = await fetch(wasmUrl);
+        if (!response.ok) {
+          throw new Error(`WASM 加载失败: ${response.status}`);
+        }
+        const bytes = await response.arrayBuffer();
+        initSync({ module: await WebAssembly.compile(bytes) });
+      } else {
+        // 测试替身或旧 glue 没有 initSync：沿用原异步初始化，效果相同。
+        await (mod.default as (path: string) => Promise<unknown>)(wasmUrl);
+      }
+
+      instance = mod as unknown as WasmModule;
+      setState("ready", null);
+    } catch {
+      // 预加载失败不致命：async 路径仍可用，回到 idle 让它接手。
+      setState("idle", null);
+    } finally {
+      loadPromise = null;
+    }
+  })();
+
+  await loadPromise;
+}
+
+/**
  * React hook：订阅 WASM 加载状态。
  * 组件挂载时会自动尝试初始化。
  */
@@ -128,11 +213,21 @@ export async function translateJianpuToJianzi(input: string): Promise<string> {
   return wasm.translate_jianpu_to_jianzi(input);
 }
 
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function translateJianpuToJianziSync(input: string): string {
+  return getWasmSync().translate_jianpu_to_jianzi(input);
+}
+
 export async function translateJianpuSequenceToJianzi(
   input: string,
 ): Promise<string> {
   const wasm = await getWasm();
   return wasm.translate_jianpu_sequence_to_jianzi(input);
+}
+
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function translateJianpuSequenceToJianziSync(input: string): string {
+  return getWasmSync().translate_jianpu_sequence_to_jianzi(input);
 }
 
 /**
@@ -145,16 +240,29 @@ export async function translateJianpuSequenceToJianzi(
  *
  * 返回闭区间，下标取自入参。
  */
-export async function splitPhrases(
-  units: (number | null)[],
-): Promise<{ start: number; end: number }[]> {
-  const wasm = await getWasm();
-  const raw = JSON.parse(wasm.split_phrases_to_json(JSON.stringify({ units }))) as {
+function parsePhrases(rawText: string): { start: number; end: number }[] {
+  const raw = JSON.parse(rawText) as {
     phrases?: { start: number; end: number }[];
     error?: string;
   };
   if (raw.error) throw new Error(raw.error);
   return raw.phrases ?? [];
+}
+
+export async function splitPhrases(
+  units: (number | null)[],
+): Promise<{ start: number; end: number }[]> {
+  const wasm = await getWasm();
+  return parsePhrases(wasm.split_phrases_to_json(JSON.stringify({ units })));
+}
+
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function splitPhrasesSync(
+  units: (number | null)[],
+): { start: number; end: number }[] {
+  return parsePhrases(
+    getWasmSync().split_phrases_to_json(JSON.stringify({ units })),
+  );
 }
 
 /** 一条指法路径的活动量——界面用它把「编排省了什么」说成人话。 */
@@ -255,14 +363,10 @@ function normalizeStats(stats: Partial<PathStats> | undefined): PathStats {
  * 手有没有时间换把：八分连八分里的换把按 1.5 倍计费，二分音符之后的按 0.6 倍。
  * 不给的话一律按四分音符处理，与加这个参数之前的结果完全一致。
  */
-export async function arrangeJianpuSequence(
-  notes: { number: number; octave: number; duration_units?: number }[],
-  tuning: string,
-): Promise<JianpuArrangement> {
-  const wasm = await getWasm();
-  const raw = JSON.parse(
-    wasm.arrange_jianpu_sequence_to_jianzi(JSON.stringify({ notes, tuning })),
-  ) as Partial<JianpuArrangement> & { error?: string };
+function parseArrangement(rawText: string): JianpuArrangement {
+  const raw = JSON.parse(rawText) as Partial<JianpuArrangement> & {
+    error?: string;
+  };
   if (raw.error) throw new Error(raw.error);
   return {
     candidates_per_note: raw.candidates_per_note ?? [],
@@ -281,6 +385,28 @@ export async function arrangeJianpuSequence(
       stats: normalizeStats(p.stats),
     })),
   };
+}
+
+export async function arrangeJianpuSequence(
+  notes: { number: number; octave: number; duration_units?: number }[],
+  tuning: string,
+): Promise<JianpuArrangement> {
+  const wasm = await getWasm();
+  return parseArrangement(
+    wasm.arrange_jianpu_sequence_to_jianzi(JSON.stringify({ notes, tuning })),
+  );
+}
+
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function arrangeJianpuSequenceSync(
+  notes: { number: number; octave: number; duration_units?: number }[],
+  tuning: string,
+): JianpuArrangement {
+  return parseArrangement(
+    getWasmSync().arrange_jianpu_sequence_to_jianzi(
+      JSON.stringify({ notes, tuning }),
+    ),
+  );
 }
 
 /**
@@ -369,15 +495,11 @@ export function describeArrangement(result: JianpuArrangement): string {
  * 字典数据、筛选与搜索逻辑全部在 Rust（`jianzi_dictionary` 模块），
  * 这里只负责调用 wasm 并把返回的状态补上 `rhythmMode: null` 以贴合前端 `JianziState`。
  */
-export async function getJianziDictionary(
-  filter: import("./jianzi-dictionary-types").DictFilter,
-): Promise<{
+function parseDictionary(rawText: string): {
   total: number;
   entries: import("./jianzi-dictionary-types").JianziDictEntry[];
-}> {
-  const wasm = await getWasm();
-  const raw = wasm.get_jianzi_dictionary(JSON.stringify(filter));
-  const parsed = JSON.parse(raw) as {
+} {
+  const parsed = JSON.parse(rawText) as {
     total: number;
     entries: Array<{
       id: string;
@@ -404,17 +526,36 @@ export async function getJianziDictionary(
   };
 }
 
+export async function getJianziDictionary(
+  filter: import("./jianzi-dictionary-types").DictFilter,
+): Promise<{
+  total: number;
+  entries: import("./jianzi-dictionary-types").JianziDictEntry[];
+}> {
+  const wasm = await getWasm();
+  return parseDictionary(wasm.get_jianzi_dictionary(JSON.stringify(filter)));
+}
+
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function getJianziDictionarySync(
+  filter: import("./jianzi-dictionary-types").DictFilter,
+): {
+  total: number;
+  entries: import("./jianzi-dictionary-types").JianziDictEntry[];
+} {
+  return parseDictionary(
+    getWasmSync().get_jianzi_dictionary(JSON.stringify(filter)),
+  );
+}
+
 /**
  * 批量编减字码（如 `ad9g4`）——导出文本谱、按码检索都靠它。
  *
  * 编码在 Rust（`jianzi_code`），与前端连打文法同一张码表；
  * 不完整的减字返回 `null`，不让整份导出失败。
  */
-export async function encodeJianziBatch(
-  notes: import("./types").JianziState[],
-): Promise<(string | null)[]> {
-  const wasm = await getWasm();
-  const payload = {
+function encodePayload(notes: import("./types").JianziState[]) {
+  return {
     notes: notes.map((n) => ({
       toneType: n.toneType ?? "散",
       leftFinger: n.leftFinger,
@@ -425,12 +566,33 @@ export async function encodeJianziBatch(
       stringNumber: n.stringNumber,
     })),
   };
-  const parsed = JSON.parse(wasm.encode_jianzi_batch(JSON.stringify(payload))) as {
+}
+
+function parseCodes(rawText: string): (string | null)[] {
+  const parsed = JSON.parse(rawText) as {
     codes?: (string | null)[];
     error?: string;
   };
   if (parsed.error) throw new Error(parsed.error);
   return parsed.codes ?? [];
+}
+
+export async function encodeJianziBatch(
+  notes: import("./types").JianziState[],
+): Promise<(string | null)[]> {
+  const wasm = await getWasm();
+  return parseCodes(
+    wasm.encode_jianzi_batch(JSON.stringify(encodePayload(notes))),
+  );
+}
+
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function encodeJianziBatchSync(
+  notes: import("./types").JianziState[],
+): (string | null)[] {
+  return parseCodes(
+    getWasmSync().encode_jianzi_batch(JSON.stringify(encodePayload(notes))),
+  );
 }
 
 /**
@@ -440,11 +602,10 @@ export async function encodeJianziBatch(
  * 前端只拿结果去建音符列。坏码一条只坏一条，不连坐——
  * 返回 `entries` 里每条都带 `code`，失败的那条另有 `error` 说明原因。
  */
-export async function decodeJianziBatch(
-  text: string,
-): Promise<import("./jianzi-dictionary-types").DecodeBatchResult> {
-  const wasm = await getWasm();
-  const parsed = JSON.parse(wasm.decode_jianzi_batch(JSON.stringify({ text }))) as {
+function parseDecodeBatch(
+  rawText: string,
+): import("./jianzi-dictionary-types").DecodeBatchResult {
+  const parsed = JSON.parse(rawText) as {
     error?: string;
     total?: number;
     ok?: number;
@@ -474,16 +635,29 @@ export async function decodeJianziBatch(
   };
 }
 
+export async function decodeJianziBatch(
+  text: string,
+): Promise<import("./jianzi-dictionary-types").DecodeBatchResult> {
+  const wasm = await getWasm();
+  return parseDecodeBatch(wasm.decode_jianzi_batch(JSON.stringify({ text })));
+}
+
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function decodeJianziBatchSync(
+  text: string,
+): import("./jianzi-dictionary-types").DecodeBatchResult {
+  return parseDecodeBatch(
+    getWasmSync().decode_jianzi_batch(JSON.stringify({ text })),
+  );
+}
+
 /**
  * 减字字频统计：给一首曲谱的减字，向 Rust 端要「每个字母出现几次、占比多少」。
  * 归一化（名/夕、食/亻、省写→全字）在 Rust 端完成，因此同一个字的不同写法
  * 会合并为同一行；原始写法回列在 `leftVariants` / `actionVariants`。
  */
-export async function analyzeJianziFrequency(
-  notes: import("./types").JianziState[],
-): Promise<import("./jianzi-dictionary-types").FreqResult> {
-  const wasm = await getWasm();
-  const payload = {
+function frequencyPayload(notes: import("./types").JianziState[]) {
+  return {
     notes: notes
       .filter((n) => n.toneType != null)
       .map((n) => ({
@@ -496,11 +670,36 @@ export async function analyzeJianziFrequency(
         stringNumber: n.stringNumber,
       })),
   };
-  const parsed = JSON.parse(wasm.analyze_jianzi_frequency(JSON.stringify(payload))) as {
+}
+
+function parseFrequency(
+  rawText: string,
+): import("./jianzi-dictionary-types").FreqResult {
+  const parsed = JSON.parse(rawText) as {
     error?: string;
   } & import("./jianzi-dictionary-types").FreqResult;
   if (parsed.error) throw new Error(parsed.error);
   return { total: parsed.total, rows: parsed.rows };
+}
+
+export async function analyzeJianziFrequency(
+  notes: import("./types").JianziState[],
+): Promise<import("./jianzi-dictionary-types").FreqResult> {
+  const wasm = await getWasm();
+  return parseFrequency(
+    wasm.analyze_jianzi_frequency(JSON.stringify(frequencyPayload(notes))),
+  );
+}
+
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function analyzeJianziFrequencySync(
+  notes: import("./types").JianziState[],
+): import("./jianzi-dictionary-types").FreqResult {
+  return parseFrequency(
+    getWasmSync().analyze_jianzi_frequency(
+      JSON.stringify(frequencyPayload(notes)),
+    ),
+  );
 }
 
 /** 减字写法变体对照表（勾/勹、挑/乚、名/夕…），由 Rust `get_jianzi_variant_groups` 提供。 */
@@ -509,4 +708,11 @@ export async function getJianziVariantGroups(): Promise<
 > {
   const wasm = await getWasm();
   return JSON.parse(wasm.get_jianzi_variant_groups()) as import("./jianzi-dictionary-types").VariantGroup[];
+}
+
+/** 同步版：仅初始化就绪后可用，输出与 async 版逐字节一致。 */
+export function getJianziVariantGroupsSync(): import("./jianzi-dictionary-types").VariantGroup[] {
+  return JSON.parse(
+    getWasmSync().get_jianzi_variant_groups(),
+  ) as import("./jianzi-dictionary-types").VariantGroup[];
 }

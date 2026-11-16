@@ -712,3 +712,69 @@ describe("taiyin-wasm · splitPhrases", () => {
     await expect(w.splitPhrases([8, 8])).resolves.toEqual([]);
   });
 });
+
+describe("taiyin-wasm · S2 同步 getter", () => {
+  it("未初始化时 getWasmSync 抛错、isWasmReady 为 false（不隐式初始化）", async () => {
+    const w = await loadWasm();
+    expect(w.isWasmReady()).toBe(false);
+    expect(() => w.getWasmSync()).toThrow(/WASM 尚未初始化/);
+    expect(glue.init).not.toHaveBeenCalled();
+  });
+
+  it("initWasm 后同步版返回字符串而非 Promise，且与 async 版逐字节一致", async () => {
+    const w = await loadWasm();
+    glue.translate_jianpu_to_jianzi.mockReturnValue("散挑七");
+    await w.initWasm();
+
+    expect(w.isWasmReady()).toBe(true);
+    const sync = w.translateJianpuToJianziSync("note");
+    expect(typeof sync).toBe("string");
+    expect(sync).toBe("散挑七");
+    await expect(w.translateJianpuToJianzi("note")).resolves.toBe(sync);
+    expect(glue.translate_jianpu_to_jianzi).toHaveBeenCalledTimes(2);
+  });
+
+  it("initWasmSync 在没有 initSync 的 glue 上回退到 default 并置 ready", async () => {
+    const w = await loadWasm();
+    await w.initWasmSync();
+
+    expect(w.getWasmLoadState()).toBe("ready");
+    expect(glue.init).toHaveBeenCalledTimes(1);
+    expect(w.isWasmReady()).toBe(true);
+  });
+
+  it("同步分句与异步共用后处理：含错误抛出与缺字段补空", async () => {
+    const w = await loadWasm();
+    await w.initWasm();
+
+    glue.split_phrases_to_json.mockReturnValue(
+      JSON.stringify({ phrases: [{ start: 0, end: 1 }] }),
+    );
+    const sync = w.splitPhrasesSync([8, 8]);
+    await expect(w.splitPhrases([8, 8])).resolves.toEqual(sync);
+
+    glue.split_phrases_to_json.mockReturnValue(JSON.stringify({ error: "bad" }));
+    expect(() => w.splitPhrasesSync([8])).toThrow("bad");
+  });
+
+  it("同步编排与异步逐字节一致：stats 补零、phrases 映射不各写一份", async () => {
+    const w = await loadWasm();
+    await w.initWasm();
+    glue.arrange_jianpu_sequence_to_jianzi.mockReturnValue(
+      JSON.stringify({
+        candidates_per_note: [],
+        selections: [0],
+        total_cost: 12,
+        phrases: [{ note_count: 2 }],
+      }),
+    );
+
+    const notes = [{ number: 5, octave: 0 }];
+    const sync = w.arrangeJianpuSequenceSync(notes, "zhengdiao");
+    await expect(w.arrangeJianpuSequence(notes, "zhengdiao")).resolves.toEqual(
+      sync,
+    );
+    expect(sync.stats.rushed_moves).toBe(0);
+    expect(sync.phrases[0].index).toBe(0);
+  });
+});
