@@ -117,23 +117,27 @@
 | **批 4** | 高扇出，逐个评估或只迁子集：`jianzi-explain`(6/33)、`jianzi-pitch`(9/24)、`concert-pitch`(9/11)、`tuning`(19/25)、`jianzi`(19/66) | S2 若通过 | 最后动渲染热路径 |
 | **阶段 3** | 桥接自动化：直接引用 wasm-pack 已有的 `apps/web/wasm/taiyin_core.d.ts`（配合 `ts-rs` 生成的 wire 类型），去掉 `taiyin-wasm.ts:16-26` 手写、注释明说「需手动同步」的 `WasmModule` 接口；`describePhrases` / `describeArrangement` 两个 TS 侧格式化函数一并归位 | 前序批次稳定 | 杜绝「Rust 改了、前端类型没跟」 |
 
-**批 0 前置闸门已全部就位（2026-11-15 ~ 11-16，纯只读工具，未改任何产品代码）**。四组重复口径现在**每组都有跨语言静态闸门**：
+**批 0 前置闸门已全部就位（2026-11-15 ~ 11-16，闸门脚本本身纯只读）**。四组重复口径现在**每组都有跨语言静态闸门**：
+
+> 11-16 另做了一次**零行为变化**的数据重构（见下文「半音表单一来源」）：改了 3 个前端 TS 文件，但产品行为没变、没碰 `crates/**`、没重建 WASM。闸门脚本仍然只读。
 
 | 脚本 | 守什么 | 检查 / 变异 |
 | --- | --- | --- |
 | `verify-tuning-contract.mjs`（既有） | 定弦名单 4 份同源 | 11 项 / 7 条变异 |
 | `verify-duration-code-contract.mjs` | 时值 ↔ 码尾数字 4 处；`"16"` 必须排在 `"1"` 前的顺序陷阱 | 7 项 / 8 条变异 |
-| `verify-domain-contracts.mjs` | 徽位音高表 8 项 + 减字记号表 10 项 | 18 项 / 18 条变异 |
+| `verify-domain-contracts.mjs` | 徽位音高表 10 项（含 2 条防抄表）+ 减字记号表 10 项 | 20 项 / 20 条变异 |
 
 `scripts/verify-domain-contracts.mjs` 覆盖的两组：
-- **徽位音高**：Rust `HUI_RATIOS` / `HUI_HARMONIC` / `DEGREE_SEMITONES` ↔ TS `HUI_FRACTION` / `HUI_HARMONIC`，外加「比例约分后的分母 == 泛音谐波次数」这条物理一致性（一徽 1/8→8 次、六徽 2/5→5 次、九徽 2/3→3 次）。它专门能抓住**两端一起改、集合仍然对齐、但物理上已经错了**的情况。另守 `HUI_TICKS` 必须由 `huiFraction` 派生，不许再抄一份表。
+- **徽位音高**：Rust `HUI_RATIOS` / `HUI_HARMONIC` / `DEGREE_SEMITONES` ↔ TS `HUI_FRACTION` / `HUI_HARMONIC`，外加「比例约分后的分母 == 泛音谐波次数」这条物理一致性（一徽 1/8→8 次、六徽 2/5→5 次、九徽 2/3→3 次）。它专门能抓住**两端一起改、集合仍然对齐、但物理上已经错了**的情况。另守 `HUI_TICKS` 必须由 `huiFraction` 派生，不许再抄一份表。`DEGREE_SEMITONES` 现在与前端唯一来源 `JIANPU_DEGREES` 逐项比，并额外静态检查 `player.ts::SEMITONES` 与示例谱测试都是「派生 / 导入」而非硬编码。
 - **减字记号**：Rust `TONE/SLIDE/HUI/FEN/STRING_TOKENS` ↔ `jianzi-rapid.ts` 的连打表 ↔ `jianzi.ts` 的 `SLIDE_MARKS` / `STRUCTURE_MARKS` ↔ `types.ts` 联合 ↔ Rust `StructureMark` 枚举，字母、汉字、顺序都逐项比。
 
 **边界（别误加）**：`ACTION_TOKENS` / `LEFT_TOKENS` 与连打 `rightAction` / `leftFinger` **不是同源**——Rust 存全字（挑/抹/食/名），连打存省写字形（乚/木/亻/夕），是归一化映射。把它们塞进静态比对只会制造误报。`SlideMark` 联合也不必比，多一个不在联合里的值 `tsc` 会直接红。
 
 现有 vitest 行为测试守的是**单侧性质**（21 个、无重复、抽查 1/7/13 徽位、5 个记号都有释义），这三个脚本守的是**跨语言同源**，层次不同、不重复。三个脚本都带 `--self-test`，变异逐条由 `expect` 指定的那一项检查抓到，防「改哪儿都全红」的假抓到。本地入口 `just verify-contracts`，按项目惯例不接 CI。
 
-**发现的技术债**：`apps/web/src/lib/__tests__/example-scores.test.ts` 里硬编码了第三份 `DEGREE_SEMITONES`。闸门先钉住防止漂移，后续应改成从单一来源导入，而不是继续维护第三份。
+**半音表单一来源（11-16 已销项）**：原先前端有三份各自为政的半音表——`player.ts::SEMITONES`（播放）、`jianzi-pitch.ts::degrees`（频率 → 唱名）、`example-scores.test.ts`（硬编码校验）；闸门最初只钉住「Rust ↔ 测试」这一对，播放那份从没跨语言比过。现在把 `jianzi-pitch.ts::JIANPU_DEGREES` 提成全项目唯一来源：Rust `DEGREE_SEMITONES` 与它逐项比，`player.ts` 由 `Object.fromEntries(JIANPU_DEGREES)` 派生，示例谱测试直接 import 使用；闸门再守两条「不许再抄一份」的静态检查，并各配一条变异验证。
+
+本轮改动 3 个前端 TS 文件（纯数据重构、零行为变化）。验证：相关单测 **57/57**、`tsc --noEmit` / eslint / `cargo fmt --check` 全 0、`just verify-contracts` 三组全绿。未碰 `crates/**`、未重建 WASM。
 
 **迁移范式**照抄 `score-phrases.ts`：句界只在 Rust 有一份（`phrase_ranges`），TS 侧只做排版与展示，不抄阈值。
 
@@ -197,7 +201,7 @@
 - [x] 写清每批验收命令与回滚点
 - [x] 实测 S2：`initSync` 同步初始化可行，9 个导出可同步调用
 - [x] 批 0 前置闸门：时值码四处同源，7 项基线 + 8 条变异自测全绿
-- [x] 补齐另两组闸门（徽位音高 8 项 + 减字记号 10 项，18 条变异自测全绿）
-- [ ] 把 `example-scores.test.ts` 里硬编码的第三份半音表改成单一来源导入
+- [x] 补齐另两组闸门（徽位音高 8 项 + 减字记号 10 项，18 条变异自测全绿；11-16 扩到 20 项 / 20 条）
+- [x] 半音表收敛为单一来源 `JIANPU_DEGREES`，player / 示例谱测试均派生，另加 2 条防抄表检查与变异
 - [ ] P-1 ~ P-5 拍板
 - [ ] 批 0 开工（拍板后才动代码）

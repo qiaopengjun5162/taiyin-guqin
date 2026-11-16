@@ -19,20 +19,16 @@
 
 import type { JianziState, NoteColumn, NoteType, PitchSlide } from "./types";
 import { durationToBeats, pitchSlide } from "./jianzi";
-import { jianziToFrequency } from "./jianzi-pitch";
+import { JIANPU_DEGREES, jianziToFrequency } from "./jianzi-pitch";
 import { DEFAULT_TUNING, type TuningId } from "./tuning";
 import { CONCERT_PITCH_DEFAULT } from "./concert-pitch";
 
-/** 简谱数字 → 相对宫音（1=F）的半音数（1=F 2=G 3=A 4=B♭ 5=C 6=D 7=E）。 */
-const SEMITONES: Record<string, number> = {
-  "1": 0,
-  "2": 2,
-  "3": 4,
-  "4": 5,
-  "5": 7,
-  "6": 9,
-  "7": 11,
-};
+/** 简谱数字 → 相对宫音（1=F）的半音数（1=F 2=G 3=A 4=B♭ 5=C 6=D 7=E）。
+ *
+ * 数据由 `jianzi-pitch.ts::JIANPU_DEGREES` 派生（全项目唯一来源），
+ * 别在这里再抄一份；跨语言一致性由 `scripts/verify-domain-contracts.mjs` 守。
+ */
+const SEMITONES: Record<string, number> = Object.fromEntries(JIANPU_DEGREES);
 
 /** 1=F 记谱下、八度 0 的「1」对应的 MIDI 号，与 Rust `midi_note` 的 `PITCH_BASE_MIDI` 一致。 */
 const PITCH_BASE_MIDI: number = 41;

@@ -62,6 +62,17 @@ const HUI_HARMONIC: Record<number, number> = {
 };
 
 /**
+ * 简谱唱名 → 相对宫音（1=F）的半音偏移。**全项目唯一来源**。
+ *
+ * Rust `jianpu.rs::DEGREE_SEMITONES` 与它同源，由
+ * `scripts/verify-domain-contracts.mjs` 做跨语言静态比对；播放用的
+ * `player.ts::SEMITONES` 与示例谱一致性测试都从这里派生，别再抄第二份。
+ */
+export const JIANPU_DEGREES: readonly [JianpuNumber, number][] = [
+  ["1", 0], ["2", 2], ["3", 4], ["4", 5], ["5", 7], ["6", 9], ["7", 11],
+];
+
+/**
  * 徽位 → 该处轻触得到的泛音谐波次数（一徽 8 次、七徽 2 次…）。
  *
  * 对外暴露是因为「琴面音位全览」也要用同一张表：图上标的泛音若与
@@ -171,13 +182,10 @@ export function frequencyToJianpu(
   // 1=F 基准：未标记「1」= F2 = MIDI 41，与 player.jianpuToMidi 一致。
   const BASE_MIDI = 41;
   const offsets: JianpuOctave[] = ["", "·", "··", ",", ",,"];
-  const degrees: [JianpuNumber, number][] = [
-    ["1", 0], ["2", 2], ["3", 4], ["4", 5], ["5", 7], ["6", 9], ["7", 11],
-  ];
   let bestNum: JianpuNumber = "1";
   let bestOct: JianpuOctave = "";
   let bestErr = Infinity;
-  for (const [num, s] of degrees) {
+  for (const [num, s] of JIANPU_DEGREES) {
     for (const o of offsets) {
       const off =
         o === "·" ? 12 : o === "··" ? 24 : o === "," ? -12 : o === ",," ? -24 : 0;

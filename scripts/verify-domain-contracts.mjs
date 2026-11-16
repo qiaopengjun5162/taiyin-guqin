@@ -13,9 +13,13 @@
  *   ① crates/taiyin-core/src/jianpu.rs   —— HUI_RATIOS / HUI_HARMONIC / DEGREE_SEMITONES
  *   ② apps/web/src/lib/jianzi-pitch.ts  —— HUI_FRACTION / HUI_HARMONIC
  *   ③ apps/web/src/lib/qin-fingering.ts —— HUI_TICKS（必须是**派生**，不许再抄一份）
- *   ④ apps/web/src/lib/__tests__/example-scores.test.ts —— 硬编码的 DEGREE_SEMITONES
- *      ④ 是技术债：测试里又抄了一份半音表。本闸门先钉住防止漂移；
- *      后续应改成从单一来源导入，而不是继续维护第三份。
+ *   ④ apps/web/src/lib/jianzi-pitch.ts  —— JIANPU_DEGREES（简谱唱名 + 半音偏移，
+ *      全项目唯一来源；Rust DEGREE_SEMITONES 与它逐项比）
+ *   ⑤ apps/web/src/lib/player.ts        —— SEMITONES（必须由 ④ 派生）
+ *   ⑥ apps/web/src/lib/__tests__/example-scores.test.ts（必须从 ④ 导入）
+ *
+ *   半音表曾有三份各自为政（player / jianzi-pitch / 测试）。除逐项比对外，
+ *   本闸门还静态检查 ⑤⑥ 是「派生/导入」而非硬编码，防止有人图省事再抄一份。
  *
  *   物理一致性：徽位比例写成最简分数后，其**分母**就是该处泛音的谐波次数
  *   （一徽 1/8→8 次，六徽 2/5→5 次，九徽 2/3→3 次）。
@@ -34,7 +38,7 @@
  *   SlideMark 联合也不在这里比：多一个不在联合里的值 tsc 会直接红。
  *
  * 用法：node scripts/verify-domain-contracts.mjs
- *       node scripts/verify-domain-contracts.mjs --self-test   # 16 条变异，含双文件同步改
+ *       node scripts/verify-domain-contracts.mjs --self-test   # 20 条变异，含双文件同步改
  * 退出码 1 = 契约被破坏，或自测里某条变异没被指定检查抓到。
  *
  * 本脚本**只读**：变异只在内存副本上做，不写回任何源码；按项目惯例不接 CI。
@@ -51,6 +55,7 @@ const FILES = {
   jianziCodeRs: "crates/taiyin-core/src/jianzi_code.rs",
   libRs: "crates/taiyin-core/src/lib.rs",
   jianziPitchTs: "apps/web/src/lib/jianzi-pitch.ts",
+  playerTs: "apps/web/src/lib/player.ts",
   qinFingeringTs: "apps/web/src/lib/qin-fingering.ts",
   exampleScoresTestTs: "apps/web/src/lib/__tests__/example-scores.test.ts",
   jianziTs: "apps/web/src/lib/jianzi.ts",
@@ -153,9 +158,16 @@ function parse(files) {
     value: Number(m[2]),
   }));
 
-  const tsDegrees = ints(
-    (/const DEGREE_SEMITONES\s*=\s*\[([^\]]+)\]/.exec(files.exampleScoresTestTs)?.[1]) ?? "",
-  );
+  // JIANPU_DEGREES 是 [["1", 0], …]，只取每对的半音数（第二列）。
+  const tsDegrees = [
+    ...tsArray(files.jianziPitchTs, "JIANPU_DEGREES").matchAll(/\["\d+",\s*(-?\d+)\]/g),
+  ].map((m) => Number(m[1]));
+  // 防「图省事再抄一份」：player 与示例谱测试必须是派生/导入，不是硬编码。
+  const semitoneDecl = section(files.playerTs, /const SEMITONES/, /\n\n/);
+  const playerDerived = /JIANPU_DEGREES/.test(semitoneDecl) && !/"1"\s*:\s*0/.test(semitoneDecl);
+  const testNoHardcode =
+    /JIANPU_DEGREES/.test(files.exampleScoresTestTs) &&
+    !/\[0,\s*2,\s*4,\s*5,\s*7,\s*9,\s*11\]/.test(files.exampleScoresTestTs);
   const huiTicksSection = section(files.qinFingeringTs, /export const HUI_TICKS/, /\n\);/);
   const huiTicksDerived = /huiFraction\(/.test(huiTicksSection);
 
@@ -185,7 +197,7 @@ function parse(files) {
 
   return {
     rustRatios, rustHarmonic, rustDegrees, rustHarmonicHui,
-    tsFractions, tsHarmonic, tsDegrees, huiTicksDerived,
+    tsFractions, tsHarmonic, tsDegrees, huiTicksDerived, playerDerived, testNoHardcode,
     rustTone, rustSlide, rustHui, rustFen, rustString,
     rapidTone, rapidSlide, rapidHui, rapidFen, rapidString, rapidStructure,
     slideMarks, structureMarks, tsStructure, rustStructure,
@@ -267,9 +279,21 @@ function check(p) {
   add("徽位/TS 比例的最简分母 == 泛音谐波次数", tsPhysics.length === 0, fmt(tsPhysics));
 
   add(
-    "徽位/DEGREE_SEMITONES 与示例谱测试里的那份相等",
+    "徽位/Rust DEGREE_SEMITONES ↔ JIANPU_DEGREES 逐项相等",
     sameSeq(p.rustDegrees, p.tsDegrees) && p.rustDegrees.length === 7,
-    `Rust ${fmt(p.rustDegrees.map(String))}；测试 ${fmt(p.tsDegrees.map(String))}`,
+    `Rust ${fmt(p.rustDegrees.map(String))}；前端 ${fmt(p.tsDegrees.map(String))}`,
+  );
+
+  add(
+    "徽位/player.ts SEMITONES 由 JIANPU_DEGREES 派生（不许抄第二份）",
+    p.playerDerived,
+    p.playerDerived ? "" : "SEMITONES 没引用 JIANPU_DEGREES，或仍带硬编码半音数",
+  );
+
+  add(
+    "徽位/示例谱测试从 JIANPU_DEGREES 导入（不许再抄第三份）",
+    p.testNoHardcode,
+    p.testNoHardcode ? "" : "测试里没导入 JIANPU_DEGREES，或又出现硬编码半音数组",
   );
 
   add(
@@ -363,10 +387,16 @@ function selfTest(base) {
       ],
       expect: "徽位/Rust 比例的最简分母 == 泛音谐波次数" },
     { name: "Rust 半音表末项 11 改成 10", edits: [{ key: "jianpuRs", from: "[0, 2, 4, 5, 7, 9, 11]", to: "[0, 2, 4, 5, 7, 9, 10]" }],
-      expect: "徽位/DEGREE_SEMITONES 与示例谱测试里的那份相等" },
-    { name: "示例谱测试里的半音表末项 11 改成 12",
-      edits: [{ key: "exampleScoresTestTs", from: "[0, 2, 4, 5, 7, 9, 11]", to: "[0, 2, 4, 5, 7, 9, 12]" }],
-      expect: "徽位/DEGREE_SEMITONES 与示例谱测试里的那份相等" },
+      expect: "徽位/Rust DEGREE_SEMITONES ↔ JIANPU_DEGREES 逐项相等" },
+    { name: "JIANPU_DEGREES 末项 11 改成 12",
+      edits: [{ key: "jianziPitchTs", from: '["7", 11],', to: '["7", 12],' }],
+      expect: "徽位/Rust DEGREE_SEMITONES ↔ JIANPU_DEGREES 逐项相等" },
+    { name: "player.ts 又抄一份硬编码半音表",
+      edits: [{ key: "playerTs", from: "Object.fromEntries(JIANPU_DEGREES)", to: '{ "1": 0, "2": 2, "3": 4, "4": 5, "5": 7, "6": 9, "7": 11 }' }],
+      expect: "徽位/player.ts SEMITONES 由 JIANPU_DEGREES 派生（不许抄第二份）" },
+    { name: "示例谱测试又抄一份硬编码半音表",
+      edits: [{ key: "exampleScoresTestTs", from: "JIANPU_DEGREES[Number(note.jianpuNumber) - 1][1]", to: "[0, 2, 4, 5, 7, 9, 11][Number(note.jianpuNumber) - 1]" }],
+      expect: "徽位/示例谱测试从 JIANPU_DEGREES 导入（不许再抄第三份）" },
     { name: "HUI_TICKS 改成硬编码，不再派生",
       edits: [{ key: "qinFingeringTs", from: "ratio: huiFraction(i + 1, null) ?? 0", to: "ratio: 0.5" }],
       expect: "徽位/HUI_TICKS 由 huiFraction 派生（不许抄第二份表）" },

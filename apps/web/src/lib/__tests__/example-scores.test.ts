@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { EXAMPLE_SCORES, findExampleScore } from "../example-scores";
 import { isComplete } from "../jianzi";
-import { jianziToFrequency, jianziToJianpu } from "../jianzi-pitch";
+import { JIANPU_DEGREES, jianziToFrequency, jianziToJianpu } from "../jianzi-pitch";
 
 describe("example-scores", () => {
   it("contains at least one example", () => {
@@ -54,7 +54,6 @@ describe("example-scores", () => {
     const OCTAVE_SEMITONES: Record<string, number> = {
       "": 0, "·": 12, "··": 24, ",": -12, ",,": -24,
     };
-    const DEGREE_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
 
     for (const score of EXAMPLE_SCORES) {
       it(`${score.title}：每条减字都出得了标注的音`, () => {
@@ -78,7 +77,7 @@ describe("example-scores", () => {
           if (freq == null) return;
           const target =
             41 +
-            DEGREE_SEMITONES[Number(note.jianpuNumber) - 1] +
+            JIANPU_DEGREES[Number(note.jianpuNumber) - 1][1] +
             (OCTAVE_SEMITONES[note.jianpuOctave] ?? 0);
           const midi = 69 + 12 * Math.log2(freq / 440);
           const gap = Math.abs(midi - target);
