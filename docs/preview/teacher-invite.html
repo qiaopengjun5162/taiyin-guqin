@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>太音 · 老师试用邀请卡（内部使用）</title>
+<style>
+  :root {
+    --paper: #f7f3ea;
+    --card: #fffdf8;
+    --ink: #2b2620;
+    --muted: #5c544a;
+    --jade: #2f5d50;
+    --line: #ddd3c0;
+    --gold: #a8761c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px 18px 64px;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: .04em; }
+  .lede { color: var(--muted); margin: 0 0 6px; }
+  .notice {
+    background: #f3ead6; border: 1px solid var(--line); border-left: 4px solid var(--gold);
+    padding: 10px 14px; margin: 16px 0 26px; font-size: 14px; border-radius: 4px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 18px 20px 20px; margin: 0 0 22px;
+  }
+  .card h2 { font-size: 17px; margin: 0 0 4px; }
+  .card .why { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  pre {
+    white-space: pre-wrap; word-break: break-word;
+    background: #fff; border: 1px solid var(--line); border-radius: 6px;
+    padding: 14px 16px; margin: 0 0 14px;
+    font-family: inherit; font-size: 14.5px; line-height: 1.85; color: var(--ink);
+    user-select: text;
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button, .btn {
+    min-height: 44px; min-width: 128px; padding: 9px 18px;
+    border: 1px solid var(--jade); border-radius: 6px;
+    background: var(--jade); color: #fff; font-size: 15px; font-weight: 600;
+    font-family: inherit; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  button:hover, .btn:hover { background: #244a40; }
+  button.secondary, .btn.secondary { background: #fff; color: var(--jade); }
+  button.secondary:hover, .btn.secondary:hover { background: #eef4f1; }
+  button.done { background: #244a40; }
+  :focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .status { min-height: 24px; font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .status.ok { color: var(--jade); font-weight: 600; }
+  .status.bad { color: #a02b1d; font-weight: 600; }
+  ul.red { margin: 8px 0 0; padding-left: 22px; }
+  ul.red li { margin: 4px 0; }
+  footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 14px; }
+  code { background: #efe7d7; padding: 1px 5px; border-radius: 3px; font-size: 12.5px; overflow-wrap: anywhere; }
+  footer a { color: var(--jade); text-underline-offset: 2px; }
+  footer a:hover { color: #244a40; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>太音 · 老师试用邀请卡</h1>
+  <p class="lede">给「要去联系琴馆 / 老师的人」自己用的工具页：点一下复制，粘到微信发就行。</p>
+  <div class="notice">
+    <strong>这页不用发给对方，也不对外发布。</strong>
+    完整说明、依据和口径红线在 <code>docs/teacher-trial-kit.md</code>。
+    <strong>发出去不等于有人用过</strong>：拿到对方回的一句话，才算一份试用记录。
+  </div>
+
+  <section class="card">
+    <h2>1. 微信极简版（最推荐）</h2>
+    <p class="why">三行、约 10 秒读完，微信里直接发。点「复制这段」即可。</p>
+    <pre id="t-short">老师您好，做了个古琴减字谱的网页小工具，想请您花 10 分钟挑挑毛病，打开就能用、什么都不用装：
+https://qiaopengjun5162.github.io/taiyin-guqin/
+试完随手回我一句就行：「我本来会怎么做这件事 → 我们这条路在哪一步反而更麻烦」。不方便随时说，不用勉强。</pre>
+    <div class="actions">
+      <button type="button" data-copy="t-short">复制这段</button>
+      <a class="btn secondary" href="https://qiaopengjun5162.github.io/taiyin-guqin/" target="_blank" rel="noopener">自己先打开看看</a>
+      <span class="status" data-status="t-short" role="status" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2. 正式邀请版（邮件 / 正式场合）</h2>
+    <p class="why">对方可能认真看、或要走邮件时用。三件事都写清了，但一句能力都没多承诺。</p>
+    <pre id="t-formal">老师您好，我们做了一个古琴减字谱的网页小工具，想请您试用 10 分钟，帮我们挑挑毛病。
+
+打开就能用，什么都不用装：https://qiaopengjun5162.github.io/taiyin-guqin/
+（打不开就用备用地址：https://taiyin-guqin-alws.vercel.app/ ）
+
+现在能用的三件事：
+- 把简谱翻成减字谱，会给几个候选和「为什么这样挪手」的理由；
+- 把打好的谱变成能播放的声音；
+- 导出成图片，或导出成一行纯文本（记事本就能传，不依赖装字体）。
+
+我们最想知道的不是「好不好用」，而是：您本来会怎么做这件事，我们这条路在哪一步反而比原来麻烦。
+小程序版还在做，网页版现在就能用。不方便随时说，不用勉强。</pre>
+    <div class="actions">
+      <button type="button" data-copy="t-formal">复制这段</button>
+      <span class="status" data-status="t-formal" role="status" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3. 一句话回执（对方回复时给这个）</h2>
+    <p class="why">别甩表格给老师填。回这一句就是有效反馈，比「挺好用的」有用得多。</p>
+    <pre id="t-reply">「我本来会 ____，试了 ____，卡在 ____（没卡就写没卡）」</pre>
+    <div class="actions">
+      <button type="button" data-copy="t-reply">复制这段</button>
+      <span class="status" data-status="t-reply" role="status" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4. 三天没回，跟一句就好</h2>
+    <p class="why">只跟一次，别连发、别催第二次。</p>
+    <pre id="t-follow">老师打扰一下，上次那个网页链接如果没顾上看就完全没关系～ 要是顺手点开过，哪怕只回一句「没看懂从哪开始」对我们都很帮助。</pre>
+    <div class="actions">
+      <button type="button" data-copy="t-follow">复制这段</button>
+      <span class="status" data-status="t-follow" role="status" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>改文案之前，对一遍这几条</h2>
+    <p class="why">左列是「不许说出口的话」。改一句就可能把做不到的事承诺出去，第一次试用直接失败。完整版见 <code>docs/teacher-trial-kit.md</code> 第 4 节。</p>
+    <ul class="red">
+      <li>不把图片识别当卖点，也不报识别准确率；主入口是键盘与简谱翻译。</li>
+      <li>不说小程序已发布；说「小程序版在做，网页版现在就能用」。</li>
+      <li>不承诺「分享链接、发给琴友就能一起看」；线上是纯静态站，只说导出图片或一行纯文本自己发出去。</li>
+      <li>不说字库很全、什么古谱都能打；说「常见指法都能打，异体字和古谱异形还没有」。</li>
+      <li>不说唯一、不说 100%、不说比别家快几倍。</li>
+    </ul>
+  </section>
+
+  <footer>
+    线上地址：<a href="https://qiaopengjun5162.github.io/taiyin-guqin/" target="_blank" rel="noopener">GitHub Pages（主）</a> ·
+    <a href="https://taiyin-guqin-alws.vercel.app/" target="_blank" rel="noopener">Vercel（备用）</a>。
+    本页是仓库内的静态物料，不进构建、不进部署、不影响线上代码；双击打开即可离线使用。
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  function setStatus(id, text, kind) {
+    var el = document.querySelector('[data-status="' + id + '"]');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  // 文案只写在 <pre> 里一份，按钮直接读页面文字，避免两处口径漂移。
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var id = btn.getAttribute('data-copy');
+      var src = document.getElementById(id);
+      if (!src) return;
+      var text = src.textContent.replace(/\s+$/, '');
+      var ok = false;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = false; }
+      }
+      if (!ok) ok = fallbackCopy(text);
+
+      if (ok) {
+        var old = btn.textContent;
+        btn.textContent = '已复制';
+        btn.classList.add('done');
+        setStatus(id, '已复制到剪贴板，直接粘到微信即可。', 'ok');
+        setTimeout(function () {
+          btn.textContent = old;
+          btn.classList.remove('done');
+          setStatus(id, '', '');
+        }, 2400);
+      } else {
+        setStatus(id, '自动复制没成功，请手动选中上面这段文字复制。', 'bad');
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
