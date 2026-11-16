@@ -101,12 +101,16 @@ verify-tuning:
 verify-duration:
     node scripts/verify-duration-code-contract.mjs --self-test && node scripts/verify-duration-code-contract.mjs
 
-# 领域常量契约（徽位音高 + 减字记号，18 项）；--self-test 跑 18 条变异
+# 领域常量契约（徽位音高 + 减字记号，20 项）；--self-test 跑 20 条变异
 verify-domain:
     node scripts/verify-domain-contracts.mjs --self-test && node scripts/verify-domain-contracts.mjs
 
 # 所有静态契约闸门（本地工具，不接 CI）
 verify-contracts: verify-tuning verify-duration verify-domain
+
+# S2 可行性实测：真实 Chromium 里跑静态导出产物的同步 WASM 初始化（需先 pnpm build）
+probe-wasm-sync:
+    node scripts/probe-wasm-sync-browser.mjs
 
 # 前端测试
 test-web:
