@@ -101,8 +101,12 @@ verify-tuning:
 verify-duration:
     node scripts/verify-duration-code-contract.mjs --self-test && node scripts/verify-duration-code-contract.mjs
 
+# 领域常量契约（徽位音高 + 减字记号，18 项）；--self-test 跑 18 条变异
+verify-domain:
+    node scripts/verify-domain-contracts.mjs --self-test && node scripts/verify-domain-contracts.mjs
+
 # 所有静态契约闸门（本地工具，不接 CI）
-verify-contracts: verify-tuning verify-duration
+verify-contracts: verify-tuning verify-duration verify-domain
 
 # 前端测试
 test-web:

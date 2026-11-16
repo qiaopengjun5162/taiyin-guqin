@@ -1,7 +1,7 @@
 # 阶段 0 · 前端逻辑归位 Rust 迁移清单
 
 > 状态：**待确认**。本文是内部工程清单，不是产品定位文档（定位仍以 `docs/overview.md` 为准）。
-> 盘点日期：2026-11-15。本阶段**不改任何产品行为、不动线上、不提交 WASM 二进制、不改覆盖率阈值**。
+> 盘点日期：2026-11-15，更新至 11-16。本阶段**不改任何产品行为、不动线上、不提交 WASM 二进制、不改覆盖率阈值**。
 > 数据口径：`node scripts/measure-codebase.mjs` + 本次对 `apps/web/src` 的 import 去重扫描；用例数按 `it(` / `test(` 行首统计。
 
 ---
@@ -117,9 +117,23 @@
 | **批 4** | 高扇出，逐个评估或只迁子集：`jianzi-explain`(6/33)、`jianzi-pitch`(9/24)、`concert-pitch`(9/11)、`tuning`(19/25)、`jianzi`(19/66) | S2 若通过 | 最后动渲染热路径 |
 | **阶段 3** | 桥接自动化：直接引用 wasm-pack 已有的 `apps/web/wasm/taiyin_core.d.ts`（配合 `ts-rs` 生成的 wire 类型），去掉 `taiyin-wasm.ts:16-26` 手写、注释明说「需手动同步」的 `WasmModule` 接口；`describePhrases` / `describeArrangement` 两个 TS 侧格式化函数一并归位 | 前序批次稳定 | 杜绝「Rust 改了、前端类型没跟」 |
 
-**批 0 前置闸门已就位（2026-11-15，纯只读工具，未改任何产品代码）**：`scripts/verify-duration-code-contract.mjs` 把「时值 ↔ 码尾数字」这组口径的四处钉成一份契约——Rust `DURATION_TOKENS`、TS `DURATION_CODE`、`Duration` 联合类型、`durationToBeats` 的 case 分支，并单独守住「`"16"` 必须排在 `"1"` 前面」这条顺序陷阱（否则十六分会被读成全，差十六倍时值）。基线 7/7 绿；`--self-test` 的 8 条变异逐条被**指定的那一项检查**抓到，其中一条故意只改顺序、集合完全不变，用来证明顺序检查不是摆设。本地入口 `just verify-duration` / `just verify-contracts`，按项目惯例不接 CI。
+**批 0 前置闸门已全部就位（2026-11-15 ~ 11-16，纯只读工具，未改任何产品代码）**。四组重复口径现在**每组都有跨语言静态闸门**：
 
-四组重复口径目前**覆盖 2 组**：定弦由既有 `verify-tuning-contract.mjs` 守、时值码由新脚本守；徽位音高表与减字记号表待补。补的时候照这个脚本的写法（数据锚点 + 集合比对 + 变异自测 + 防假抓到）。
+| 脚本 | 守什么 | 检查 / 变异 |
+| --- | --- | --- |
+| `verify-tuning-contract.mjs`（既有） | 定弦名单 4 份同源 | 11 项 / 7 条变异 |
+| `verify-duration-code-contract.mjs` | 时值 ↔ 码尾数字 4 处；`"16"` 必须排在 `"1"` 前的顺序陷阱 | 7 项 / 8 条变异 |
+| `verify-domain-contracts.mjs` | 徽位音高表 8 项 + 减字记号表 10 项 | 18 项 / 18 条变异 |
+
+`scripts/verify-domain-contracts.mjs` 覆盖的两组：
+- **徽位音高**：Rust `HUI_RATIOS` / `HUI_HARMONIC` / `DEGREE_SEMITONES` ↔ TS `HUI_FRACTION` / `HUI_HARMONIC`，外加「比例约分后的分母 == 泛音谐波次数」这条物理一致性（一徽 1/8→8 次、六徽 2/5→5 次、九徽 2/3→3 次）。它专门能抓住**两端一起改、集合仍然对齐、但物理上已经错了**的情况。另守 `HUI_TICKS` 必须由 `huiFraction` 派生，不许再抄一份表。
+- **减字记号**：Rust `TONE/SLIDE/HUI/FEN/STRING_TOKENS` ↔ `jianzi-rapid.ts` 的连打表 ↔ `jianzi.ts` 的 `SLIDE_MARKS` / `STRUCTURE_MARKS` ↔ `types.ts` 联合 ↔ Rust `StructureMark` 枚举，字母、汉字、顺序都逐项比。
+
+**边界（别误加）**：`ACTION_TOKENS` / `LEFT_TOKENS` 与连打 `rightAction` / `leftFinger` **不是同源**——Rust 存全字（挑/抹/食/名），连打存省写字形（乚/木/亻/夕），是归一化映射。把它们塞进静态比对只会制造误报。`SlideMark` 联合也不必比，多一个不在联合里的值 `tsc` 会直接红。
+
+现有 vitest 行为测试守的是**单侧性质**（21 个、无重复、抽查 1/7/13 徽位、5 个记号都有释义），这三个脚本守的是**跨语言同源**，层次不同、不重复。三个脚本都带 `--self-test`，变异逐条由 `expect` 指定的那一项检查抓到，防「改哪儿都全红」的假抓到。本地入口 `just verify-contracts`，按项目惯例不接 CI。
+
+**发现的技术债**：`apps/web/src/lib/__tests__/example-scores.test.ts` 里硬编码了第三份 `DEGREE_SEMITONES`。闸门先钉住防止漂移，后续应改成从单一来源导入，而不是继续维护第三份。
 
 **迁移范式**照抄 `score-phrases.ts`：句界只在 Rust 有一份（`phrase_ranges`），TS 侧只做排版与展示，不抄阈值。
 
@@ -183,6 +197,7 @@
 - [x] 写清每批验收命令与回滚点
 - [x] 实测 S2：`initSync` 同步初始化可行，9 个导出可同步调用
 - [x] 批 0 前置闸门：时值码四处同源，7 项基线 + 8 条变异自测全绿
-- [ ] 补齐另两组闸门（徽位音高表、减字记号表）
+- [x] 补齐另两组闸门（徽位音高 8 项 + 减字记号 10 项，18 条变异自测全绿）
+- [ ] 把 `example-scores.test.ts` 里硬编码的第三份半音表改成单一来源导入
 - [ ] P-1 ~ P-5 拍板
 - [ ] 批 0 开工（拍板后才动代码）
