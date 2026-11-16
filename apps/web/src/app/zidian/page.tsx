@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { JianziDictionary } from "@/components/jianzi-dictionary";
 import { JianziFrequencyPanel } from "@/components/jianzi-frequency-panel";
+import { BackToTop } from "@/components/page-chrome";
 
 export const metadata: Metadata = {
   title: "减字字典 · 太音字全表 | 古琴减字谱",
@@ -34,12 +35,22 @@ export default function ZidianPage() {
       </div>
 
       {/* ── 为什么要这份字全表 ── */}
-      <section className="mt-8 w-full max-w-md xl:max-w-3xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
+      {/* 说明默认收起：手机首屏否则全被长文占满，一个字都看不到。
+          用原生 details，内容仍在 DOM（读屏与静态导出都能取到），不引入客户端状态。 */}
+      <details className="group mt-8 w-full max-w-md xl:max-w-3xl rounded-lg border border-amber-700/20 bg-[var(--paper)] shadow-xl shadow-black/30">
         <div className="h-[3px] rounded-t-lg bg-gradient-to-r from-amber-700/40 via-[var(--vermillion)] to-amber-700/40" />
-        <div className="p-5">
-          <h2 className="mb-3 text-[10px] tracking-[0.3em] text-amber-700/60">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 marker:hidden">
+          <h2 className="text-[10px] tracking-[0.3em] text-amber-700/60">
             为什么要一份减字字典
           </h2>
+          <span className="shrink-0 whitespace-nowrap text-[10px] tracking-wider text-amber-700/50 group-open:hidden">
+            展开阅读 ▾
+          </span>
+          <span className="hidden shrink-0 whitespace-nowrap text-[10px] tracking-wider text-amber-700/50 group-open:inline">
+            收起 ▴
+          </span>
+        </summary>
+        <div className="px-5 pb-5">
           <div className="space-y-3 text-[12px] leading-[1.9] text-[var(--ink-light)]">
             <p>
               减字谱诞生千年，至今未纳入 Unicode 编码，录入仍靠手写或复制图片。要把它数字化，第一步是摸清「到底有多少个减字、每个字由哪些部件拼成、有哪些写法变体」。
@@ -57,7 +68,7 @@ export default function ZidianPage() {
             </p>
           </div>
         </div>
-      </section>
+      </details>
 
       {/* ── 字典本体 ── */}
       <section className="mt-4 w-full max-w-md xl:max-w-[1080px]">
@@ -107,6 +118,7 @@ export default function ZidianPage() {
           乐论 · 《荀子》读书
         </Link>
       </div>
+      <BackToTop />
     </main>
   );
 }

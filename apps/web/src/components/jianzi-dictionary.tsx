@@ -46,6 +46,14 @@ const TONE_OPTIONS: { label: string; value: ToneFilter }[] = [
   { label: "按音", value: "按" },
 ];
 
+/**
+ * 单批渲染的卡片数。
+ * 全表 59 字一次铺完，手机端一行一张要滚近 10 屏，首屏还看不到条目；
+ * 默认只出一批，用户点「显示更多」再追加。筛选 / 搜索仍在 Rust 端对全表执行，
+ * 这里只控制「画多少张」，不会缩小检索范围。
+ */
+const PAGE_SIZE = 20;
+
 /** 单个减字卡片：上区试听，下区存入「我的减字」（与编辑器共用同一份本地库）。 */
 function DictCard({
   entry,
@@ -183,6 +191,7 @@ export function JianziDictionary() {
   // loaded / error 只在异步回调里置位，避免在 effect 体内同步 setState（触发级联渲染告警）。
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   // 「我的减字」与编辑器页的 SavedJianziBar 共用同一份 localStorage：
   // 在这里存下的字，回编辑器就能一键填回。
@@ -228,13 +237,22 @@ export function JianziDictionary() {
   }, [wasmState, filter]);
 
   const results = result.entries;
+  const visible = results.slice(0, visibleCount);
+  const restCount = results.length - visible.length;
   // 加载态：wasm 未就绪，或首轮查询尚未返回（re-filter 期间沿用上一批结果，不闪烁）。
   const loading = wasmState !== "ready" || !loaded;
 
-  const set = <K extends keyof DictFilter>(key: K, value: DictFilter[K]) =>
+  // 所有筛选 / 搜索入口都走 set 或 reset：换条件时顺手把展开量收回第一批。
+  // 不在 effect 里同步 setState（会触发 react-hooks/set-state-in-effect）。
+  const set = <K extends keyof DictFilter>(key: K, value: DictFilter[K]) => {
     setFilter((prev) => ({ ...prev, [key]: value }));
+    setVisibleCount(PAGE_SIZE);
+  };
 
-  const reset = () => setFilter(EMPTY_FILTER);
+  const reset = () => {
+    setFilter(EMPTY_FILTER);
+    setVisibleCount(PAGE_SIZE);
+  };
   const isFiltered =
     filter.tone !== "" ||
     filter.left !== "" ||
@@ -318,6 +336,7 @@ export function JianziDictionary() {
             : "减字引擎加载中…"
           : `共 ${results.length} 字`}
         {!loading && isFiltered && ` · 全表 ${result.total} 字`}
+        {!loading && restCount > 0 && ` · 已显示 ${visible.length}`}
       </p>
 
       {/* ── 卡片网格（始终保留容器，便于检索与空态提示） ── */}
@@ -341,7 +360,7 @@ export function JianziDictionary() {
             没有匹配的减字 · 试试放宽筛选条件
           </p>
         ) : (
-          results.map((entry) => (
+          visible.map((entry) => (
             <DictCard
               key={entry.id}
               entry={entry}
@@ -351,6 +370,19 @@ export function JianziDictionary() {
           ))
         )}
       </div>
+
+      {!loading && !error && restCount > 0 && (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setVisibleCount((c) => Math.min(c + PAGE_SIZE, results.length))}
+            data-testid="dict-show-more"
+            className="min-h-[40px] rounded border border-amber-700/40 bg-[var(--paper)]/70 px-5 text-[11px] tracking-wider text-amber-800/80 transition-colors hover:border-amber-600/60 hover:bg-amber-700/10"
+          >
+            显示更多 · 还有 {restCount} 字
+          </button>
+        </div>
+      )}
 
       {notice && (
         <p role="status" className="mt-2 text-[10px] tracking-wider text-amber-700/60">

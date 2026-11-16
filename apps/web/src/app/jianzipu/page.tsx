@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RAPID_CHEATSHEET } from "@/lib/jianzi-rapid";
+import { BackToTop } from "@/components/page-chrome";
 
 export const metadata: Metadata = {
   title: "减字谱 · 太音科普 | 古琴减字谱",
@@ -183,6 +184,7 @@ export default function JianzipuPage() {
           减字字典 · 字全表
         </Link>
       </div>
+      <BackToTop />
     </main>
   );
 }

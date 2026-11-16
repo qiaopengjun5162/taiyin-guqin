@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BackToTop } from "@/components/page-chrome";
 
 export const metadata: Metadata = {
   title: "乐论 · 太音读书 | 古琴减字谱",
@@ -113,6 +114,7 @@ export default function YuelunPage() {
       >
         ← 回到减字谱编辑器
       </Link>
+      <BackToTop />
     </main>
   );
 }
