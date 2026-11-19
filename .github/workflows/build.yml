@@ -152,6 +152,16 @@ jobs:
           WASM_OPT_CACHE_DIR: ${{ runner.tool_cache }}/binaryen-v130
         run: bash scripts/ci-install-wasm-opt.sh
 
+      - name: Verify WASM freshness
+        # 提交进 git 的 .wasm 必须与 Rust 源码同步（按内容指纹，不看 mtime）。
+        # 本地价值最大：忘了 build-wasm 时，跑真实 WASM 的测试会测旧逻辑而全绿。
+        #
+        # ⚠ 必须在 Build WASM **之前**跑。下面那步会用 CI 自己的 wasm-opt 重建产物，
+        # 而 wasm-opt 的版本/平台不同 → 重建后字节必然与提交的清单不同。
+        # 放在后面就会恒假红（2026-11-19 实际踩到：本地全绿、CI 报「产物内容与清单不符」）。
+        # 校验的是「checkout 出来的提交产物与提交的源码是否同源」，与 CI 重建无关。
+        # 见 scripts/verify-wasm-fresh.mjs 与 just verify-wasm-fresh。
+        run: node scripts/verify-wasm-fresh.mjs
       - name: Build WASM
         # 前端直接 import('@/wasm/taiyin_core')（经 tsconfig 的 '@/wasm/*': ['./wasm/*']
         # 解析到 apps/web/wasm），而 apps/web/wasm 被本地 .gitignore(*) 忽略、不进仓库，
@@ -170,12 +180,6 @@ jobs:
         # tuning 参数确实改变候选。前置条件由上一 Build WASM 步骤满足（apps/web/wasm 已生成）。
         # 见 scripts/verify-wasm.mjs 与 just verify-wasm。
         run: node scripts/verify-wasm.mjs
-      - name: Verify WASM freshness
-        # 提交进 git 的 .wasm 必须与 Rust 源码同步（按内容指纹，不看 mtime）。
-        # CI 每次都重建，所以这里主要防「产物与清单被提交成不一致的两份」；
-        # 本地价值更大：忘了 build-wasm 时，跑真实 WASM 的测试会测旧逻辑而全绿。
-        # 见 scripts/verify-wasm-fresh.mjs 与 just verify-wasm-fresh。
-        run: node scripts/verify-wasm-fresh.mjs
       - name: Verify pending article copy
         # 待群发物料口径闸门：docs/articles/drafts/*.md 全扫 + fail-closed
         # （草稿不写进台账就判红，防止「改了仓库口径、忘了改待发稿」）。
