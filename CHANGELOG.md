@@ -7,7 +7,7 @@
 `docs/rust-migration-phase0.md` 的批次表从「待拍板」走到执行完毕。前端不再各写一份领域规则，
 Rust 成为唯一实现；UI 只做搬运与展示。
 
-- **六个新核心模块**（`crates/taiyin-core/src/`，合计 4,610 行、142 个 Rust 单测）：
+- **六个新核心模块**（`crates/taiyin-core/src/`，合计 4,610 行、138 个 Rust 单测）：
   `lianmei.rs`（联袂成组，21 测）、`jianpu_parse.rs`（简谱解析 + 时值表，15 测）、
   `jianzi_rapid.rs`（连打文法，19 测）、`jianzi_text.rs`（减字文本互转，**37 测**，这是字体连字顺序那套实测规则的唯一落点）、
   `pitch.rs`（减字 → 音高，15 测）、`explain.rs`（减字释义，31 测）。

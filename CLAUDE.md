@@ -22,13 +22,20 @@
 ```
 taiyin-guqin/
 ├── crates/
-│   ├── taiyin-core/       # 核心数据结构 + WASM 桥接
-│   │   ├── src/wasm.rs    #  ← WASM 导出函数（JSON 桥接）
+│   ├── taiyin-core/       # 核心数据结构 + 领域逻辑 + WASM 桥接
+│   │   ├── src/wasm.rs    #  ← WASM 导出函数（JSON 桥接，26 个导出）
+│   │   ├── src/jianzi_text.rs   # 减字文本互转（字体连字顺序的唯一落点）
+│   │   ├── src/jianzi_rapid.rs  # 连打文法
+│   │   ├── src/jianpu_parse.rs  # 简谱解析 + 时值表
+│   │   ├── src/explain.rs       # 减字释义
+│   │   ├── src/pitch.rs         # 减字 → 音高
+│   │   ├── src/lianmei.rs       # 联袂成组
 │   │   └── pkg/           #  ← wasm-pack 构建产物
 │   └── taiyin-server/     # Axum 后端 API 服务
 ├── apps/
-│   └── web/               # Next.js 前端
-│       ├── src/lib/taiyin-wasm.ts  #  ← WASM 动态加载封装
+│   └── web/               # Next.js 前端（薄壳，只搬运与展示）
+│       ├── src/lib/client/index.ts  #  ← UI 与绑定层之间唯一门面
+│       ├── src/lib/taiyin-wasm.ts   #  ← WASM 加载封装（同步 / 异步两条路径）
 │       └── wasm/          #  ← WASM 产物部署目录
 ├── scripts/               # 字体/字形提取工具脚本
 │   ├── extract-svg-paths.py       # 从 TaiYinJianZiPuKaiTi.ttf 提取 SVG path
@@ -82,7 +89,16 @@ just ci
 ## WASM 桥接架构
 
 - **策略**: JSON 字符串输入/输出桥接。所有 `#[wasm_bindgen]` 函数接收和返回 `String`，内部使用 `serde_json` 做 Rust ⇄ JSON 转换。避免将 Rust 复杂枚举直接映射到 JS 类型。
-- **动态加载**: Next.js SSR 下 WASM 不可用，前端通过 `src/lib/taiyin-wasm.ts` 封装动态 `import()`。首次调用时自动初始化，后续复用缓存实例。验证方法：`taiyin-wasm.ts` 中的 `instance` 变量和 `getWasm()` 的懒加载逻辑。
+- **加载与调用**: 领域逻辑在 Rust，前端是**薄壳**。`src/lib/taiyin-wasm.ts` 提供三条路径，按场景选用：
+  ① **启动预加载 + 同步 getter**（`initWasmSync()` / `getWasmSync()` / `isWasmReady()`）——根布局的
+  `wasm-bootstrap.tsx` 挂载即预热，之后渲染热路径直接同步调用，不引入 await；
+  ② `...Sync()` 同步 getter，语义同上、供具体模块使用；③ 原有 async API（懒加载，回退用）。
+  三条共用同一个 instance / loadPromise，谁先成功谁占用。
+  ⚠️ 同步路径下**引擎未就绪时薄壳返回降级值**（如 `jianziToText` 回退成字形拼接「散乚一」而非
+  可读名「散挑一」）。依赖领域逻辑的测试必须 `beforeAll(loadRealWasm)`（见
+  `src/lib/__tests__/load-wasm.ts`），否则测的是降级分支。
+- **UI 不直连绑定层**: 组件只 import `@/lib/client`（唯一门面），底下走 WASM 还是 HTTP 由门面决定。
+  新增能力先加门面导出，不要在组件里直接 import `taiyin-wasm` 或 `api`。
 - **构建流程**: `just build-wasm` 执行 `wasm-pack build --target web` 并将 `pkg/` 产物复制到 `apps/web/wasm/`。
 - **路径别名**: TypeScript + vitest 都配置了 `@/wasm/* → ./wasm/*` 别名，前端代码通过 `@/wasm/taiyin_core` 导入 WASM 模块。
 - **条件编译**: `wasm.rs` 使用 `#[cfg(target_arch = "wasm32")]` 条件编译，不影响 native 编译（server binary、cargo test）。
@@ -92,7 +108,7 @@ just ci
 
 - **纯字体 GSUB 连字方案**: 忘机减字谱楷体是 OpenType GSUB 连字引擎，26 个 lookup + 227 个 GPOS lookup。输入完整字符串（如"散勾五"），字体自动完成传统半包围嵌套排版。
 - **渲染入口**: `JianziBlock` (`src/components/jianzi-block.tsx`) 是唯一渲染入口，接收 `JianziState + fontSize + compact`，通过 `jianziToText()` 序列化为字符串后写入 `<span>`，CSS 开启 `font-variant-ligatures: common-ligatures` 和 `font-feature-settings: "liga" on, "clig" on`。
-- **`jianziToText` 翻译层** (`src/lib/types.ts`): 键盘偏旁（勹/木/乚/乇/丁/尸/倽）需映射为字体 GSUB 可识别的全字符（勾/抹/挑/托/打/擘/摘），否则字体 cmap 找不到对应字形。
+- **`jianziToText` 翻译层**（实现已迁 Rust：`crates/taiyin-core/src/jianzi_text.rs`；前端 `src/lib/jianzi.ts` 只是薄壳）: 键盘偏旁（勹/木/乚/乇/丁/尸/倽）需映射为字体 GSUB 可识别的全字符（勾/抹/挑/托/打/擘/摘），否则字体 cmap 找不到对应字形。序列化顺序 = 字体连字规则（分数在右手指法前、吟猱族挂字尾），每条都对应一次真渲染实测，改顺序前先读 Rust 侧注释。
 - **泛音空格阻断**: 泛音在 "泛" 后加空格（"泛 名十勾三"）断开 GSUB 上下文链，防止字体把音色标记和后续指法吞入同一条连字规则。
 - **连续同音省略（compact）**: 所有音色（散/泛/按）都参与 compact。连续两条 `toneType` 相同（且非 null）时隐藏音色标记。验证方法：读取 `ScoreView.map` 中的 `sameTone` 条件。
 - **状态保留（方案 B）**: `handleConfirm` 中提交后只保留 `toneType` 和 `rhythmMode`，清空 `leftFinger/hui/fen/rightAction/stringNumber`。验证方法：读取 `JianzipuKeyboard.handleConfirm` 中的 `setState` 调用。
@@ -247,7 +263,10 @@ src/
 - 后端集成测试需要运行中的 PostgreSQL。
 - 测试文件位置：`src/components/__tests__/`、`src/lib/__tests__/`、`crates/taiyin-server/tests/`。
 - `JianziState` 测试构造统一用 `make(overrides: Partial<JianziState>)` 辅助函数。
-- 当前测试总数：Rust `--lib` 52（+ tests/ 集成）+ 前端 298 条（26 文件）。
+- 测试总数**不要看本文的散落数字**：正文里那些「Rust 45 + 前端 135 = 180」是 2026-07 快照，
+  已严重滞后。以 `node scripts/measure-codebase.mjs` 的现场输出为准。
+  两个口径都对，别把它俩当成矛盾：静态调用点 1391（数 `it(` / `test(`）vs
+  实际执行 1393（`it.each` 展开后多 2 条）。Rust 侧同理：属性 403 条。
 - **新测试必须变异验证**（改坏实现看它红一次再改回），见 VERIFICATION.md §4。
 
 ## 电子谱面识别（模板匹配 + 整页切分）

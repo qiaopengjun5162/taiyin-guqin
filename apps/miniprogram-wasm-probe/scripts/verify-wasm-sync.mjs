@@ -5,7 +5,7 @@
  * 为什么需要它（真实事故）：
  * 2026-11-08 commit d6aebff 改了根 Cargo.toml 的 release profile
  * （lto=thin / strip / opt-level=z），web 产物 276,675 → 231,388 字节，
- * 但探针里的 wasm 没跟着重建。**两边 9 个公开导出名完全一样**，
+ * 但探针里的 wasm 没跟着重建。**当时两边 9 个公开导出名完全一样**，
  * 所以「导出集对比」这种判据当场就废了。真正能抓住它的是：
  *   ① 三份 wasm 字节相等（探针 / apps/web/public / apps/web/wasm）
  *   ② 源码 + 构建配置的指纹与清单记录一致

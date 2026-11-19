@@ -130,9 +130,12 @@ node apps/miniprogram-wasm-probe/scripts/prepare-realdevice-copy.mjs --appid wx�
   开发者工具编译目标，真机用的是手机微信自带的基础库；写死会给「已验证低版本」的假信号。
   要补测低版本，得在开发者工具里手动切基础库再跑一遍第 5 步。
 - 探针只有 4 个页面，**不是产品**。真机过了也只是「可行性成立」，离发布还差完整小程序。
-- 9 个导出函数里，探针页面只实际调了 4 个
+- 导出函数现有 **26 个**（`crates/taiyin-core/src/wasm.rs`，随领域逻辑迁入 Rust 而增长），
+  探针页面只实际调了 4 个
   （`get_jianzi_variant_groups` / `split_phrases_to_json` / `translate_jianpu_to_jianzi` / `decode_jianzi_batch`）。
-  其余 5 个只有 Node 侧校验覆盖，真机未触达。
+  其余 22 个只有 Node 侧校验覆盖，真机未触达。
+  这**不影响本次判定**：真机要证的是「WXWebAssembly 能加载并同步调用核心导出」，
+  4 个足以证明；但别把「这 4 个在真机上通了」读成「整套导出都在真机验证过」。
 
 ---
 
