@@ -62,6 +62,12 @@ jobs:
         # 再比对 git 工作树中的 apps/web/src/lib/generated。
         # 若有人改了 Rust 契约却忘了 just gen-types，这里会失败，防止契约漂移。
         run: cargo run -p taiyin-core --bin gen_types && git diff --exit-code -- apps/web/src/lib/generated
+      - name: Verify audit exemptions are in sync
+        # 豁免写在两处（.cargo/audit.toml 与下面 audit-check 的 ignore:），各自独立生效。
+        # 只加在一处会得到「本地绿、CI 红」或反过来的假信号，而人会先去怀疑新代码。
+        # 放在 audit 之前：分家时先报出人话，不用去猜 cargo 为什么红。
+        # 见 scripts/verify-audit-exemptions.mjs。
+        run: node scripts/verify-audit-exemptions.mjs
       - name: Dependency vulnerability audit (cargo audit)
         uses: rustsec/audit-check@v2.0.0
         with:
@@ -72,7 +78,9 @@ jobs:
           #   RUSTSEC-2026-0459 libsqlite3-sys 0.30.1 的 WAL 内存问题 —— 修复要 >=0.39，
           #     但 sqlx 0.8.6 锁 ^0.30、sqlx 0.9.0 只到 ^0.37，上游链还没跟上；
           #     且该 crate 只在 sqlx 的 sqlite feature 下编译，本项目只用 postgres
-          ignore: RUSTSEC-2023-0071,RUSTSEC-2026-0381,RUSTSEC-2026-0459
+          #   RUSTSEC-2026-0543 chrono 标记 unmaintained —— patched 为空，不存在补丁版本；
+          #     由 sqlx-core 引入，本项目的 chrono 只承接 TIMESTAMPTZ 映射
+          ignore: RUSTSEC-2023-0071,RUSTSEC-2026-0381,RUSTSEC-2026-0459,RUSTSEC-2026-0543
       - name: Test
         run: cargo nextest run --all-features
 

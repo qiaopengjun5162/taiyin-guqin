@@ -121,7 +121,11 @@ verify-domain:
     node scripts/verify-domain-contracts.mjs --self-test && node scripts/verify-domain-contracts.mjs
 
 # 所有静态契约闸门（与 CI 的 build.yml 保持一致；本地跑得到就等于提前发现）
-verify-contracts: verify-tuning verify-duration verify-domain verify-wasm-fresh
+verify-contracts: verify-tuning verify-duration verify-domain verify-wasm-fresh verify-audit-exemptions
+
+# 依赖审计豁免表同源：.cargo/audit.toml ↔ build.yml 的 ignore: 必须完全相等
+verify-audit-exemptions:
+    node scripts/verify-audit-exemptions.mjs
 
 # S2 可行性实测：真实 Chromium 里跑静态导出产物的同步 WASM 初始化（需先 pnpm build）
 probe-wasm-sync:

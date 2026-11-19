@@ -28,9 +28,19 @@
 #        本项目不打开任何 SQLite 文件，只连云上的 Postgres。
 #   待 sqlx 链放开到 libsqlite3-sys >= 0.39 后，移除该豁免并升级依赖。
 
+# RUSTSEC-2026-0543 — chrono 0.4.44 被标记「unmaintained」（注意：不是漏洞，是维护状态告示）。
+#   该 advisory 的 versions.patched 为空 —— **不存在补丁版本**，升到任何 chrono 版本都不消除。
+#   上游建议换 jiff / time，但 chrono 不是本项目直接依赖：它由 sqlx-core 0.8.6 引入
+#   （`cargo tree -i chrono` 显示整条链都是 sqlx-postgres / sqlx-macros），
+#   换掉它等于要 sqlx 先换，属上游决策。
+#   影响面：本项目的 chrono 只用来承接 sqlx 的 TIMESTAMPTZ 映射，不解析不可信时间字符串，
+#   「没人维护」在已冻结的 0.4.x 上不引入新风险。待 sqlx 换掉 chrono 后移除此豁免。
+#   2026-11-19：cargo audit 的 vulnerabilities.count 已归 0，只剩这条 informational warning。
+
 [advisories]
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2026-0381",
     "RUSTSEC-2026-0459",
+    "RUSTSEC-2026-0543",
 ]
