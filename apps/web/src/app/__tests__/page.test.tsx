@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
+import { loadRealWasm } from "../../lib/__tests__/load-wasm";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 
 // 主页面会用到后端（保存/加载/翻译/识别）。这里整体替身，测试只关心
@@ -24,7 +25,15 @@ vi.mock("@/lib/audio-export", () => ({
 
 // WASM 胶水由 CI 在测试前构建；本地裸跑时不存在。这条冒烟测的是 React 接线，
 // 不是 WASM 逻辑，所以整体替身掉（真 WASM 由 verify-wasm.mjs 与集成测试守）。
-vi.mock("@/lib/taiyin-wasm", () => ({
+/*
+ * 用 `importOriginal` 保留真实模块：`loadRealWasm` 要调 `initWasmSync`，
+ * 整个替身掉会让它变成 undefined（音高推算一迁进 Rust，这条链就断了）。
+ * 只覆盖本文件真正需要替身的那几个导出。
+ */
+vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
+  return {
+    ...actual,
   getWasmLoadState: () => "ready",
   getWasmLoadError: () => null,
   initWasm: vi.fn().mockResolvedValue(undefined),
@@ -32,7 +41,8 @@ vi.mock("@/lib/taiyin-wasm", () => ({
   translateJianpuToJianzi: vi.fn(),
   translateJianpuSequenceToJianzi: vi.fn(),
   splitPhrases: vi.fn().mockResolvedValue([]),
-}));
+  };
+});
 
 import Home from "@/app/page";
 
@@ -44,6 +54,9 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("Home（主页面冒烟）", () => {
   it("mounts and renders the brand, subtitle and core controls", () => {
@@ -96,19 +109,25 @@ describe("Home（主页面冒烟）", () => {
     expect(screen.queryByLabelText("停止播放")).toBeNull();
   });
 
-  it("空谱给出「太音是什么」介绍区，载入示例后收起", async () => {
+  it("空谱给出「一句话 + 两个按钮」的入口，载入示例后收起", async () => {
+    /*
+     * 2026-11-18 按「一句话原则」重写首屏后，这里断言的东西变了：
+     * 旧版铺了「太音是什么」+ 三类入口 + 407 个字，新手找不到该点哪。
+     * 现在只有一句定位 + 两个动作，其余折进 details。
+     */
     const { container } = render(<Home />);
 
-    // 新访客第一眼要看见定位：打谱工具 + 三类入口
-    expect(container.querySelector('section[aria-label="太音是什么"]')).not.toBeNull();
-    expect(screen.getByText("太音是什么")).toBeTruthy();
-    expect(screen.getByText("古琴打谱工具")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "先听一首《沧海一声笑》" })).toBeTruthy();
+    expect(container.querySelector('section[aria-label="开始使用"]')).not.toBeNull();
+    expect(screen.getByText("把看不懂的古琴老谱，变成能弹、能听的曲子。")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "先听一首" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "开始打谱" })).toBeTruthy();
+    // 深入说明折起来，不占首屏
+    expect(screen.getByText("第一次用？看这三行")).toBeTruthy();
 
-    // 「先听一首」载入示例并自动出声；载入后介绍区收起，不挡打谱
-    fireEvent.click(screen.getByRole("button", { name: "先听一首《沧海一声笑》" }));
+    // 「先听一首」载入示例并自动出声；载入后入口区收起，不挡打谱
+    fireEvent.click(screen.getByRole("button", { name: "先听一首" }));
     await waitFor(() => {
-      expect(container.querySelector('section[aria-label="太音是什么"]')).toBeNull();
+      expect(container.querySelector('section[aria-label="开始使用"]')).toBeNull();
       expect(container.querySelectorAll("[data-note-column]").length).toBeGreaterThan(0);
     });
   });
@@ -143,23 +162,31 @@ describe("Home（主页面冒烟）", () => {
     vi.stubGlobal("AudioContext", FakeAudioContext);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: "先听一首《沧海一声笑》" }));
+    fireEvent.click(screen.getByRole("button", { name: "先听一首" }));
     await waitFor(() => expect(screen.getByLabelText("停止播放")).toBeTruthy());
     expect(start).toHaveBeenCalled();
   });
 
-  it("空谱给出「只想记一个字」的轻用入口，开始打谱后收起", async () => {
+  it("「只想记一个字」收成折叠入口，打开后能「去敲一个字」", async () => {
+    /*
+     * 2026-11-18 改：它是**次要场景**，不该和主路径并排各占一大块。
+     * 现在是 details，默认收起——想用的人点开，不想用的人只看到一行标题。
+     */
     const { container } = render(<Home />);
 
-    // 冷启动是最需要「原来只要记一个字」这句话的时刻
-    expect(container.querySelector('section[aria-label="只想记一个字"]')).not.toBeNull();
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
     expect(screen.getByText("只想记一个字？不必打整首谱")).toBeTruthy();
-    // jsdom 没有 scrollIntoView：点这个按钮不该抛 TypeError
+
+    // 展开后按钮可用；jsdom 没有 scrollIntoView，点它不该抛 TypeError
+    fireEvent.click(screen.getByText("只想记一个字？不必打整首谱"));
     expect(() => fireEvent.click(screen.getByRole("button", { name: "去敲一个字" }))).not.toThrow();
 
+    // 有音符后整个入口消失
     fireEvent.click(screen.getByRole("button", { name: "沧海一声笑" }));
     await waitFor(() => {
-      expect(container.querySelector('section[aria-label="只想记一个字"]')).toBeNull();
+      expect(screen.queryByText("只想记一个字？不必打整首谱")).toBeNull();
     });
   });
 

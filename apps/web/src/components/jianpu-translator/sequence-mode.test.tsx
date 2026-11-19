@@ -1,9 +1,37 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import type { NoteColumn } from "@/lib/types";
 import type { JianziCandidate } from "@/lib/generated/taiyin";
 import { SequenceMode } from "./sequence-mode";
+
+/**
+ * 装载真实 WASM：简谱解析已迁进 Rust（`parse_jianpu`），
+ * 组件靠它把输入串变成音符。没有真引擎时解析返回空数组，
+ * 后面的「确认成谱」自然什么也产不出来。
+ */
+beforeAll(async () => {
+  const bytes = readFileSync(
+    resolve(__dirname, "../../../wasm/taiyin_core_bg.wasm"),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("taiyin_core_bg.wasm")) {
+        return new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "application/wasm" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+  const mod = await import("@/lib/taiyin-wasm");
+  await mod.initWasmSync();
+});
 
 // 翻译器只依赖 wasm 这一条外部调用；其余逻辑（候选对齐、确认成谱）在组件内。
 // 这里让翻译「漏回一组候选」，复现后端候选数少于音数的罕见情况，

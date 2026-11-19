@@ -29,7 +29,7 @@ import {
   analyzeJianziFrequency,
   getJianziVariantGroups,
   useWasmInit,
-} from "@/lib/taiyin-wasm";
+} from "@/lib/client";
 import { EXAMPLE_SCORES } from "@/lib/example-scores";
 import {
   getScoresSnapshot,

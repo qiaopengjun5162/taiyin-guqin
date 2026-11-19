@@ -35,7 +35,14 @@ export function JianziExplainPanel({ state }: { state: JianziState }) {
       <dl className="mt-2 grid grid-cols-1 gap-y-1">
         {explanation.parts.map((part) => (
           <div key={part.label} className="flex gap-2 text-[11px] leading-relaxed">
-            <dt className="w-8 shrink-0 tracking-[0.15em] text-amber-800/60">{part.label}</dt>
+            {/*
+             * 标签宽度不能写死。原先用 `w-8`（32px）——12px 字号时刚好装下两字，
+             * 2026-11-18 正文提到 14px 后「音色」被挤成上下两行（「音」上「色」下）。
+             * 改成「最小 2em + 不换行」：宽度跟着字号自动走，对齐也保住了。
+             */}
+            <dt className="min-w-[2em] shrink-0 whitespace-nowrap tracking-[0.15em] text-amber-800/60">
+              {part.label}
+            </dt>
             <dd className="text-stone-700">{part.text}</dd>
           </div>
         ))}

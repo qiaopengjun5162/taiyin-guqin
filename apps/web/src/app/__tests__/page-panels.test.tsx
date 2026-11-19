@@ -86,6 +86,13 @@ vi.mock("@/lib/score-export", async (importOriginal) => {
 });
 
 vi.mock("@/lib/taiyin-wasm", () => ({
+  // 释义/短标签等已迁进 Rust，前端薄壳要 isWasmReady 才肯转发。
+  // 这里给「未就绪」：本测试只关心面板开合，释义内容不参与断言；
+  // 给了 ready 反而要连 getWasmSync 一起造，平白多一堆假实现。
+  isWasmReady: () => false,
+  getWasmSync: () => {
+    throw new Error("本测试不应调用 WASM 同步接口");
+  },
   getWasmLoadState: () => "ready",
   getWasmLoadError: () => null,
   initWasm: vi.fn().mockResolvedValue(undefined),
@@ -188,13 +195,14 @@ describe("主页折叠面板", () => {
     expect(screen.queryByTestId("tuner")).not.toBeInTheDocument();
     expect(screen.queryByTestId("practice")).not.toBeInTheDocument();
     expect(screen.queryByTestId("recorder")).not.toBeInTheDocument();
-    expect(screen.getByText(/识别减字图片/)).toBeInTheDocument();
+    // 用按钮角色定位：折叠说明里也提到了「识别减字图片」，纯文本匹配会撞上两个
+    expect(screen.getByRole("button", { name: /识别减字图片/ })).toBeInTheDocument();
   });
 
   it("点开识别：默认单字，可切整页，再点收起", () => {
     render(<Home />);
 
-    fireEvent.click(screen.getByText(/识别减字图片/));
+    fireEvent.click(screen.getByRole("button", { name: /识别减字图片/ }));
     expect(screen.getByTestId("recognizer-single")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("整页"));

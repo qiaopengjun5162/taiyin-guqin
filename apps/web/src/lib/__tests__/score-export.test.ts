@@ -1,10 +1,17 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import { formatScoreAsText, downloadTextFile } from "../score-export";
 import { createEmptyState } from "@/lib/jianzi";
+import { loadRealWasm } from "@/lib/__tests__/load-wasm";
 import type { NoteColumn, JianziState } from "../types";
+
+/*
+ * 导出走 `jianziToText`，它已迁进 Rust。不装载真实 WASM 时薄壳降级成
+ * 字形拼接（「散乚一」），测不到字体连字规则。
+ */
+beforeAll(loadRealWasm);
 
 function makeNote(overrides: Partial<NoteColumn> = {}): NoteColumn {
   const jianzi: JianziState = {

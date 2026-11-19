@@ -8,7 +8,8 @@
  * ② mock 掉合成函数，只校验"谁在什么时刻被调度"；
  * ③ WAV 编码是纯函数，用真实字节头 + 采样点逐字节断言。
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
+import { loadRealWasm } from "./load-wasm";
 import type { NoteColumn } from "../types";
 import {
   renderScoreToBuffer,
@@ -98,6 +99,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("renderScoreToBuffer", () => {
   it("按排期拨弦，跳过休止符", async () => {

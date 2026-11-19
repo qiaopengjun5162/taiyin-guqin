@@ -5,7 +5,9 @@
  * 成员还挂着一条指向不存在组首的 link。谱面上表现为一条连不起来的
  * 连音线，不报错、也不崩，只能靠用例挡住。
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   LIANMEI_OPTIONS,
   clearLianmei,
@@ -18,6 +20,31 @@ import {
 } from "../lianmei";
 import { createEmptyState } from "../jianzi";
 import type { NoteColumn } from "../types";
+
+/**
+ * 成组/解组/音程判定的唯一实现在 Rust（`crates/taiyin-core/src/lianmei.rs`），
+ * 所以这一套用例跑**真实 WASM 产物**，不是替身——用 mock 测等于只测了薄壳的 JSON 搬运。
+ */
+beforeAll(async () => {
+  const bytes = readFileSync(
+    resolve(__dirname, "../../../wasm/taiyin_core_bg.wasm"),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("taiyin_core_bg.wasm")) {
+        return new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "application/wasm" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+  const { initWasmSync } = await import("../taiyin-wasm");
+  await initWasmSync();
+});
 
 function makeNote(id: string): NoteColumn {
   return {

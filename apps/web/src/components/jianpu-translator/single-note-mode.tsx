@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { JianpuNumber, JianpuOctave, NoteColumn } from "@/lib/types";
-import { translateJianpuToJianzi } from "@/lib/taiyin-wasm";
+import { translateJianpuToJianzi } from "@/lib/client";
 import { useNotePreview } from "@/lib/use-note-preview";
 import type { JianziCandidate } from "@/lib/generated/taiyin";
 import { buildJianziState, candidateToNoteColumn } from "./candidate";

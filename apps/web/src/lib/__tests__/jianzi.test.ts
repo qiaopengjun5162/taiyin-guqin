@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import { loadRealWasm } from "./load-wasm";
 import {
   createEmptyState,
   isComplete,
@@ -15,6 +16,14 @@ import type { JianziState } from "../types";
 function make(overrides: Partial<JianziState> = {}): JianziState {
   return { ...createEmptyState(), ...overrides };
 }
+
+/*
+ * 序列化/解析已迁进 Rust（`taiyin-core/src/jianzi_text.rs`），
+ * 这里必须加载**真实 .wasm**：用 mock 就测不到字体连字顺序那套规则了。
+ */
+beforeAll(async () => {
+  await loadRealWasm();
+});
 
 describe("createEmptyState", () => {
   it("returns all-null state", () => {

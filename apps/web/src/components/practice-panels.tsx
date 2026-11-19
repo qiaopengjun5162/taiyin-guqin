@@ -71,11 +71,21 @@ export function PracticePanels({
   sticking: StickingPoint[];
   onPracticePhrase: (index: number) => void;
 }) {
-  const [showRecognizer, setShowRecognizer] = useState(false);
-  const [showBoard, setShowBoard] = useState(false);
-  const [showTuner, setShowTuner] = useState(false);
-  const [showPractice, setShowPractice] = useState(false);
-  const [showPracticeLog, setShowPracticeLog] = useState(false);
+  /*
+   * 五个面板用**一个** state 管：同时只开一个（手风琴）。
+   *
+   * 2026-11-18 实拍发现的问题：五个独立 useState 允许同时展开，
+   * 全打开后右栏 2775px、左栏 1777px——页面被撑到 3214px，底部一大片空白，
+   * 而且用户点第二个面板时第一个还占着位置，得一路滚过去才能看到新的。
+   *
+   * 这些是「工具」，不是「文档章节」：用户一次只会用一件。
+   */
+  const [openPanel, setOpenPanel] = useState<
+    "recognizer" | "board" | "tuner" | "practice" | "log" | null
+  >(null);
+  /** 点同一个就收起，点别的就换过去——手风琴的标准行为。 */
+  const toggle = (id: NonNullable<typeof openPanel>) =>
+    setOpenPanel((cur) => (cur === id ? null : id));
   const [recognizerTab, setRecognizerTab] = useState<"single" | "sheet">("single");
   const [practiceLogTab, setPracticeLogTab] = useState<"record" | "log">("record");
 
@@ -87,8 +97,8 @@ export function PracticePanels({
         heading="谱字识别"
         openLabel="＋ 识别减字图片"
         closeLabel="收起识别"
-        open={showRecognizer}
-        onToggle={() => setShowRecognizer((v) => !v)}
+        open={openPanel === "recognizer"}
+        onToggle={() => toggle("recognizer")}
       >
         <div className="mb-3 flex items-center gap-2">
           <button
@@ -125,8 +135,8 @@ export function PracticePanels({
         heading="琴面音位"
         openLabel="＋ 琴面音位全览（七弦十三徽 · 点哪听哪 · 按住拖是走手音）"
         closeLabel="收起琴面"
-        open={showBoard}
-        onToggle={() => setShowBoard((v) => !v)}
+        open={openPanel === "board"}
+        onToggle={() => toggle("board")}
       >
         <QinBoard />
       </CollapsiblePanel>
@@ -137,8 +147,8 @@ export function PracticePanels({
         heading="调音定弦"
         openLabel="＋ 调音 / 定弦（麦克风校弦 · 换调式）"
         closeLabel="收起调音"
-        open={showTuner}
-        onToggle={() => setShowTuner((v) => !v)}
+        open={openPanel === "tuner"}
+        onToggle={() => toggle("tuner")}
       >
         <TunerPanel />
       </CollapsiblePanel>
@@ -149,8 +159,8 @@ export function PracticePanels({
         heading="跟奏"
         openLabel="＋ 跟录音练（导入音频 / AB 循环 / 变速）"
         closeLabel="收起跟录音练"
-        open={showPractice}
-        onToggle={() => setShowPractice((v) => !v)}
+        open={openPanel === "practice"}
+        onToggle={() => toggle("practice")}
       >
         <PracticePlayer />
       </CollapsiblePanel>
@@ -161,8 +171,8 @@ export function PracticePanels({
         heading="练琴日志"
         openLabel="＋ 练琴记录（录音回听 · 打卡 · 周月统计）"
         closeLabel="收起练琴记录"
-        open={showPracticeLog}
-        onToggle={() => setShowPracticeLog((v) => !v)}
+        open={openPanel === "log"}
+        onToggle={() => toggle("log")}
       >
         <div className="mb-3 flex items-center gap-2">
           <button

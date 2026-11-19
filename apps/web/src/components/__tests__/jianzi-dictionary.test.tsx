@@ -1,7 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, beforeAll } from "vitest";
+import { loadRealWasm } from "../../lib/__tests__/load-wasm";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { JianziDictionary } from "@/components/jianzi-dictionary";
@@ -63,13 +64,22 @@ function applyFilter(entries: JianziDictEntry[], f: DictFilter): JianziDictEntry
   });
 }
 
-vi.mock("@/lib/taiyin-wasm", () => ({
+/*
+ * 用 `importOriginal` 保留真实模块：`loadRealWasm` 要调 `initWasmSync`，
+ * 整个替身掉会让它变成 undefined（音高推算一迁进 Rust，这条链就断了）。
+ * 只覆盖本文件真正需要替身的那几个导出。
+ */
+vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
+  return {
+    ...actual,
   useWasmInit: () => ({ state: "ready" as const, error: null }),
   getJianziDictionary: vi.fn(async (filter: DictFilter) => ({
     total: FIXTURE.length,
     entries: applyFilter(FIXTURE, filter),
   })),
-}));
+  };
+});
 
 const TOTAL = FIXTURE.length;
 const SAN_COUNT = FIXTURE.filter((e) => e.state.toneType === "散").length;
@@ -77,6 +87,9 @@ const FAN_COUNT = FIXTURE.filter((e) => e.state.toneType === "泛").length;
 const DA_GOU_COUNT = FIXTURE.filter(
   (e) => e.state.leftFinger === "大" && e.state.rightAction === "勾",
 ).length;
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("减字字典组件（wasm 接线）", () => {
   beforeEach(() => {

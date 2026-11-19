@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { useWasmInit } from "@/lib/taiyin-wasm";
+import { useWasmInit } from "@/lib/client";
 import { getServerTuning, getTuning, getTuningById, subscribeTuning } from "@/lib/tuning";
 import { SingleNoteMode } from "./jianpu-translator/single-note-mode";
 import { SequenceMode } from "./jianpu-translator/sequence-mode";

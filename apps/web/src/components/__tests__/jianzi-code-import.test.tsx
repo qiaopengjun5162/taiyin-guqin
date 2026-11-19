@@ -1,7 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, beforeAll } from "vitest";
+import { loadRealWasm } from "../../lib/__tests__/load-wasm";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { JianziCodeImport } from "@/components/jianzi-code-import";
@@ -13,10 +14,19 @@ import type { NoteColumn } from "@/lib/types";
 
 const decodeJianziBatch = vi.fn();
 
-vi.mock("@/lib/taiyin-wasm", () => ({
+/*
+ * 用 `importOriginal` 保留真实模块：`loadRealWasm` 要调 `initWasmSync`，
+ * 整个替身掉会让它变成 undefined（音高推算一迁进 Rust，这条链就断了）。
+ * 只覆盖本文件真正需要替身的那几个导出。
+ */
+vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
+  return {
+    ...actual,
   useWasmInit: () => ({ state: "ready" as const, error: null }),
   decodeJianziBatch: (text: string) => decodeJianziBatch(text),
-}));
+  };
+});
 
 function st(p: Record<string, unknown>) {
   return {
@@ -73,6 +83,9 @@ const MIXED = {
     },
   ],
 };
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("减字码入谱", () => {
   beforeEach(() => {

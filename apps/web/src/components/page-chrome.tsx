@@ -63,11 +63,25 @@ const SECTIONS = [
 const NAV_LINK =
   "inline-block py-1 text-amber-200/70 hover:text-amber-100 transition-colors underline-offset-2 hover:underline";
 
-/** 本页导航（仅桌面双栏时显示，滚动时吸顶） */
+/**
+ * 侧边「本页导航」。
+ *
+ * ## 为什么不做 sticky（2026-11-18 实拍后改的）
+ *
+ * 原先写的是 `xl:sticky xl:top-4 xl:z-10` + 半透明底色。实拍结果是：
+ * 滚动到右栏中部时，这块导航**浮在「我的署名」面板上**，两段文字叠在一起完全没法读。
+ *
+ * 只把底色改实也能「盖住」，但那只是把重叠藏起来——导航块依然遮住了下面那块面板的
+ * 上半截（用户看到的是「我的署名（可选）」标题被挡掉，只剩后半句）。这不是修好，是换了个症状。
+ *
+ * 这个侧栏本来就只有八个锚点，页面也不算长；不做 sticky 反而更清楚：
+ * 它就在右栏顶部，滚过去就滚过去了，不会挡任何东西。
+ * 少一个「永远浮着的小窗」，页面安静很多。
+ */
 export function SectionNav() {
   return (
-    <nav aria-label="本页导航" className="no-print hidden xl:block xl:sticky xl:top-4 xl:z-10">
-      <div className="rounded-lg border border-amber-700/25 bg-[#211f1c]/90 p-3">
+    <nav aria-label="本页导航" className="no-print hidden xl:block">
+      <div className="rounded-lg border border-amber-700/25 bg-[#211f1c] p-3">
         <p className="ty-section-sub mb-2">本页导航</p>
         <ul className="flex flex-col gap-1 text-[12px]">
           {SECTIONS.map(([href, label]) => (

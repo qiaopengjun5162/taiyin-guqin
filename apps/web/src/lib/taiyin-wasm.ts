@@ -29,6 +29,23 @@ interface WasmModule {
   get_jianzi_variant_groups(): string;
   encode_jianzi_batch(input_json: string): string;
   decode_jianzi_batch(input_json: string): string;
+  parse_rapid_input(input_json: string): string;
+  get_rapid_slots(): string;
+  normalize_lianmei(input_json: string): string;
+  lianmei_groups(input_json: string): string;
+  lianmei_relation(input_json: string): string;
+  get_lianmei_options(): string;
+  link_lianmei(input_json: string): string;
+  clear_lianmei(input_json: string): string;
+  parse_jianpu(input_json: string): string;
+  get_jianpu_units(input_json: string): string;
+  jianzi_pitch(input_json: string): string;
+  explain_jianzi(input_json: string): string;
+  short_caption(input_json: string): string;
+  describe_hui_position(input_json: string): string;
+  structure_marks(): string;
+  jianzi_to_text(input_json: string): string;
+  parse_jianzi_text(input_json: string): string;
 }
 
 export type WasmLoadState = "idle" | "loading" | "ready" | "error";

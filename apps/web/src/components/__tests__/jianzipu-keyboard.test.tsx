@@ -7,12 +7,40 @@
  * 单测只能靠模拟真实点击路径。这里按用户实际成谱的顺序走：
  * 选音色 → 选指法/徽位/弦序 → 确认 → 校验吐出的 NoteColumn。
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import { render, fireEvent, screen, act } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { JianzipuKeyboard } from "../jianzipu-keyboard";
 import { __resetCustomJianziForTests } from "@/lib/custom-jianzi";
 import type { NoteColumn } from "@/lib/types";
+
+/**
+ * 连打文法已迁进 Rust（WASM），组件测试必须装载**真实产物**，
+ * 否则连打路径测到的只是「引擎未就绪」的降级分支。这里把 fetch 指向仓库里的
+ * `wasm/taiyin_core_bg.wasm`，与生产走同一条加载路径。
+ */
+beforeAll(async () => {
+  const bytes = readFileSync(
+    resolve(__dirname, "../../../wasm/taiyin_core_bg.wasm"),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("taiyin_core_bg.wasm")) {
+        return new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "application/wasm" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+  const { initWasmSync } = await import("@/lib/taiyin-wasm");
+  await initWasmSync();
+});
 
 /** 按分区标题定位按键组（同名文案如"散"在音色/节奏里各有一个，不能全局找）。 */
 function section(container: HTMLElement, label: string): HTMLElement {
@@ -23,15 +51,27 @@ function section(container: HTMLElement, label: string): HTMLElement {
   return p.parentElement;
 }
 
-/** 取分区内某个按钮。 */
+/**
+ * 在分区里找一个按键。
+ *
+ * 两级匹配，顺序重要：
+ * 1. **先找文字完全相同的**——这是绝大多数分区的唯一形态（音色「散」、弦序「五」）。
+ * 2. 找不到再退回 `startsWith`：右手一组的按钮现在显示「字形 + 读音」两行
+ *    （勹 / 勾），`textContent` 拼起来是「勹勾」。行为没变，按钮的取值仍是字形，
+ *    多出来的只是给人看的读音（2026-11-18 加的，因为「勹」这种偏旁没人认得出）。
+ *
+ * 不能只用 startsWith：八度分区的「高」（含读音「··」）会先被更长的「··」抢走，
+ * 造成「点高音却选中了别的」这种假失败。
+ */
 function option(
   container: HTMLElement,
   label: string,
   name: string,
 ): HTMLElement {
-  const btn = Array.from(
-    section(container, label).querySelectorAll("button"),
-  ).find((b) => b.textContent === name);
+  const buttons = Array.from(section(container, label).querySelectorAll("button"));
+  const exact = buttons.find((b) => (b.textContent ?? "") === name);
+  const prefixed = buttons.find((b) => (b.textContent ?? "").startsWith(name));
+  const btn = exact ?? prefixed;
   if (!btn) throw new Error(`分区「${label}」内没有按钮「${name}」`);
   return btn;
 }
@@ -48,7 +88,8 @@ describe("JianzipuKeyboard", () => {
   it("初始为散音，只要求右手指法与弦序", () => {
     const { container } = render(<JianzipuKeyboard />);
 
-    expect(container.textContent).toContain("还缺：右手指法、弦序");
+    expect(container.textContent).toContain("还需要：点下面的");
+    expect(container.textContent).toContain("右手指法");
     expect(confirmBtn().disabled).toBe(true);
 
     // 散音（空弦）不存在左手/徽分，这三组不该出现
@@ -68,7 +109,7 @@ describe("JianzipuKeyboard", () => {
     pick(container, "右手", "勹");
     pick(container, "弦序", "五");
 
-    expect(container.textContent).not.toContain("还缺：");
+    expect(container.textContent).not.toContain("还需要：");
     const confirm = confirmBtn();
     expect(confirm.disabled).toBe(false);
 
@@ -102,7 +143,8 @@ describe("JianzipuKeyboard", () => {
     pick(container, "弦序", "五");
     fireEvent.click(confirmBtn());
 
-    expect(container.textContent).toContain("还缺：右手指法、弦序");
+    expect(container.textContent).toContain("还需要：点下面的");
+    expect(container.textContent).toContain("右手指法");
     expect(confirmBtn().disabled).toBe(true);
     // 音色仍是散，选中态保留
     expect(option(container, "音色", "散").className).toContain("bg-amber-700");
@@ -185,7 +227,8 @@ describe("JianzipuKeyboard", () => {
 
     pick(container, "右手", "勹");
     expect(confirmBtn().disabled).toBe(true);
-    expect(container.textContent).toContain("还缺：右手指法");
+    expect(container.textContent).toContain("还需要：点下面的");
+    expect(container.textContent).toContain("右手指法");
   });
 
   it("切到按音后补齐左手/徽位/分四项要求", () => {
@@ -197,7 +240,7 @@ describe("JianzipuKeyboard", () => {
     expect(section(container, "徽位")).toBeTruthy();
     expect(section(container, "分")).toBeTruthy();
     expect(container.textContent).toContain(
-      "还缺：左手指法、徽位、右手指法、弦序",
+      "还需要：点下面的",
     );
   });
 

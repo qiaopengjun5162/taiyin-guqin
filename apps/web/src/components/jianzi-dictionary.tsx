@@ -26,7 +26,7 @@ import {
   ACTION_FILTERS,
   STRING_FILTERS,
 } from "@/lib/jianzi-dictionary-types";
-import { getJianziDictionary, useWasmInit } from "@/lib/taiyin-wasm";
+import { getJianziDictionary, useWasmInit } from "@/lib/client";
 import { explainJianzi } from "@/lib/jianzi-explain";
 import {
   getSavedSnapshot,
@@ -79,8 +79,17 @@ function DictCard({
         data-testid="dict-card-play"
         className="flex flex-1 flex-col items-center gap-1.5 px-2 pb-2 pt-3 text-center transition-transform active:scale-[0.98]"
       >
-        <span className="flex h-12 items-center justify-center font-calligraphy text-[var(--ink)]">
-          <SvgJianziBlock state={entry.state} fontSize="30px" />
+        {/*
+         * 减字尺寸 30px → 38px，容器 h-12 → h-14（2026-11-18 高清实拍后改）。
+         *
+         * 多部件减字（如「散勾三」= 小「散」+ 勾 + 弦序数字）在 30px 下比例失调：
+         * 左上那个「散」缩成一个看不清的「艹」，整字看起来像散架的三块。
+         * 放大到 38px 后三个部件才组成一个可辨识的方块字。
+         *
+         * 字典页的任务就是**认字**——字看不清，这一页就白做。
+         */}
+        <span className="flex h-14 items-center justify-center font-calligraphy text-[var(--ink)]">
+          <SvgJianziBlock state={entry.state} fontSize="38px" />
         </span>
         <span className="text-[11px] leading-tight tracking-wide text-stone-800">{label}</span>
         {/* 音高提示（变灰小字），与释义里的 pitchHint 同源 */}
@@ -285,7 +294,16 @@ export function JianziDictionary() {
             />
           </div>
 
-          <div className="flex flex-wrap items-end justify-between gap-3">
+          {/*
+           * 「右手指法」与「弦序」并排左对齐，不用 `justify-between`。
+           *
+           * 2026-11-18 实拍：`justify-between` 把两个下拉推到行的两端，
+           * 在 1440px 屏幕上中间空出 700px——它们是一组相关筛选器（都在描述
+           * 「这个字怎么弹」），离这么远眼睛要横跨整屏，反而看不出是一组。
+           *
+           * 左对齐、间距 12px，读起来是一串筛选条件而不是两件孤立的事。
+           */}
+          <div className="flex flex-wrap items-end gap-3">
             <SelectFilter
               label="右手指法"
               value={filter.action}

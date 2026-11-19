@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import * as api from "@/lib/api";
+import { api } from "@/lib/client";
 import {
   clearStoredSession,
   displayNameOf,

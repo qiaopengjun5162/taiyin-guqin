@@ -6,7 +6,8 @@
  * 而是在测试里独立写一个 SMF 读取器，逐字节解出事件表再断言。
  * 这样测的是「文件符合 SMF 规范」，而不是「写出来的东西能被自己读回来」。
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import { loadRealWasm } from "./load-wasm";
 import { scoreToMidi, TICKS_PER_QUARTER, GM_KOTO } from "../midi-export";
 import { createEmptyState } from "../jianzi";
 import type { NoteColumn, Duration, NoteType } from "../types";
@@ -103,6 +104,9 @@ function withTone(tone: NoteType): NoteColumn {
 const noteOns = (evs: ParsedEvent[]) =>
   evs.filter((e) => ((e.status ?? 0) & 0xf0) === 0x90 && e.data![1] > 0);
 const noteOffs = (evs: ParsedEvent[]) => evs.filter((e) => ((e.status ?? 0) & 0xf0) === 0x80);
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("scoreToMidi 文件结构", () => {
   it("写出合法的 SMF format 0 单轨文件", () => {

@@ -7,9 +7,37 @@
  * 只验证 page.tsx 自己的状态机与参数传递是否正确。
  * 真音频合成、真 WAV 编码、真 HTTP 分别由 audio-export / audio-synth / api 的测试守。
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { NoteColumn } from "@/lib/types";
+
+/**
+ * 联袂成组已迁进 Rust/WASM（`normalizeLianmei` 在编辑/删除后跑）。
+ * 本文件要验证删除/编辑后的谱面状态，因此装载**真实产物**，
+ * 否则薄壳走降级分支、联袂标记清理不掉，断言会失真。
+ */
+beforeAll(async () => {
+  const bytes = readFileSync(
+    resolve(__dirname, "../../../wasm/taiyin_core_bg.wasm"),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("taiyin_core_bg.wasm")) {
+        return new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "application/wasm" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+  const { initWasmSync } = await import("@/lib/taiyin-wasm");
+  await initWasmSync();
+});
 
 const h = vi.hoisted(() => ({
   play: vi.fn(),
@@ -179,15 +207,16 @@ vi.mock("@/lib/use-export-image", () => ({
   }),
 }));
 
-vi.mock("@/lib/taiyin-wasm", () => ({
-  getWasmLoadState: () => "ready",
-  getWasmLoadError: () => null,
-  initWasm: vi.fn().mockResolvedValue(undefined),
-  useWasmInit: () => ({ state: "ready", error: null }),
-  translateJianpuToJianzi: h.translateJianpuToJianzi,
-  translateJianpuSequenceToJianzi: vi.fn(),
-  splitPhrases: h.splitPhrases,
-}));
+// 保留真实的 WASM 桥接（联袂成组/清理、编码都已迁进 Rust），只替身本文件关心的翻译函数。
+vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
+  return {
+    ...actual,
+    translateJianpuToJianzi: h.translateJianpuToJianzi,
+    translateJianpuSequenceToJianzi: vi.fn(),
+    splitPhrases: h.splitPhrases,
+  };
+});
 
 import Home from "@/app/page";
 import { ApiError } from "@/lib/api";
@@ -391,7 +420,9 @@ describe("Home · 音频导出", () => {
 
     fireEvent.click(screen.getByLabelText("导出文本"));
 
-    expect(h.downloadTextFile).toHaveBeenCalledTimes(1);
+    // 导出走真实的 WASM 编码（`encodeJianziBatch`），比替身多一层 await，
+    // 所以要用 waitFor 等异步 handler 跑完，而不是在 click 后立即断言。
+    await waitFor(() => expect(h.downloadTextFile).toHaveBeenCalledTimes(1));
     const [text, filename] = h.downloadTextFile.mock.calls[0];
     expect(text).toContain("沧海一声笑");
     expect(filename).toBe("沧海一声笑（片段）.txt");

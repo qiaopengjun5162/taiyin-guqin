@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
+import { loadRealWasm } from "../../lib/__tests__/load-wasm";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { JianziSheetRecognizer } from "@/components/jianzi-sheet-recognizer";
 
@@ -59,6 +60,9 @@ function upload(container: HTMLElement) {
     target: { files: [new File(["x"], "sheet.png", { type: "image/png" })] },
   });
 }
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("JianziSheetRecognizer", () => {
   it("renders grid and imports readable cells in reading order", async () => {

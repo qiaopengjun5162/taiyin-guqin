@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ScoreListItem } from "@/lib/api";
+import type { ScoreListItem } from "@/lib/client";
 import { getTuningById, TUNINGS, type TuningId } from "@/lib/tuning";
 
 export interface LoadDialogTab {

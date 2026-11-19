@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import type { NoteColumn } from "@/lib/types";
-import { decodeJianziBatch, useWasmInit } from "@/lib/taiyin-wasm";
+import { decodeJianziBatch, useWasmInit } from "@/lib/client";
 import { jianziToJianpu } from "@/lib/jianzi-pitch";
 import { createEmptyState } from "@/lib/jianzi";
 import { usePitchContext } from "@/lib/use-pitch-context";

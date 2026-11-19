@@ -1,7 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll } from "vitest";
+import { loadRealWasm } from "./load-wasm";
 import {
   TUNINGS,
   DEFAULT_TUNING,
@@ -25,6 +26,9 @@ beforeEach(() => {
   window.localStorage.clear();
   resetTuningCache();
 });
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("定弦表", () => {
   it("三张定弦都是七根弦，MIDI 号递增（一弦最低）", () => {

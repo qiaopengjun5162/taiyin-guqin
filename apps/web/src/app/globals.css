@@ -247,12 +247,29 @@ body::after {
   color: var(--ty-aux);
 }
 
-/* 演奏控制台：桌面双列栅格，移动端单列 */
+/* 演奏控制台栅格。
+ *
+ * ## 为什么改成按容器宽度、而不是按视口（2026-11-18 实拍后改的）
+ *
+ * 原先写的是 `@media (min-width: 640px) { grid-template-columns: 1fr 1fr }`。
+ * 问题：这块面板在桌面上是**右栏**（360px 宽），视口 1440px 早就过了 640px 断点，
+ * 于是两列各约 170px——「速度 120 BPM + 滑杆」「定弦 + 正调 + 基准音 440 Hz」
+ * 根本装不下，滑杆被挤出面板右边界、只看得见一小截青色。
+ * 字号从 12px 提到 14px 后彻底暴露：文字变宽，溢出更明显。
+ *
+ * 视口宽度不能代表「这块面板有多宽」。改用容器查询（container queries），
+ * 以面板自身宽度决定列数：够宽才两列，否则单列纵向排。
+ * 这样它在右栏里是单列、在全宽布局里能自动变两列，不用为每个场景写死断点。
+ */
 .ty-console {
   display: grid;
   gap: 0.7rem;
+  container-type: inline-size;
 }
-@media (min-width: 640px) {
+
+/* 面板内宽 ≥ 300px 时才敢分两列。
+   实测：单个控件（标签 + 数值 + 滑杆）约 140px 起，两列需要 ~290px 才不会挤压。 */
+@container (min-width: 300px) {
   .ty-console {
     grid-template-columns: 1fr 1fr;
     align-items: start;
@@ -439,12 +456,28 @@ input[type="range"]::-webkit-slider-thumb {
   color: #f5efe6;
 }
 
-/* 中文最小 12px。乐谱区例外见下一条。 */
-:is(
-  [class~="text-[6px]"], [class~="text-[8px]"], [class~="text-[9px]"],
-  [class~="text-[10px]"], [class~="text-[11px]"]
-) {
-  font-size: 12px;
+/* 中文正文下限。
+ *
+ * 2026-11-18 实拍重定：原先统一压到 12px，结果全站 188 个文本元素里 106 个是 12px
+ * （56%），在 1440px 桌面上又小又平，用户直接反馈「看着很难受」。
+ * 12px 是移动端的最小可读字号，不该拿来当桌面正文。
+ *
+ * 现在分两档，仍保持「小字有下限」这层保护：
+ *   - 原 9/10px（角标、密排标签）→ 13px
+ *   - 原 11/12px（正文、按钮、说明）→ 14px
+ *
+ * 为什么用 CSS 覆盖而不是去改 300 多处 className：
+ * 这些 `text-[10px]` 散在 20 多个组件里，逐个改既容易漏、也让「字号体系」无法
+ * 单点调整。集中在这里意味着以后想整体再调一档，只改这两行。
+ *
+ * ⚠ 谱面区（#score-area）与字典网格必须例外：它们的尺寸是导出/布局契约的一部分，
+ * 放大就会顶破 1.05em 方块宽度闸门或把卡片撑爆——见下面两条规则。
+ */
+:is([class~="text-[9px]"], [class~="text-[10px]"]) {
+  font-size: 13px;
+}
+:is([class~="text-[11px]"], [class~="text-[12px]"]) {
+  font-size: 14px;
 }
 
 /* 乐谱流里的 6/8/9px 是减字方块内的徽位与绝对定位角标，
@@ -454,6 +487,10 @@ input[type="range"]::-webkit-slider-thumb {
 #score-area [class~="text-[9px]"] { font-size: 9px; }
 #score-area [class~="text-[10px]"] { font-size: 10px; }
 #score-area [class~="text-[11px]"] { font-size: 11px; }
+/* 12px 也锁住：上面新一轮正文提升把它抬到了 14px，但谱面里的角标一并变大
+   同样会顶破方块宽度。谱面是导出产物的一部分，尺寸必须可预测。 */
+#score-area [class~="text-[12px]"] { font-size: 12px; }
+#score-area [class~="text-[13px]"] { font-size: 13px; }
 
 /* 字典是 59 张卡片的密集数据网格：9px 提到 11px 而不是 12px，
    避免卡片内说明文字多换一行、把手机页推到 9000px 以上。 */
@@ -462,6 +499,44 @@ input[type="range"]::-webkit-slider-thumb {
   [class~="text-[10px]"], [class~="text-[11px]"]
 ) {
   font-size: 11px;
+}
+
+/* 触屏设备上的最小点击区域（44×44 CSS px，iOS HIG 与 Material 共同的建议下界）。
+ *
+ * 2026-11-18 实机量测：390px 宽的 iPhone 视口里，有 **20 个可点元素高度不足 32px**
+ * （「沧海一声笑」25px、「单音」26px、「导出/导入」30px…）。手指点上去经常按空，
+ * 或者误点相邻的按钮——这不是「不美观」，是真的点不准。
+ *
+ * 为什么用 `pointer: coarse` 而不是宽度断点：
+ * 触控能力不等于屏幕宽度。窄窗口的桌面浏览器不该被强行放大按钮，
+ * 而大屏平板的按钮也该够大。媒体特性 `pointer: coarse` 正是「主输入设备是手指」。
+ *
+ * 为什么只调 min-height / min-width、不动字号和 padding：
+ * 视觉密度保持不变（这些按钮本来就密排），只把**可点范围**撑到够用即可。
+ * 行内链接（`<a>` 在正文里）不在此列——撑高会打乱段落行距。
+ */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  input[type="checkbox"],
+  input[type="radio"],
+  select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* 复选框/单选框本身很小，撑 44px 会破坏布局；用透明的伪元素扩大命中区即可。 */
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+  }
+  input[type="checkbox"]::after,
+  input[type="radio"]::after {
+    content: "";
+    position: absolute;
+    inset: -14px;
+  }
 }
 
 /* 禁用态不再淡到 1.17:1：仍明显变灰、但读得出字，并统一「禁止」指针。

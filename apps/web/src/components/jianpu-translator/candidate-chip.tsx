@@ -56,21 +56,41 @@ export function CandidateChip({
         >
           <JianziBlock state={state} fontSize="26px" />
         </span>
-        <span className="w-full truncate text-[10px] leading-tight text-stone-700">
+        {/*
+         * 两行说明不再 `truncate`。
+         *
+         * 卡片只有 72px 宽，而说明是「一弦 · 散」「食指挑」这种两段式短句。
+         * 原先单行截断，12px 字号时勉强够；2026-11-18 正文提到 14px 后
+         * 被截成「六弦 · 散食指挑」这种连在一起读不懂的半句（实拍确认）。
+         *
+         * 改成允许两行、按词断行：宁可卡片高一点，也要让人读得懂自己在选什么。
+         * `break-words` 保证长串（如「大指按」+「食指挑」）能在中间断开而不是溢出。
+         */}
+        <span className="w-full text-[10px] leading-tight text-stone-700 break-words">
           {caption.primary}
         </span>
-        <span className="w-full truncate text-[9px] leading-tight text-stone-500">
+        <span className="w-full text-[9px] leading-tight text-stone-500 break-words">
           {caption.secondary}
         </span>
       </button>
       {onPreview && (
+        /*
+         * 试听按钮从「右上角绝对定位」挪到卡片底部一行。
+         *
+         * 原先它是 `absolute right-0 top-0` 的一个小「▶」，直接压在减字方块上——
+         * 72px 宽的卡片里，那个三角和减字的笔画混在一起，既看不清字也点不准按钮
+         * （2026-11-18 实拍确认）。
+         *
+         * 现在独占底部一条：`▶ 听` 明确说明这是「听一下」，且与说明文字分开，
+         * 不会和减字抢位置。高度 20px 够手指点。
+         */
         <button
           type="button"
           onClick={onPreview}
           aria-label={`试听：${caption.full}`}
-          className="absolute right-0 top-0 px-1 text-[10px] leading-4 text-amber-700/60 hover:text-amber-900"
+          className="flex min-h-[22px] w-full items-center justify-center gap-0.5 border-t border-amber-700/15 text-[9px] leading-none text-amber-700/60 transition-colors hover:bg-amber-50 hover:text-amber-900"
         >
-          ▶
+          ▶ 听
         </button>
       )}
     </div>

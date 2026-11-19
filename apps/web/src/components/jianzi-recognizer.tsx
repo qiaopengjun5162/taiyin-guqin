@@ -4,7 +4,7 @@ import { useRef, useState, useSyncExternalStore } from "react";
 import type { JianziState } from "@/lib/types";
 import { parseJianziText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "@/components/svg-jianzi-block";
-import { recognizeJianzi, isBrowserOnlyMode } from "@/lib/api";
+import { api } from "@/lib/client";
 import {
   loadTemplateIndex,
   recognizeFile,
@@ -97,7 +97,7 @@ export function JianziRecognizer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // 静态站点无后端时走本机匹配（能力只到部件一级），文案要跟着变。
   // 服务端快照固定 false，避免水合不一致。
-  const browserOnly = useSyncExternalStore(subscribeNoop, isBrowserOnlyMode, () => false);
+  const browserOnly = useSyncExternalStore(subscribeNoop, api.isBrowserOnlyMode, () => false);
 
   async function handleFile(f: File) {
     setError(null);
@@ -122,7 +122,7 @@ export function JianziRecognizer() {
       }
       const base64 = await fileToBase64(f);
       const mediaType = f.type || "image/jpeg";
-      const resp = await recognizeJianzi(base64, mediaType);
+      const resp = await api.recognizeJianzi(base64, mediaType);
       setGlyph(resp.glyph);
       setExplanation(resp.explanation);
       setConfidence(resp.confidence);

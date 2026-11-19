@@ -21,7 +21,7 @@ import {
   durationLabel,
   type DurationValue,
 } from "@/lib/duration-drag";
-import { lianmeiRoleAt } from "@/lib/lianmei";
+import { lianmeiRoleAt } from "@/lib/client";
 import { JianziBlock, StructureMarkBadge } from "./jianzi-block";
 
 const SERIF_FONT =
@@ -64,13 +64,17 @@ export function ScoreView({
   editingIndex?: number | null;
   playingIndex?: number | null;
 }) {
-  if (notes.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-20 text-xs tracking-widest text-stone-400/50 select-none rounded border border-dashed border-stone-400/20">
-        在下方拼装减字后点「确认」，乐谱流会出现在这里
-      </div>
-    );
-  }
+  /*
+   * 空谱：什么都不画。
+   *
+   * 原先这里是一个 80px 高的虚线框 + 「在下方拼装减字后点确认，乐谱流会出现在这里」。
+   * 对**还没打过谱的人**（也就是第一次打开的人），这是一块白占位置的噪声：
+   * 他既不知道「拼装减字」是什么，也不需要知道这里将来会有什么——
+   * 空框只会挤占首屏，把真正的键盘往下推 120px。
+   *
+   * 打了第一个字之后谱面自然出现，不需要预告。
+   */
+  if (notes.length === 0) return null;
 
   const bars = groupIntoBars(notes, beatsPerBar);
   const gap = DENSITY_GAP[density];
@@ -434,7 +438,17 @@ function NoteColumnView({
             linkHover === "jianpu" ? "ring-1 ring-amber-400/60 bg-amber-50/40" : ""
           }`}
         >
-          <JianziBlock state={jianzi} fontSize="24px" compact={compact} />
+          {/*
+           * 减字字号 24px → 34px（2026-11-18 高清实拍后改）。
+           *
+           * 列宽 72px，而减字只占 24px——**比例 1:3，白扔了三分之二空间**。
+           * 3 倍屏放大看：部件之间的笔画糊成一团，「挑六」和一个单独的「勹」
+           * 几乎分不出来。谱面的作用是让人**读**，字小到读不出就是废的。
+           *
+           * 34px 仍留出 2 倍余量给「散」前缀、序号、结构记号与删除按钮，
+           * 不会撑破 72px 列宽（字体本身 1em = 1 个减字方块）。
+           */}
+          <JianziBlock state={jianzi} fontSize="34px" compact={compact} />
         </div>
 
         {/* ── 谱面结构记号（少息/大息/再作/从头再作/入拍）：减字下方小注释 ── */}

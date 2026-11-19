@@ -7,10 +7,10 @@ import {
   translateJianpuSequenceToJianzi,
   arrangeJianpuSequence,
   describeArrangement,
+  api,
   type JianpuArrangement,
   type PhraseSpan,
-} from "@/lib/taiyin-wasm";
-import { selectCandidates } from "@/lib/api";
+} from "@/lib/client";
 import { useNotePreview } from "@/lib/use-note-preview";
 import {
   parseJianpuString,
@@ -232,7 +232,7 @@ export function SequenceMode({
     if (playable.length === 0) return;
     setAiLoading(true);
     try {
-      const { method, selections } = await selectCandidates(
+      const { method, selections } = await api.selectCandidates(
         playable.map((n) => ({ number: n.number, octave: n.octave })),
         tuning,
       );
@@ -396,24 +396,36 @@ export function SequenceMode({
                   <span className="w-8 shrink-0 text-center text-xs text-stone-600">
                     {item.raw}
                   </span>
-                  {/* 一个音常有三十多个落点，横排滑动看，不要把每个音拉成十几行 */}
-                  <div className="flex flex-1 gap-1.5 overflow-x-auto pb-1">
-                    {candidatesPerNote[noteIdx]?.map((c, candIdx) => {
-                      const state = buildJianziState(c);
-                      return (
-                        <div key={candIdx} className="w-[72px] shrink-0">
-                          <CandidateChip
-                            state={state}
-                            score={c.score}
-                            selected={selectedIndex[noteIdx] === candIdx}
-                            onPick={() => selectCandidate(noteIdx, candIdx)}
-                            onPreview={() => preview(state)}
-                          />
-                        </div>
-                      );
-                    })}
+                  {/*
+                   * 一个音常有三十多个落点，横排滑动看，不要把每个音拉成十几行。
+                   *
+                   * ⚠ 必须让用户看出「右边还有」。2026-11-18 实拍：视口里只露出 3.5 个卡片，
+                   * 第 4 个被切一半，而没有任何滚动提示——用户会以为候选就这几个，
+                   * 或者以为界面坏了。右端加渐隐遮罩，并在计数旁写明「左右滑」。
+                   */}
+                  <div className="relative flex-1 min-w-0">
+                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                      {candidatesPerNote[noteIdx]?.map((c, candIdx) => {
+                        const state = buildJianziState(c);
+                        return (
+                          <div key={candIdx} className="w-[72px] shrink-0">
+                            <CandidateChip
+                              state={state}
+                              score={c.score}
+                              selected={selectedIndex[noteIdx] === candIdx}
+                              onPick={() => selectCandidate(noteIdx, candIdx)}
+                              onPreview={() => preview(state)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* 右端渐隐：暗示内容延续。pointer-events-none，不挡点击 */}
+                    <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--paper)] to-transparent" />
                   </div>
-                  <span className="w-5 shrink-0 text-right text-[9px] text-stone-500">
+                  <span className="w-10 shrink-0 text-right text-[10px] leading-tight text-stone-500">
+                    {(candidatesPerNote[noteIdx]?.length ?? 0) > 3 ? "左右滑" : ""}
+                    <br />
                     {candidatesPerNote[noteIdx]?.length ?? 0}
                   </span>
                 </div>

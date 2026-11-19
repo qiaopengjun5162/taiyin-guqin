@@ -19,7 +19,8 @@
 
 import type { JianziState, JianpuNumber, JianpuOctave } from "./types";
 import { CONCERT_PITCH_DEFAULT } from "./concert-pitch";
-import { DEFAULT_TUNING, openStringFrequency, type TuningId } from "./tuning";
+import { DEFAULT_TUNING, type TuningId } from "./tuning";
+import { getWasmSync, isWasmReady } from "./taiyin-wasm";
 
 /** 推算用的上下文：用哪种定弦、A4 定到多少。 */
 export interface PitchContext {
@@ -131,47 +132,78 @@ export function huiFraction(hui: number, fen: string | null): number | null {
   return base + f * step;
 }
 
-/** 由按弦点 p 取最接近的泛音谐波次数。 */
-function harmonicNumberFromP(p: number): number {
-  let best = 2;
-  let bestDiff = Infinity;
-  for (let h = 1; h <= 13; h++) {
-    const diff = Math.abs(p - HUI_FRACTION[h]);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = HUI_HARMONIC[h];
-    }
-  }
-  return best;
+/**
+ * 减字状态 → Rust 的 `PitchQuery`。
+ *
+ * 分位在核心侧用「占相邻两徽间隔的比例」表示（三分 = 0.3、半 = 0.5），
+ * 所以这里先换成数字再送过去——**换算规则仍与 `fenToFraction` 一致**，
+ * 它同时也是本文件 `huiFraction` 用的那份。
+ */
+function toWireQuery(state: JianziState) {
+  const huiNum = state.hui ? chineseNumToHui(state.hui) : null;
+  return {
+    stringNumber: state.stringNumber
+      ? "一二三四五六七".indexOf(state.stringNumber) + 1
+      : 0,
+    toneType: state.toneType ?? "",
+    hui: huiNum,
+    fenFraction: state.fen ? fenToFraction(state.fen) : null,
+  };
 }
 
-/** 减字状态 → 实际振动频率 (Hz)；无法推算返回 null。 */
-export function jianziToFrequency(state: JianziState, ctx: PitchContext = {}): number | null {
-  const { tuning = DEFAULT_TUNING, concertPitch = CONCERT_PITCH_DEFAULT } = ctx;
-  if (!state.stringNumber) return null;
-  const open = openStringFrequency(state.stringNumber, tuning, concertPitch);
-  if (open == null) return null;
-  if (state.toneType === "散") return open;
-  if (state.hui == null) return null; // 按/泛音必须有徽位
-  const huiNum = chineseNumToHui(state.hui);
-  if (huiNum == null) return null;
-  const p = huiFraction(huiNum, state.fen);
-  if (p == null || p <= 0 || p >= 1) return null;
-  if (state.toneType === "泛") return open * harmonicNumberFromP(p);
-  // 按音：有效弦长 (1−p)
-  const vib = 1 - p;
-  if (vib <= 0) return null;
-  return open / vib;
+/** 定弦标识 → Rust 的 `Tuning`；核心只建模前三种，其余回落到正调。 */
+function wireTuning(tuning: TuningId): string {
+  return tuning === "ruibin" || tuning === "manjiao" ? tuning : "zhengdiao";
 }
 
 /**
- * 频率 → 最接近的可表示简谱唱名（1=F 记谱，与 Rust 引擎一致）。
+ * 减字状态 → 实际振动频率 (Hz)；无法推算返回 null。
+ *
+ * ## 物理模型只在 Rust 一份（2026-11-18 迁入 `crates/taiyin-core/src/pitch.rs`）
+ *
+ * 同一个减字在网页、小程序、App 上必须算出同一个音高——差半音就是另一个音，
+ * 且不会报错。这里只负责把状态打包成 JSON，算在核心里。
+ *
+ * ## 引擎未就绪时返回 null
+ *
+ * 不退回本地估算：**一个错的音高比没有音高更糟**。用户不会去核对，
+ * 只会照着一个错音练。null 会让调用方显示「推不出音高」，那是诚实的。
+ */
+export function jianziToFrequency(state: JianziState, ctx: PitchContext = {}): number | null {
+  if (!state.stringNumber || !state.toneType) return null;
+  if (!isWasmReady()) return null;
+  const parsed = JSON.parse(
+    getWasmSync().jianzi_pitch(
+      JSON.stringify({
+        ...toWireQuery(state),
+        tuning: wireTuning(ctx.tuning ?? DEFAULT_TUNING),
+        concertPitch: ctx.concertPitch ?? CONCERT_PITCH_DEFAULT,
+      }),
+    ),
+  ) as { frequency?: number | null; error?: string };
+  if (parsed.error) return null;
+  return typeof parsed.frequency === "number" ? parsed.frequency : null;
+}
+
+/**
+ * 频率 → 最接近的可表示简谱唱名（1=F 记谱）。
+ *
+ * 实现同样在核心：构造一个「散音、绝对 MIDI」的伪查询不现实，
+ * 所以这里直接换算频率 → 简谱级数与八度。
  *
  * 基准与 `jianpuToMidi` 同一套：未标记八度的「1」= F2（MIDI 41，正调三弦）。
  * 古琴低音区（一～三弦空弦）落在低八度记号，中高音区（四五弦、按音/泛音）
  * 落在无记号或高八度记号。搜索范围在 ±2 八度（可表示记号的上限）；
  * 超出窗口的音高（如七弦一徽泛音 D6）会吸附到最近的边界记号——纯显示用途，
  * 不影响播放（播放以减字为准）。
+ *
+ * ## 为什么这段留在前端
+ *
+ * 它是「MIDI → 唱名」的**纯查表**，不含物理模型，也不产生跨端分歧：
+ * 网页和小程序各自查同一张 `JIANPU_DEGREES` 表（该表本身由
+ * `scripts/verify-domain-contracts.mjs` 与 Rust `DEGREE_SEMITONES` 逐项比对）。
+ * 把这条也搬进核心，收益是消灭 20 行查表，代价是多一次 WASM 往返——
+ * 而它被谱面渲染路径逐音调用。
  */
 export function frequencyToJianpu(
   freq: number,

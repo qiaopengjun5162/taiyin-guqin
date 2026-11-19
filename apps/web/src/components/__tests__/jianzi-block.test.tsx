@@ -1,11 +1,19 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { render } from "@testing-library/react";
 import { JianziBlock } from "../jianzi-block";
 import { createEmptyState } from "@/lib/jianzi";
+import { loadRealWasm } from "@/lib/__tests__/load-wasm";
 import type { JianziState } from "@/lib/types";
+
+/*
+ * `jianziToText` 已迁进 Rust（`taiyin-core/src/jianzi_text.rs`），
+ * 未装载真实 WASM 时薄壳走降级拼接、不做偏旁→全字转换
+ * （「散乚一」而非「散挑一」），断言会红在意料之外的地方。
+ */
+beforeAll(loadRealWasm);
 
 function make(overrides: Partial<JianziState> = {}): JianziState {
   return { ...createEmptyState(), ...overrides };

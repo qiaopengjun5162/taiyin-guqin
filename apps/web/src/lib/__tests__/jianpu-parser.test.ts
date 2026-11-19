@@ -1,8 +1,34 @@
 /**
- * @vitest-environment node
+ * @vitest-environment jsdom
+ *
+ * 解析逻辑已迁进 Rust（`jianpu_parse.rs`），所以这一套用例跑**真实 WASM 产物**。
+ * 用替身测等于什么都没测——时值错一拍不会报错，只会让谱面悄悄对不上。
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { parseJianpuString, noteUnits } from "../jianpu-parser";
+
+beforeAll(async () => {
+  const bytes = readFileSync(
+    resolve(__dirname, "../../../wasm/taiyin_core_bg.wasm"),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("taiyin_core_bg.wasm")) {
+        return new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "application/wasm" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+  const { initWasmSync } = await import("../taiyin-wasm");
+  await initWasmSync();
+});
 
 describe("parseJianpuString", () => {
   it("parses plain numbers as quarter notes", () => {

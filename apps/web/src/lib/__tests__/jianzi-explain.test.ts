@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import { loadRealWasm } from "./load-wasm";
 import {
   explainJianzi,
   describeHuiPosition,
   describeRightAction,
   shortCaption,
-  STRUCTURE_MARK_EXPLAIN,
+  structureMarkExplain,
 } from "../jianzi-explain";
 import { STRUCTURE_MARKS } from "../jianzi";
 import type { JianziState } from "../types";
@@ -31,6 +32,9 @@ const anYin: JianziState = state({
   rightAction: "勹",
   stringNumber: "四",
 });
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("describeRightAction", () => {
   it("译出偏旁对应的手指、指法与拨弦方向", () => {
@@ -277,8 +281,10 @@ describe("吟猱族 18 个记号的释义", () => {
 describe("谱面结构记号 5 个的释义与露出", () => {
   it("5 个记号全部登记，漏一个就红（与 Rust StructureMark 同源）", () => {
     expect(STRUCTURE_MARKS).toHaveLength(5);
+    // 释义文案已迁进核心（explain.rs），所以这里取运行时表而非模块常量
+    const explain = structureMarkExplain();
     for (const m of STRUCTURE_MARKS) {
-      const part = STRUCTURE_MARK_EXPLAIN[m];
+      const part = explain[m];
       expect(part, m).toBeDefined();
       expect(part!.label, m).toBe("结构记号");
       expect(part!.text, m).toContain(m);

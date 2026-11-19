@@ -1,10 +1,14 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import { loadRealWasm } from "./load-wasm";
 import { EXAMPLE_SCORES, findExampleScore } from "../example-scores";
 import { isComplete } from "../jianzi";
 import { JIANPU_DEGREES, jianziToFrequency, jianziToJianpu } from "../jianzi-pitch";
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("example-scores", () => {
   it("contains at least one example", () => {

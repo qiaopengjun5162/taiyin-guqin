@@ -1,7 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { render, fireEvent, waitFor, act } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { JianpuTranslator } from "../jianpu-translator";
@@ -24,7 +26,45 @@ const singleCandidate = {
   },
 };
 
-vi.mock("@/lib/taiyin-wasm", () => ({
+/*
+ * 只替身两个翻译函数，其余**保留真实模块**。
+ *
+ * 为什么必须这样：简谱解析（`jianpu-parser.ts`）现在调 Rust 的 `parse_jianpu`，
+ * 靠 `isWasmReady()` 判断引擎是否就绪。整个模块被 mock 掉时那个判断是假的，
+ * 解析直接返回空数组 → 翻译不出任何候选 → 一整套序列用例全红。
+ *
+ * `importOriginal` 让真实的 `isWasmReady` / `getWasmSync` 活着，
+ * 由下面的 `beforeAll` 装载真实 `.wasm` 产物。
+ */
+/**
+ * 装载真实 WASM 产物：简谱解析（Rust `parse_jianpu`）要靠它。
+ * 用替身测不到「解析出来几个音」，而那正是这一组用例的前提。
+ */
+beforeAll(async () => {
+  const bytes = readFileSync(
+    resolve(__dirname, "../../../wasm/taiyin_core_bg.wasm"),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("taiyin_core_bg.wasm")) {
+        return new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "application/wasm" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+  const mod = await import("@/lib/taiyin-wasm");
+  await mod.initWasmSync();
+});
+
+vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
+  return {
+    ...actual,
   translateJianpuToJianzi: vi.fn(async () =>
     JSON.stringify({ candidates: [singleCandidate] }),
   ),
@@ -70,7 +110,8 @@ vi.mock("@/lib/taiyin-wasm", () => ({
     }),
   ),
   useWasmInit: vi.fn(() => ({ state: "ready", error: null })),
-}));
+  };
+});
 
 vi.mock("@/lib/api", () => ({
   selectCandidates: vi.fn(async () => ({

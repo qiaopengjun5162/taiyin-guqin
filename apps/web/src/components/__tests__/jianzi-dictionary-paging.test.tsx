@@ -10,7 +10,8 @@
  *   4. 换筛选 / 搜索条件后收回到第一批，不许把上一批的展开量带进新结果。
  * 筛选与搜索本身仍在 Rust 端对全表执行（这里只 mock 边界），不改变检索范围。
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, beforeAll } from "vitest";
+import { loadRealWasm } from "../../lib/__tests__/load-wasm";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { JianziDictionary } from "@/components/jianzi-dictionary";
@@ -37,7 +38,15 @@ const { ALL } = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/lib/taiyin-wasm", () => ({
+/*
+ * 用 `importOriginal` 保留真实模块：`loadRealWasm` 要调 `initWasmSync`，
+ * 整个替身掉会让它变成 undefined（音高推算一迁进 Rust，这条链就断了）。
+ * 只覆盖本文件真正需要替身的那几个导出。
+ */
+vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
+  return {
+    ...actual,
   useWasmInit: () => ({ state: "ready" as const, error: null }),
   getJianziDictionary: vi.fn(async (filter: { query?: string }) => {
     const q = filter.query?.trim() ?? "";
@@ -46,13 +55,17 @@ vi.mock("@/lib/taiyin-wasm", () => ({
       : ALL;
     return { total: ALL.length, entries };
   }),
-}));
+  };
+});
 
 const PAGE_SIZE = 20;
 
 function cardCount() {
   return within(screen.getByTestId("dict-grid")).queryAllByTestId("dict-card-play").length;
 }
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("减字字典 · 渐进显示", () => {
   beforeEach(() => {

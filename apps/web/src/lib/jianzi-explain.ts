@@ -1,18 +1,30 @@
 /**
- * 减字 → 人话释义。
+ * 减字 → 人话释义 —— 前端薄壳。
  *
- * 录入减字只是第一步；琴友拿起一张谱，真正要回答的是「这个字怎么弹」。
- * 本模块把 JianziState 拆成听得到的句子：
+ * 释义逻辑与**全部中文文案**的唯一实现在 Rust：
+ * `crates/taiyin-core/src/explain.rs`。
  *
- *   大七六勾四 → 按音 · 大指按于四弦七徽六分，右手中指勾弦
+ * ## 为什么文案也搬进核心（2026-11-18 全量迁移）
  *
- * 释义只做「读谱」——指法名称、手指、按弦位置、弦序、大致音高，
- * 不涉及吟猱绰注等风格性处理（那些靠师授，不宜由程序断言）。
+ * 这个模块最大的资产不是算法，而是文案本身：21 个装饰记号各自的解释、
+ * 8 个右手指法的说明、5 个结构记号的气口含义。同一个减字在网页、小程序、App
+ * 上必须读出**同一句话**——两处说法不一，用户只会怀疑自己记错了。
+ *
+ * 改一句文案要重新编译 WASM（秒级），换来的是三端永远不会分家。
+ *
+ * ## 为什么三张表还留在前端
+ *
+ * `leftFingerInfo` / `rightActionInfo` / `describeRightAction` 被
+ * `qin-fingering`、`score-concordance` 在**同步渲染路径**里调用（画琴面指法图、
+ * 算谱例对照），每次走一趟 WASM 往返不划算；而它们只是「偏旁 → 名称」的静态查表。
+ *
+ * 注意 `rightActionInfo` 的 `direction` 字段仍在这里：`qin-fingering` 靠它
+ * 决定箭头朝向（向身 / 离身）。这字段一删，指法图就不再画方向了。
  */
 
 import type { JianziState } from "./types";
-import { chineseNumToHui, huiFraction, jianziToJianpu, type PitchContext } from "./jianzi-pitch";
-import { DEFAULT_TUNING, getTuningById, openStringMidi } from "./tuning";
+import { getWasmSync, isWasmReady } from "./taiyin-wasm";
+import type { PitchContext } from "./jianzi-pitch";
 
 export interface ExplainPart {
   /** 分组名：音色 / 左手 / 徽位 / 右手 / 弦序 */
@@ -27,63 +39,11 @@ export interface JianziExplanation {
   summary: string;
   /** 逐项拆解，便于对照谱字 */
   parts: ExplainPart[];
-  /** 大致音高，如「简谱 5 · 约 196.0 Hz」；推不出时为空 */
+  /** 大致音高，如「简谱 5 · 正调推定」；推不出时为空 */
   pitchHint: string | null;
   /** 还缺哪些槽位（中文名），完整时为空数组 */
   missing: string[];
 }
-
-// ──────────────────────────────────────────────
-// 指法字典
-// ──────────────────────────────────────────────
-
-/**
- * 装饰记号读法，21 个必须全覆盖。
- *
- * 旧写法是「三选一，else 就是急」——扩到 21 个之后，任何一个吟猱记号
- * 都会被读成「急（急弹…）」，谱面没错、释义全错。所以改成显式表，
- * 并有测试逐个断言 `SLIDE_MARKS` 都登记了，漏一个就红。
- * 吟猱属广义走手音，故归到「走手音」组；只有「急」单列「弹法」。
- */
-const SLIDE_EXPLAIN: Record<string, ExplainPart> = {
-  绰: { label: "走手音", text: "绰（从本位下方滑上来，落到这个徽位）" },
-  注: { label: "走手音", text: "注（从本位上方滑下来，落到这个徽位）" },
-  急: { label: "弹法", text: "急（急弹：这一声弹得急促，音高不变——节奏仍按所填时值）" },
-  吟: { label: "走手音", text: "吟（得音后指在本位作细微往复颤动，音高微微波动）" },
-  猱: { label: "走手音", text: "猱（幅度比吟大、速度较缓的往复，苍劲有余韵）" },
-  绰吟: { label: "走手音", text: "绰吟（从本位下方滑上来，到位后作吟）" },
-  绰猱: { label: "走手音", text: "绰猱（从本位下方滑上来，到位后作猱）" },
-  注吟: { label: "走手音", text: "注吟（从本位上方滑下来，到位后作吟）" },
-  注猱: { label: "走手音", text: "注猱（从本位上方滑下来，到位后作猱）" },
-  细吟: { label: "走手音", text: "细吟（幅度小而密的吟）" },
-  细猱: { label: "走手音", text: "细猱（幅度收窄的猱）" },
-  游吟: { label: "走手音", text: "游吟（音位从容游移的吟）" },
-  游猱: { label: "走手音", text: "游猱（音位游移、幅度较大的猱）" },
-  荡吟: { label: "走手音", text: "荡吟（来回荡漾的吟）" },
-  荡猱: { label: "走手音", text: "荡猱（来回荡漾、幅度较大的猱）" },
-  飞吟: { label: "走手音", text: "飞吟（迅疾掠过的吟）" },
-  飞猱: { label: "走手音", text: "飞猱（迅疾掠过、幅度较大的猱）" },
-  圆吟: { label: "走手音", text: "圆吟（圆转无棱角的吟）" },
-  圆猱: { label: "走手音", text: "圆猱（圆转无棱角的猱）" },
-  定吟: { label: "走手音", text: "定吟（本位不移动、指力微颤的吟）" },
-  定猱: { label: "走手音", text: "定猱（本位不移动而幅度内收的猱）" },
-};
-
-/**
- * 谱面结构记号读法（5 个，与 Rust `StructureMark` 枚举、前端 `StructureMark` 类型同源）。
- *
- * 结构记号和减字不是一回事：少息/大息是音后气口，再作/从头再作是反复记号，
- * 入拍是从自由节奏切回严格拍速。它们挂在音符上、属于谱面层标记，不参与
- * 「这个减字本身弹不弹得出来」的判定——一个带少息的勾四照样是可弹的整字。
- * 所以解释里单列一组「结构记号」，漏登记一个就靠测试兜底（见 jianzi-explain.test.ts）。
- */
-export const STRUCTURE_MARK_EXPLAIN: Record<string, ExplainPart> = {
-  少息: { label: "结构记号", text: "少息（短气口：此处略作停顿、换气，时值上等同一个短休止，一般不计拍）" },
-  大息: { label: "结构记号", text: "大息（长气口：比少息更明显的呼吸停顿，谱面留出一段宽气口）" },
-  再作: { label: "结构记号", text: "再作（重复记号：把紧邻的前一个片段或乐句再弹一遍）" },
-  从头再作: { label: "结构记号", text: "从头再作（反复记号：从本曲开头处重新弹奏一遍）" },
-  入拍: { label: "结构记号", text: "入拍（进入严格节拍：此前可自由节奏，自此句起按固定拍速弹奏）" },
-};
 
 /** 左手指法：减字偏旁 → 名称与补充说明 */
 const LEFT_FINGERS: Record<string, { name: string; note?: string }> = {
@@ -105,7 +65,12 @@ export interface RightAction {
   note?: string;
 }
 
-/** 右手指法：减字偏旁与全字都收，粘贴传统谱本时同样能解释 */
+/**
+ * 右手指法简表。**只服务同步渲染路径的查表**（名称 / 手指 / 方向）。
+ *
+ * 完整读法（方向口语化、复合指法说明、兜底）在核心的
+ * `describe_right_action` 与 `explain` 里。改这里的名称时别忘了核心那边。
+ */
 const RIGHT_ACTIONS: Record<string, RightAction> = {
   乇: { name: "托", finger: "大指", direction: "外" },
   托: { name: "托", finger: "大指", direction: "外" },
@@ -123,124 +88,25 @@ const RIGHT_ACTIONS: Record<string, RightAction> = {
   打: { name: "打", finger: "无名指", direction: "内" },
   倽: { name: "摘", finger: "无名指", direction: "外" },
   摘: { name: "摘", finger: "无名指", direction: "外" },
-  // 复合指法（字体 GSUB 支持的四组，另加文本兼容的仰托）
-  抹挑: {
-    name: "抹挑",
-    finger: "食指",
-    direction: null,
-    note: "先抹后挑，一弦连得两声",
-  },
-  勾剔: {
-    name: "勾剔",
-    finger: "中指",
-    direction: null,
-    note: "先勾后剔，一弦连得两声",
-  },
-  抹勾: {
-    name: "抹勾",
-    finger: "食指、中指",
-    direction: null,
-    note: "食指抹、中指勾，两指相接",
-  },
-  打摘: {
-    name: "打摘",
-    finger: "无名指",
-    direction: null,
-    note: "先打后摘，一弦连得两声",
-  },
-  仰托: {
-    name: "仰托",
-    finger: "大指",
-    direction: "外",
-    note: "字体无此连字，仅作文本兼容",
-  },
-  // 成块单指法（字体内折成块，GSUB 单字替换已核验真身）
-  // 蠲/剌 字体 cmap→placeholder 且无 GSUB 规则，渲染为占位框，不接入。
-  轮: {
-    name: "轮",
-    finger: "无名指、中指、食指",
-    direction: null,
-    note: "轮指：三指依次快速摘托挑，一弦连得三声",
-  },
-  锁: {
-    name: "锁",
-    finger: "食指、中指",
-    direction: null,
-    note: "锁铃/长锁：抹勾剔连作，三声相系",
-  },
-  涓: {
-    name: "涓",
-    finger: "食指",
-    direction: "外",
-    note: "连剔两弦，轻作二声",
-  },
-  历: {
-    name: "历",
-    finger: "食指",
-    direction: "外",
-    note: "食指连挑数弦，历历而下",
-  },
-  拂: {
-    name: "拂",
-    finger: "食指、中指、无名指",
-    direction: "外",
-    note: "三指依次向外拂过数弦",
-  },
-  // 复合指法（成块，GSUB 连字 lgw_* 已核验真身）
-  半扶: {
-    name: "半扶",
-    finger: "食指、中指",
-    direction: "内",
-    note: "半扶：食指抹扶相连，一弦得两声",
-  },
-  长锁: {
-    name: "长锁",
-    finger: "食指、中指",
-    direction: null,
-    note: "长锁：抹勾剔连作，三声相系，节奏较长",
-  },
-  短锁: {
-    name: "短锁",
-    finger: "食指、中指",
-    direction: null,
-    note: "短锁：抹勾剔短促相连",
-  },
-  背锁: {
-    name: "背锁",
-    finger: "食指、中指",
-    direction: null,
-    note: "背锁：反向锁铃，指法相背",
-  },
-  圆锁: {
-    name: "圆锁",
-    finger: "食指、中指",
-    direction: null,
-    note: "圆锁：锁铃圆转连贯",
-  },
-  半涓: {
-    name: "半涓",
-    finger: "食指",
-    direction: "内",
-    note: "半涓：抹勾相连，一弦得两声",
-  },
-  反涓: {
-    name: "反涓",
-    finger: "食指",
-    direction: "内",
-    note: "反涓：反向涓，指法倒用",
-  },
-  叠涓: {
-    name: "叠涓",
-    finger: "食指",
-    direction: "内",
-    note: "叠涓：涓法叠加，声繁",
-  },
-  连涓: {
-    name: "连涓",
-    finger: "食指",
-    direction: "内",
-    note: "连涓：涓法连作，声相续",
-  },
+  抹挑: { name: "抹挑", finger: "食指", direction: null, note: "先抹后挑，一弦连得两声" },
+  勾剔: { name: "勾剔", finger: "中指", direction: null, note: "先勾后剔，一弦连得两声" },
+  抹勾: { name: "抹勾", finger: "食指、中指", direction: null, note: "食指抹、中指勾，两指相接" },
+  打摘: { name: "打摘", finger: "无名指", direction: null, note: "先打后摘，一弦连得两声" },
+  仰托: { name: "仰托", finger: "大指", direction: "外", note: "字体无此连字，仅作文本兼容" },
+  轮: { name: "轮", finger: "无名指、中指、食指", direction: null, note: "轮指：三指依次快速摘托挑，一弦连得三声" },
+  锁: { name: "锁", finger: "食指、中指", direction: null, note: "锁铃/长锁：抹勾剔连作，三声相系" },
+  涓: { name: "涓", finger: "食指", direction: "外", note: "连剔两弦，轻作二声" },
+  历: { name: "历", finger: "食指", direction: "外", note: "食指连挑数弦，历历而下" },
+  拂: { name: "拂", finger: "食指、中指、无名指", direction: "外", note: "三指依次向外拂过数弦" },
+  半扶: { name: "半扶", finger: "食指、中指", direction: "内", note: "半扶：食指抹扶相连，一弦得两声" },
+  长锁: { name: "长锁", finger: "食指、中指", direction: null, note: "长锁：抹勾剔连作，三声相系，节奏较长" },
+  短锁: { name: "短锁", finger: "食指、中指", direction: null, note: "短锁：抹勾剔短促相连" },
+  背锁: { name: "背锁", finger: "食指、中指", direction: null, note: "背锁：反向锁铃，指法相背" },
+  圆锁: { name: "圆锁", finger: "食指、中指", direction: null, note: "圆锁：锁铃圆转连贯" },
+  半涓: { name: "半涓", finger: "食指", direction: "内", note: "半涓：抹勾相连，一弦得两声" },
+  反涓: { name: "反涓", finger: "食指", direction: "内", note: "反涓：反向涓，指法倒用" },
+  叠涓: { name: "叠涓", finger: "食指", direction: "内", note: "叠涓：涓法叠加，声繁" },
+  连涓: { name: "连涓", finger: "食指", direction: "内", note: "连涓：涓法连作，声相续" },
 };
 
 /**
@@ -258,130 +124,7 @@ export function rightActionInfo(action: string | null): RightAction | null {
   return RIGHT_ACTIONS[action] ?? null;
 }
 
-/** 弦序补充：首尾两弦点明粗细高低，中间弦不必啰嗦 */
-const STRING_NOTES: Record<string, string> = {
-  一: "最粗、最低",
-  七: "最细、最高",
-};
-
-/** 徽位里几个有明确分数含义的，直接说出来；其余给百分比 */
-const HUI_NOTES: Record<number, string> = {
-  1: "弦长 1/8 处",
-  4: "弦长 1/4 处",
-  5: "弦长 1/3 处",
-  7: "弦的正中（1/2 处）",
-  9: "弦长 2/3 处",
-  10: "弦长 3/4 处",
-  13: "弦长 7/8 处",
-};
-
-const CN_DIGIT: Record<string, number> = {
-  一: 1,
-  二: 2,
-  三: 3,
-  四: 4,
-  五: 5,
-  六: 6,
-  七: 7,
-  八: 8,
-  九: 9,
-};
-
-const HUI_CN = [
-  "",
-  "一",
-  "二",
-  "三",
-  "四",
-  "五",
-  "六",
-  "七",
-  "八",
-  "九",
-  "十",
-  "十一",
-  "十二",
-  "十三",
-];
-
-/** 徽位 + 分位 → 位置描述，如「七徽六分（七徽与八徽之间，过七徽六成）」 */
-export function describeHuiPosition(hui: string | null, fen: string | null): string | null {
-  if (!hui) return null;
-  const huiNum = chineseNumToHui(hui);
-  if (huiNum == null) return null;
-
-  const base = `${hui}徽`;
-  if (!fen) {
-    const note = HUI_NOTES[huiNum];
-    return note ? `${base} · ${note}` : base;
-  }
-
-  if (fen === "半") {
-    if (huiNum < 13) {
-      return `${base}半 · ${hui}徽与${HUI_CN[huiNum + 1]}徽的正中`;
-    }
-    return `${base}外半位 · 再往龙龈方向半位`;
-  }
-
-  const digit = fen.replace(/分$/, "");
-  const n = CN_DIGIT[digit];
-  if (n == null) return `${base}${fen}`;
-
-  if (huiNum < 13) {
-    return `${base}${fen} · ${hui}徽与${HUI_CN[huiNum + 1]}徽之间，过${hui}徽 ${n} 成`;
-  }
-  // 十三徽外还有一小段弦，分位按上一间隔外推
-  return `${base}${fen} · 再往龙龈方向 ${n} 成`;
-}
-
-/** 徽位 + 分位 → 距岳山的弦长百分比描述 */
-function positionPercent(hui: string | null, fen: string | null): string | null {
-  if (!hui) return null;
-  const huiNum = chineseNumToHui(hui);
-  if (huiNum == null) return null;
-  const p = huiFraction(huiNum, fen);
-  if (p == null || p <= 0 || p >= 1) return null;
-  return `距岳山约 ${(p * 100).toFixed(1)}% 弦长处`;
-}
-
-/** 简谱八度标记 → 口语 */
-function octaveText(octave: string): string {
-  switch (octave) {
-    case "·":
-      return "高八度";
-    case "··":
-      return "高两个八度";
-    case ",":
-      return "低八度";
-    case ",,":
-      return "低两个八度";
-    default:
-      return "";
-  }
-}
-
-const MISSING_LABEL: Record<string, string> = {
-  toneType: "音色",
-  leftFinger: "左手指法",
-  hui: "徽位",
-  rightAction: "右手指法",
-  stringNumber: "弦序",
-};
-
-/** 缺失槽位（散音不要左手指法与徽位） */
-function missingSlots(state: JianziState): string[] {
-  const missing: string[] = [];
-  if (!state.toneType) missing.push("toneType");
-  if (state.toneType !== "散") {
-    if (!state.leftFinger) missing.push("leftFinger");
-    if (!state.hui) missing.push("hui");
-  }
-  if (!state.rightAction) missing.push("rightAction");
-  if (!state.stringNumber) missing.push("stringNumber");
-  return missing;
-}
-
-/** 右手描述，如「中指勾（朝自己一侧拨弦）」 */
+/** 右手描述，如「中指勾（朝自己一侧拨弦）」。 */
 export function describeRightAction(rightAction: string | null): string | null {
   if (!rightAction) return null;
   const action = RIGHT_ACTIONS[rightAction];
@@ -396,6 +139,36 @@ export function describeRightAction(rightAction: string | null): string | null {
   return tail ? `${action.finger}${action.name}（${tail}）` : `${action.finger}${action.name}`;
 }
 
+/**
+ * 徽位 + 分位 → 位置描述，如「七徽六分 · 七徽与八徽之间，过七徽 6 成」。
+ *
+ * 文案在核心 `explain.rs::describe_hui_position`——它同时被
+ * `explainJianzi` 的「徽位」项和一句话读法使用，抠出来单独导出是为了
+ * 让上游能只问位置、不问整个减字。
+ */
+export function describeHuiPosition(hui: string | null, fen: string | null): string | null {
+  if (!hui) return null;
+  if (!isWasmReady()) return null;
+  const out = getWasmSync().describe_hui_position(JSON.stringify({ hui, fen: fen ?? null }));
+  // 核心对未知徽位返回空串，前端一贯的契约是 null
+  return out && !out.includes('"error"') ? out : null;
+}
+
+/**
+ * 5 个谱面结构记号及其释义。
+ *
+ * 结构记号与减字四宫格无关（气口 / 反复 / 入拍），文案同样只在核心一份。
+ * 引擎未就绪时返回空表——调用方据此不展示这一组，而不是显示半截文案。
+ */
+export function structureMarkExplain(): Record<string, ExplainPart> {
+  if (!isWasmReady()) return {};
+  try {
+    return JSON.parse(getWasmSync().structure_marks()) as Record<string, ExplainPart>;
+  } catch {
+    return {};
+  }
+}
+
 /** 候选音位的短标签：谱字旁边两行小字 + 读屏用的完整描述。 */
 export interface ShortCaption {
   /** 第一行：弦 + 音位，如「五弦 · 十徽」「一弦 · 散」 */
@@ -406,11 +179,54 @@ export interface ShortCaption {
   full: string;
 }
 
-/** 徽位 + 分位 → 极简写法（七徽六分 → 七徽六；十三徽半 → 十三徽半） */
-function shortHui(hui: string | null, fen: string | null): string {
-  if (!hui) return "";
-  const fenText = fen ? (fen === "半" ? "半" : fen.replace(/分$/, "")) : "";
-  return `${hui}徽${fenText}`;
+// ──────────────────────────────────────────────
+// 转发到核心
+// ──────────────────────────────────────────────
+
+/** 把状态与上下文打包成核心要的 JSON。 */
+function wire(state: JianziState, ctx: PitchContext): string {
+  return JSON.stringify({
+    state: {
+      toneType: state.toneType ?? null,
+      leftFinger: state.leftFinger ?? null,
+      hui: state.hui ?? null,
+      fen: state.fen ?? null,
+      slide: state.slide ?? null,
+      rightAction: state.rightAction ?? null,
+      stringNumber: state.stringNumber ?? null,
+      structureMark: state.structureMark ?? null,
+    },
+    tuning: ctx.tuning,
+    concertPitch: ctx.concertPitch,
+  });
+}
+
+/** 引擎未就绪时的空结果——那是**诚实**的空，不是编一段可能错的读法。 */
+const EMPTY_EXPLANATION: JianziExplanation = {
+  complete: false,
+  summary: "",
+  parts: [],
+  pitchHint: null,
+  missing: [],
+};
+
+const EMPTY_CAPTION: ShortCaption = { primary: "", secondary: "", full: "" };
+
+/** 减字状态 → 释义。任何时候都能调用，未完成时会告诉你还缺什么。 */
+export function explainJianzi(state: JianziState, ctx: PitchContext = {}): JianziExplanation {
+  if (!isWasmReady()) return EMPTY_EXPLANATION;
+  const parsed = JSON.parse(getWasmSync().explain_jianzi(wire(state, ctx))) as Record<
+    string,
+    unknown
+  >;
+  if (typeof parsed.error === "string") return EMPTY_EXPLANATION;
+  return {
+    complete: Boolean(parsed.complete),
+    summary: (parsed.summary as string) ?? "",
+    parts: (parsed.parts as ExplainPart[]) ?? [],
+    pitchHint: (parsed.pitchHint as string | null) ?? null,
+    missing: (parsed.missing as string[]) ?? [],
+  };
 }
 
 /**
@@ -420,147 +236,15 @@ function shortHui(hui: string | null, fen: string | null): string {
  * 「几弦 · 几徽」，第二行只留「谁按、谁弹」，完整读法留给 title/读屏。
  */
 export function shortCaption(state: JianziState): ShortCaption {
-  const stringText = state.stringNumber ? `${state.stringNumber}弦` : "";
-  const action = state.rightAction ? RIGHT_ACTIONS[state.rightAction] : undefined;
-  const rightText = action ? `${action.finger}${action.name}` : (state.rightAction ?? "");
-  const finger = state.leftFinger ? LEFT_FINGERS[state.leftFinger] : undefined;
-  const fingerText = finger?.note ? finger.name : (finger?.name ?? state.leftFinger ?? "");
-
-  if (state.toneType === "散") {
-    return {
-      primary: [stringText, "散"].filter(Boolean).join(" · "),
-      secondary: rightText,
-      full: `散音，${stringText || "未定弦"}，右手${rightText || "未定指法"}`,
-    };
-  }
-
-  const pos = shortHui(state.hui, state.fen);
-  const touch = state.toneType === "泛" ? "轻触" : "按";
-  // 卡片一行只有六七十像素：短标签用单字「泛 / 按」，完整读法里再写「轻触」
-  const touchShort = state.toneType === "泛" ? "泛" : "按";
+  if (!isWasmReady()) return EMPTY_CAPTION;
+  const parsed = JSON.parse(getWasmSync().short_caption(wire(state, {}))) as Record<
+    string,
+    unknown
+  >;
+  if (typeof parsed.error === "string") return EMPTY_CAPTION;
   return {
-    primary: [stringText, pos].filter(Boolean).join(" · "),
-    // 第二行只留「谁按 · 谁弹」：左右手由按/弹本身就能读出来，
-    // 再写「右手」反而把这一行撑满，卡片宽了反而扫不动。
-    secondary: [fingerText ? `${fingerText}${touchShort}` : "", rightText]
-      .filter(Boolean)
-      .join(" · "),
-    full: `${state.toneType ?? ""}音，${fingerText || "未定手指"}${touch}${stringText}${pos}，右手${rightText || "未定指法"}`,
-  };
-}
-
-/** 减字状态 → 释义。任何时候都能调用，未完成时会告诉你还缺什么。 */
-export function explainJianzi(state: JianziState, ctx: PitchContext = {}): JianziExplanation {
-  const tuningId = ctx.tuning ?? DEFAULT_TUNING;
-  const tuningSpec = getTuningById(tuningId);
-  const missingKeys = missingSlots(state);
-  const complete = missingKeys.length === 0;
-  const parts: ExplainPart[] = [];
-
-  // 音色
-  if (state.toneType) {
-    const desc =
-      state.toneType === "散"
-        ? "散音（左手不按弦，取空弦）"
-        : state.toneType === "泛"
-          ? "泛音（左手轻触徽位，虚按不实）"
-          : "按音（左手按实于徽位）";
-    parts.push({ label: "音色", text: desc });
-  }
-
-  // 左手
-  if (state.toneType !== "散" && state.leftFinger) {
-    const finger = LEFT_FINGERS[state.leftFinger];
-    if (finger) {
-      parts.push({
-        label: "左手",
-        text: finger.note ? `${finger.name}（${finger.note}）` : finger.name,
-      });
-    } else {
-      parts.push({ label: "左手", text: state.leftFinger });
-    }
-  }
-
-  // 徽位
-  if (state.toneType !== "散") {
-    const pos = describeHuiPosition(state.hui, state.fen);
-    if (pos) {
-      const pct = positionPercent(state.hui, state.fen);
-      parts.push({ label: "徽位", text: pct ? `${pos}；${pct}` : pos });
-    }
-  }
-
-  // 绰/注 改变音高走向，急 是弹法，吟猱族是余韵——读法各不相同，全从表取。
-  // 表里没有的也不假装是「急」，给一条诚实的兜底（覆盖由测试守着）。
-  if (state.toneType !== "散" && state.toneType !== "泛" && state.slide) {
-    parts.push(
-      SLIDE_EXPLAIN[state.slide] ?? {
-        label: "走手音",
-        text: `${state.slide}（装饰记号，具体处理依师授）`,
-      },
-    );
-  }
-
-  // 右手
-  const right = describeRightAction(state.rightAction);
-  if (right) parts.push({ label: "右手", text: right });
-
-  // 弦序：带上这根弦在当前定弦下的空弦音，换过调式的人一眼能对上
-  if (state.stringNumber) {
-    const note = STRING_NOTES[state.stringNumber];
-    const idx = "一二三四五六七".indexOf(state.stringNumber);
-    const midi = openStringMidi(state.stringNumber, tuningId);
-    const pitch =
-      idx >= 0 && midi !== null ? `${tuningSpec.noteNames[idx]} · ${tuningSpec.name}` : "";
-    const detail = [pitch, note].filter(Boolean).join("，");
-    parts.push({
-      label: "弦序",
-      text: detail ? `${state.stringNumber}弦（${detail}）` : `${state.stringNumber}弦`,
-    });
-  }
-
-  // 谱面结构记号：独立于减字四宫格，挂在音符上的谱面层标记（气口/反复/入拍）。
-  // 不参与「减字是否完整」的判定——带少息的勾四照样是可弹的整字。
-  if (state.structureMark) {
-    parts.push(
-      STRUCTURE_MARK_EXPLAIN[state.structureMark] ?? {
-        label: "结构记号",
-        text: `${state.structureMark}（谱面记号）`,
-      },
-    );
-  }
-
-  // 音高（散/按/泛都能推，按当前定弦与基准音）
-  let pitchHint: string | null = null;
-  const jianpu = jianziToJianpu(state, ctx);
-  if (jianpu) {
-    const oct = octaveText(jianpu.octave);
-    pitchHint = `简谱 ${jianpu.number}${oct ? `（${oct}）` : ""} · ${tuningSpec.name}推定`;
-  }
-
-  // 一句话读法
-  let summary = "";
-  if (complete && state.toneType && state.rightAction && state.stringNumber) {
-    const action = RIGHT_ACTIONS[state.rightAction];
-    const actionName = action ? `${action.finger}${action.name}` : state.rightAction;
-    if (state.toneType === "散") {
-      summary = `散音 · 右手${actionName}${state.stringNumber}弦，左手不按弦`;
-    } else {
-      const finger = state.leftFinger ? (LEFT_FINGERS[state.leftFinger]?.name ?? state.leftFinger) : "";
-      const pos = describeHuiPosition(state.hui, state.fen);
-      const posShort = pos ? pos.split(" · ")[0] : "";
-      const verb = state.toneType === "泛" ? "轻触" : "按于";
-      // 走手音跟在音位后面读才顺：「按于四弦七徽六分（绰）」
-      const slideText = state.slide ? `（${state.slide}）` : "";
-      summary = `${state.toneType === "泛" ? "泛音" : "按音"} · 左手${finger}${verb}${state.stringNumber}弦${posShort}${slideText}，右手${actionName}`;
-    }
-  }
-
-  return {
-    complete,
-    summary,
-    parts,
-    pitchHint,
-    missing: missingKeys.map((k) => MISSING_LABEL[k] ?? k),
+    primary: (parsed.primary as string) ?? "",
+    secondary: (parsed.secondary as string) ?? "",
+    full: (parsed.full as string) ?? "",
   };
 }

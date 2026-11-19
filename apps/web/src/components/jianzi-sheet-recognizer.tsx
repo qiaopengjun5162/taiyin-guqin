@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { JianziState, NoteColumn } from "@/lib/types";
 import { parseJianziText } from "@/lib/jianzi";
 import { SvgJianziBlock } from "@/components/svg-jianzi-block";
-import { recognizeJianziSheet, ApiError, isBrowserOnlyMode } from "@/lib/api";
+import { api } from "@/lib/client";
 import { schedulePluck } from "@/lib/audio-synth";
 import { jianziToFrequency, jianziToJianpu } from "@/lib/jianzi-pitch";
 import { usePitchContext } from "@/lib/use-pitch-context";
@@ -61,7 +61,7 @@ export function JianziSheetRecognizer({
   const { tuning, concertPitch } = usePitchContext();
   // 静态站点无后端时走本机模板切分+匹配（能力只到电子谱面），分支跟着变。
   // 服务端快照固定 false，避免水合不一致。
-  const browserOnly = useSyncExternalStore(subscribeNoop, isBrowserOnlyMode, () => false);
+  const browserOnly = useSyncExternalStore(subscribeNoop, api.isBrowserOnlyMode, () => false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cells, setCells] = useState<
@@ -98,10 +98,10 @@ export function JianziSheetRecognizer({
       }
       const base64 = await fileToBase64(f);
       const mediaType = f.type || "image/jpeg";
-      const resp = await recognizeJianziSheet(base64, mediaType);
+      const resp = await api.recognizeJianziSheet(base64, mediaType);
       setCells(resp.cells);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 503) {
+      if (e instanceof api.ApiError && e.status === 503) {
         setError("后端未启用 AI 识别（缺少 ANTHROPIC_API_KEY），无法识别图片。");
       } else {
         setError(e instanceof Error ? e.message : "识别失败，请重试");

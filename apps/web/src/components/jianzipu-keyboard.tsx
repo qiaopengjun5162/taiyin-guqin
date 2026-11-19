@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { SavedJianziBar } from "./saved-jianzi-bar";
 import {
   type JianziState,
@@ -19,6 +19,7 @@ import {
   isComplete,
   jianziToText,
   parseJianziText,
+  rightActionName,
 } from "@/lib/jianzi";
 import { lookupPinyin } from "@/lib/pinyin-dict";
 import {
@@ -26,7 +27,8 @@ import {
   normalizeRapidInput,
   RAPID_CHEATSHEET,
   RAPID_SLOT_LABEL,
-} from "@/lib/jianzi-rapid";
+  useWasmInit,
+} from "@/lib/client";
 import { JianzipuPreview } from "./jianzipu-preview";
 import { JianziExplainPanel } from "./jianzi-explain-panel";
 
@@ -107,6 +109,20 @@ export function JianzipuKeyboard({
     if (defaultNote) return jianziToText(defaultNote.jianzi);
     return "";
   });
+  /**
+   * 拼音模式的实时解析结果（供预览框用）。
+   *
+   * 只在输入里出现汉字时才解析：纯拼音（`da gou`）认不出减字，
+   * 画个「未完成」的空框反而让人以为打错了。
+   * 解析失败同样返回 null——输入框自己会用红字说明原因。
+   */
+  const pinyinPreview = useMemo<JianziState | null>(() => {
+    if (!/[一-鿿]/.test(pinyinText)) return null;
+    const parsed = parseJianziText(pinyinText);
+    // 一个部件都没认出来时不必画：那和「空着」没区别
+    if (!parsed || !parsed.toneType) return null;
+    return parsed;
+  }, [pinyinText]);
   const [activeTab, setActiveTab] = useState<"rhythm" | "finger">("finger");
 
   function handleSelect(section: Section, value: string) {
@@ -227,6 +243,22 @@ export function JianzipuKeyboard({
         </div>
       ) : inputMode === "pinyin" ? (
         <div className="w-full">
+          {/*
+           * 实时预览：敲进去的汉字立刻解析成减字画出来。
+           *
+           * 2026-11-18 实拍发现：拼音模式此前**根本没有预览**——用户在输入框里敲
+           * 「大九勾四」，界面上什么反馈都没有，只能靠回车后看谱面有没有多一个字。
+           * 敲错了也不知道错在哪，得再删再敲重来。
+           *
+           * 与「连打」模式同一个道理：输入过程中必须有可见的解析结果。
+           * 纯拼音（还没替换成汉字）解析不出东西，这时不画预览，避免误导。
+           */}
+          {pinyinPreview && (
+            <div className="mb-4 flex flex-col items-center gap-2">
+              <JianzipuPreview state={pinyinPreview} />
+              <JianziExplainPanel state={pinyinPreview} />
+            </div>
+          )}
           <PinyinInput
             value={pinyinText}
             onChange={setPinyinText}
@@ -412,6 +444,7 @@ export function JianzipuKeyboard({
                 items={DEFAULT_KEYBOARD.rightActions}
                 active={state.rightAction}
                 onSelect={(v) => handleSelect("rightAction", v)}
+                showReading
               />
               <SectionGroup
                 label="弦序"
@@ -472,11 +505,20 @@ function SectionGroup({
   items,
   active,
   onSelect,
+  showReading,
 }: {
   label: string;
   items: string[];
   active: string | null;
   onSelect: (value: string) => void;
+  /**
+   * 按钮上是否附带读音。
+   *
+   * 右手一组存的是偏旁字形（勹/乚/木/丁/倽），不熟减字谱的人根本找不到「勾」在哪——
+   * 2026-11-18 实拍确认过这个问题。开启后按钮显示「字形 + 读音」两行，
+   * 字形仍是真正的取值（不影响连字），读音只是给人看的。
+   */
+  showReading?: boolean;
 }) {
   const isFen = label === "分";
 
@@ -498,19 +540,41 @@ function SectionGroup({
             无
           </button>
         )}
-        {items.map((item) => (
-          <button
-            key={item}
-            onClick={() => onSelect(active === item ? "" : item)}
-            className={`px-3 py-1.5 text-sm rounded border transition-all duration-150 active:scale-95 ${
-              active === item
-                ? "border-amber-800/70 bg-amber-700 text-amber-50 shadow-sm"
-                : "border-stone-300/50 text-stone-700 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-900"
-            }`}
-          >
-            {item}
-          </button>
-        ))}
+        {items.map((item) => {
+          const reading = showReading ? rightActionName(item) : item;
+          const dual = showReading && reading !== item;
+          return (
+            <button
+              key={item}
+              onClick={() => onSelect(active === item ? "" : item)}
+              /*
+               * 无障碍名带上分区：「音色 · 散」与「节奏 · 散」是两个不同的东西
+               * （前者是空弦音色，后者是散板节奏），但屏幕上都是「散」。
+               * 视觉上靠分组标题能分清，屏幕阅读器与自动化则只能读到「散」——
+               * 2026-11-18 实测：脚本按名字点「散」点到了节奏区那个，把已选的音色取消掉了。
+               */
+              aria-label={`${label} · ${reading}`}
+              title={dual ? `${item} · ${reading}（${label}）` : `${item}（${label}）`}
+              className={`px-3 py-1.5 text-sm rounded border transition-all duration-150 active:scale-95 ${
+                active === item
+                  ? "border-amber-800/70 bg-amber-700 text-amber-50 shadow-sm"
+                  : "border-stone-300/50 text-stone-700 hover:border-amber-600/30 hover:bg-amber-50 hover:text-stone-900"
+              }`}
+            >
+              {dual ? (
+                /* 上字形、下读音：字形才是真取值，读音帮新手上手 */
+                <span className="flex flex-col items-center leading-tight">
+                  <span>{item}</span>
+                  <span className={`text-[9px] ${active === item ? "text-amber-200/80" : "text-stone-400"}`}>
+                    {reading}
+                  </span>
+                </span>
+              ) : (
+                item
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -583,7 +647,16 @@ function PinyinInput({
       <p className="text-[11px] tracking-[0.15em] text-stone-500">
         输入汉字（如 大九勾四 / 大九六绰勾四）或拼音（如 da gou），敲回车入谱。
       </p>
-      <div className="flex gap-2 relative">
+      {/*
+       * `relative z-20`：整个输入区抬到「我的减字」面板之上。
+       *
+       * 2026-11-18 实拍：候选下拉本身有 `z-50`，但它是**绝对定位**、只在
+       * 这个父容器内部比层级；而「我的减字」在 DOM 里排在后面、又是普通流元素，
+       * 于是下拉被它盖掉一半——用户只看到第一行候选，以为就一个词可选。
+       *
+       * 把父容器整体抬高才让下拉真正浮在所有兄弟元素之上。
+       */}
+      <div className="relative z-20 flex gap-2">
         <div className="flex-1 relative">
           <input
             ref={inputRef}
@@ -664,8 +737,15 @@ function RapidInput({
   const [buffer, setBuffer] = useState("");
   const [committed, setCommitted] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 连打文法在 Rust（WASM）里。这里订阅加载状态：未就绪时输入不该被静默吞掉，
+  // 而要明确告诉用户「引擎在装载」，并在挂载时主动拉一次（不依赖外层 bootstrap 的时序）。
+  const { state: wasmState } = useWasmInit();
+  const wasmReady = wasmState === "ready";
 
   const parsed = parseRapidInput(buffer, toneType);
+  // 引擎未就绪时，输入框可用但解析不出东西——必须说明原因，否则用户以为键盘坏了。
+  const enginePending = !wasmReady && wasmState !== "error";
+  const engineFailed = wasmState === "error";
   // 串里写了音色前缀（s/f/a）时，按钮的高亮跟着串走，
   // 否则会出现「明明打着 a（按音），上面还亮着散」的错位。
   const prefixTone = parsed.tokens.find((t) => t.slot === "toneType")?.value as
@@ -736,7 +816,15 @@ function RapidInput({
 
         {/* 已识别槽位 */}
         <div className="flex flex-wrap items-center justify-center gap-1.5 min-h-[26px]">
-          {parsed.tokens.length === 0 ? (
+          {engineFailed ? (
+            <span className="text-center text-[11px] leading-relaxed tracking-[0.05em] text-amber-800">
+              连打引擎加载失败，请刷新页面；也可以先用「点选」页签录入。
+            </span>
+          ) : enginePending ? (
+            <span className="text-center text-[11px] leading-relaxed tracking-[0.05em] text-stone-500">
+              正在装载连打引擎…
+            </span>
+          ) : parsed.tokens.length === 0 ? (
             /* 上手引导刻意只有一句话 + 一条消歧（两个例子在 placeholder 里）。
                完整规则折在下面的速查表，别一上来就摆七行表吓人。 */
             <span className="text-center text-[11px] leading-relaxed tracking-[0.05em] text-stone-500">
@@ -809,9 +897,26 @@ function MissingFields({ state }: { state: JianziState }) {
     if (!state.stringNumber) missing.push("弦序");
   }
 
+  /*
+   * 从「还缺：右手指法、弦序」改成「还需要：点下面的「右手」和「弦序」」。
+   *
+   * 差别在**下一步做什么**：原句只是复述了缺哪个字段，而新手不知道
+   * 「右手指法」对应下面哪一排按钮——那一排写的是「毛托 / 尸劈 / 木抹」，
+   * 跟「右手指法」四个字没有任何字面联系（2026-11-18 实拍确认）。
+   *
+   * 改后把字段名映射到**分区标题**（页面上真实存在的那几个字），
+   * 用户扫一眼就知道该点哪一块。全部齐了就不显示。
+   */
+  if (missing.length === 0) return null;
   return (
-    <p className="mt-2 text-[10px] tracking-wider text-amber-600/50 text-center select-none">
-      还缺：{missing.join("、")}
+    <p className="mt-2 text-center text-[12px] tracking-wider text-amber-700/70 select-none">
+      还需要：点下面的
+      {missing.map((m, i) => (
+        <span key={m}>
+          {i > 0 ? "、" : ""}
+          <b className="font-medium text-amber-800">「{m}」</b>
+        </span>
+      ))}
     </p>
   );
 }

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
+import { loadRealWasm } from "../../lib/__tests__/load-wasm";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { JianziRecognizer } from "@/components/jianzi-recognizer";
 
@@ -61,6 +62,9 @@ function upload(container: HTMLElement) {
   const file = new File(["x"], "jianzi.png", { type: "image/png" });
   fireEvent.change(input, { target: { files: [file] } });
 }
+
+/** 音高推算已迁进 Rust，薄壳在引擎未就绪时返回 null——必须装载真实产物。 */
+beforeAll(loadRealWasm);
 
 describe("JianziRecognizer", () => {
   it("renders the recognized glyph and explanation", async () => {

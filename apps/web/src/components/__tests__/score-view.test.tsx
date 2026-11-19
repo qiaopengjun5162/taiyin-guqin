@@ -131,9 +131,11 @@ describe("ScoreView", () => {
   });
 
   describe("empty state", () => {
-    it("shows placeholder when notes is empty", () => {
+    it("empty score renders nothing (no placeholder box)", () => {
+      // 空态不再画 80px 虚线框：它对第一次打开的人只是噪声，
+      // 还会把减字键盘往下推 120px。打了第一个字谱面才出现。
       const { container } = render(<ScoreView notes={[]} />);
-      expect(container.textContent).toContain("在下方拼装减字");
+      expect(container.textContent).toBe("");
     });
   });
 

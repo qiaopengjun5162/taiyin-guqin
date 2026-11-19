@@ -8,11 +8,38 @@
  * （FollowPlayPanel / PracticeLogPanel / 识别组件各自有自己的测试），
  * 本文件只对 page.tsx 的契约负责。
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { NoteColumn } from "@/lib/types";
 import { createEmptyState } from "@/lib/jianzi";
+
+/**
+ * 联袂成组已迁进 Rust/WASM，本文件要断言「成组 / 解组」的实际行为，
+ * 因此装载**真实产物**（不是替身）：把 fetch 指向仓库里的 wasm 文件即可。
+ */
+beforeAll(async () => {
+  const bytes = readFileSync(
+    resolve(__dirname, "../../../wasm/taiyin_core_bg.wasm"),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("taiyin_core_bg.wasm")) {
+        return new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "application/wasm" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+  const { initWasmSync } = await import("@/lib/taiyin-wasm");
+  await initWasmSync();
+});
 
 const h = vi.hoisted(() => ({
   play: vi.fn(),
@@ -119,20 +146,23 @@ vi.mock("@/lib/use-export-image", () => ({
   }),
 }));
 
-vi.mock("@/lib/taiyin-wasm", () => ({
-  getWasmLoadState: () => "ready",
-  getWasmLoadError: () => null,
-  initWasm: vi.fn().mockResolvedValue(undefined),
-  useWasmInit: () => ({ state: "ready", error: null }),
-  translateJianpuToJianzi: h.translateJianpuToJianzi,
-  translateJianpuSequenceToJianzi: vi.fn(),
-  splitPhrases: h.splitPhrases,
-  encodeJianziBatch: vi.fn().mockResolvedValue([]),
-  decodeJianziBatch: vi.fn(),
-  getJianziDictionary: vi.fn().mockResolvedValue({ total: 0, entries: [] }),
-  analyzeJianziFrequency: vi.fn().mockResolvedValue({ total: 0, rows: [] }),
-  getJianziVariantGroups: vi.fn().mockResolvedValue([]),
-}));
+// 联袂算法已迁进 Rust/WASM。这些页面测试只 mock 了部分导出，
+// 所以这里用 importOriginal 保留**真实的** WASM 桥接（含 isWasmReady/getWasmSync），
+// 只覆盖本文件需要替身的几个翻译/识别函数。
+vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
+  return {
+    ...actual,
+    translateJianpuToJianzi: h.translateJianpuToJianzi,
+    translateJianpuSequenceToJianzi: vi.fn(),
+    splitPhrases: h.splitPhrases,
+    encodeJianziBatch: vi.fn().mockResolvedValue([]),
+    decodeJianziBatch: vi.fn(),
+    getJianziDictionary: vi.fn().mockResolvedValue({ total: 0, entries: [] }),
+    analyzeJianziFrequency: vi.fn().mockResolvedValue({ total: 0, rows: [] }),
+    getJianziVariantGroups: vi.fn().mockResolvedValue([]),
+  };
+});
 
 // 跟弹判定通过顺手记一笔练琴：这是 page 的回调，记账本体在 practice-log 自己的测试里
 vi.mock("@/lib/practice-log", async (importOriginal) => {

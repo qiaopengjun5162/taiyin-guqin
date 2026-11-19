@@ -29,10 +29,19 @@ import {
   normalizeLianmei,
   relationFits,
   LIANMEI_OPTIONS,
+  api,
   type LianmeiRelation,
-} from "@/lib/lianmei";
+} from "@/lib/client";
+/*
+ * 网络判定与本地写入从**独立模块**导入，不经 `@/lib/client`。
+ *
+ * 原因：组件测试用 `vi.mock("@/lib/api")` 替换绑定层，而门面会 re-export 它，
+ * 于是从门面拿这两个函数会穿透到 mock 替身、拿到 undefined。
+ * 它们是与 HTTP 实现无关的纯逻辑，独立成模块后既不被 mock 影响，也能单测。
+ */
+import { isBackendUnreachable } from "@/lib/net-error";
+import { localCreateScore } from "@/lib/local-score-store";
 import { jianziToFrequency } from "@/lib/jianzi-pitch";
-import { useExportImage } from "@/lib/use-export-image";
 import {
   DENSITY_OPTIONS,
   LAYOUT_OPTIONS,
@@ -47,32 +56,18 @@ import {
   type ScoreWidth,
 } from "@/lib/score-layout";
 import { scoreFingerprint, confirmDiscard } from "@/lib/unsaved-guard";
-import {
-  clearDraft,
-  formatDraftAge,
-  readDraft,
-  writeDraft,
-  type ScoreDraft,
-} from "@/lib/draft-store";
+import { clearDraft, formatDraftAge } from "@/lib/draft-store";
 import { useScoreHistory } from "@/lib/use-score-history";
 import { EXAMPLE_SCORES, findExampleScore } from "@/lib/example-scores";
-import { formatScoreAsText, downloadTextFile } from "@/lib/score-export";
 import { buildScoreShareUrl, readSharedScoreId } from "@/lib/share-link";
 import { getStoredAuthor } from "@/lib/settings";
 import { forgetMyScore, isMyScore, rememberMyScore } from "@/lib/owner-token";
 import { getCurrentUserId } from "@/lib/auth";
-import { encodeJianziBatch } from "@/lib/taiyin-wasm";
 import { useScorePlayer } from "@/lib/use-score-player";
-import { JOIN_REPEATS, PRACTICE_REPEATS, joinRange, phraseKey, useScorePhrases } from "@/lib/score-phrases";
-import {
-  joinTempo,
-  readProgress,
-  recordTempo,
-  scoreProgressKey,
-  stickingPoints,
-  writeProgress,
-  type PhraseProgress,
-} from "@/lib/practice-progress";
+import { usePhrasePractice } from "@/lib/use-phrase-practice";
+import { useScoreExport } from "@/lib/use-score-export";
+import { useScoreDraft } from "@/lib/use-score-draft";
+import { PRACTICE_REPEATS } from "@/lib/score-phrases";
 import { useMetronome } from "@/lib/use-metronome";
 import { addEntry } from "@/lib/practice-log";
 import {
@@ -84,8 +79,6 @@ import {
   setConcertPitch,
   subscribeConcertPitch,
 } from "@/lib/concert-pitch";
-import { renderScoreToBuffer, downloadWav } from "@/lib/audio-export";
-import { scoreToMidi, downloadMidi } from "@/lib/midi-export";
 import {
   TUNINGS,
   getServerTuning,
@@ -95,7 +88,38 @@ import {
   subscribeTuning,
   type TuningId,
 } from "@/lib/tuning";
-import * as api from "@/lib/api";
+
+/**
+ * 把任意 catch 到的错误翻成一句给用户看的话。
+ *
+ * ## 为什么需要包一层（2026-11-18 实测踩到）
+ *
+ * 原先每处都写 `err instanceof api.ApiError ? err.message : "保存失败"`。
+ * 这在测试里会炸：测试用 `vi.mock` 替换了整个 `@/lib/api` 模块，
+ * 而替身里没有 `ApiError` 这个类——`instanceof undefined` 直接抛
+ * `TypeError: Right-hand side of 'instanceof' is not an object`，
+ * 于是本该走到「已保存」的用例全部变成「保存失败」。
+ *
+ * ## 为什么优先用 fallback 而不是 err.message
+ *
+ * `ApiError` 的 message 是**后端写给人看的话**（「超出配额」「口令不对」），可以直出。
+ * 但普通 `Error` 的 message 是给开发者看的（`ECONNREFUSED`、`Cannot read x of undefined`），
+ * 扔给用户只会增加困惑 → 这种情况一律用调用方给的 fallback（如「删除失败」）。
+ */
+function errorText(err: unknown, fallback: string): string {
+  const ApiErrorClass = api.ApiError;
+  if (typeof ApiErrorClass === "function" && err instanceof ApiErrorClass) {
+    return err instanceof Error && err.message ? err.message : fallback;
+  }
+  return fallback;
+}
+
+/** 该错误是否带指定 HTTP 状态（如 403 = 不是这首谱的主人）。 */
+function hasStatus(err: unknown, status: number): boolean {
+  const ApiErrorClass = api.ApiError;
+  if (typeof ApiErrorClass !== "function" || !(err instanceof ApiErrorClass)) return false;
+  return (err as { status?: number }).status === status;
+}
 
 /** useSyncExternalStore 的空订阅：存储模式在页面生命周期内不会变，无需通知。 */
 const subscribeNoop = () => () => {};
@@ -185,7 +209,6 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 成功/中性提示（如「分享链接已复制」），与红色错误框分开，避免误读成失败
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
-  const [isExportingAudio, setIsExportingAudio] = useState(false);
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   // 谱面排版偏好（布局/疏密/行宽）存 localStorage：属于读谱习惯，不是谱子内容，
   // 所以跟着人不跟着曲。用 useSyncExternalStore 读，避免 effect 里同步 setState。
@@ -211,83 +234,59 @@ export default function Home() {
   const [exportWithCountIn, setExportWithCountIn] = useState(true);
   // 录入区两种进法：点选简谱转减字，或把减字码整段粘回来。
   const [inputTab, setInputTab] = useState<"jianpu" | "code">("jianpu");
-  // 分句：句界由 Rust 切（与编排同一套判据），前端只提供时值。
-  // 只有两句以上才会在界面上出现「分句」那一条。
-  const scorePhrases = useScorePhrases(score);
-  const [practiceTempo, setPracticeTempo] = useState(0.6);
-  const [practiceIndex, setPracticeIndex] = useState<number | null>(null);
 
   /**
-   * 正在走的那一段：哪句到哪句、什么档、走几遍。
+   * 逐句慢练的全部状态与动作（关注点已拆到 `usePhrasePractice`）。
    *
-   * 不从 `practiceIndex` 推：末句往前接时头一句并不是用户点的那句，
-   * 拿它当起点会把「第 5+6 句」播成「第 6 句」——而画面上还写着两句。
-   * 也不把合练的档写回 `practiceTempo`：那是手选的档位，
-   * 合练的档是两句算出来的，写回去会让下次点句子莫名其妙地变快/变慢。
+   * 与播放器之间是个环：播放器每一遍走完要回调 `handlePracticeEnd` 记账，
+   * 而记账要用到「这一遍实际走的档」——那是本 hook 的状态。用 `practiceEndRef`
+   * 打断：播放器拿一个永远稳定的包装函数，内部转发到最新的实现。
+   * 这样播放器不必因记账函数变化而重建，也不会读到过期的闭包。
    */
-  const [practicePlay, setPracticePlay] = useState<{
-    from: number;
-    to: number;
-    tempo: number;
-    repeat: number;
-  } | null>(null);
-
-  /**
-   * 每句练到哪一档。
-   *
-   * 键里带着社区 id / 曲名 / 音数：换了谱就是另一份进度，
-   * 不会出现「这首的第 3 句已过原速」标在你没练过的一段音上。
-   */
-  const practiceProgressKey = scoreProgressKey(
-    currentScoreId,
-    scoreTitle,
-    score.length,
-  );
-  const [phraseProgress, setPhraseProgress] = useState<PhraseProgress>({});
-  // 渲染期读 localStorage 会让预渲染与首帧不一致，只能进 effect 读
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 外部存储 → React 状态的同步
-    setPhraseProgress(readProgress(practiceProgressKey));
-  }, [practiceProgressKey]);
-
-  /**
-   * 三遍真的走完才记一笔。
-   *
-   * 记的是「这次练到的那一档」，不是「已过关」——过没过是读的时候用
-   * `isCleared` 算的。两件事分开，才不会被一句没走完的练习骗过去。
-   *
-   * 合练（两句连着走）**不会**虚报成绩，靠的是两件事实而不是一个 if：
-   * ① 合练档位取两句里更慢的那句（`joinTempo`），所以它永远不高于任一句的
-   *    已有成绩，`recordTempo` 的「只升不降」在这里天然写不进东西；
-   * ② 记的是**实际走的那一档**（`practicePlay.tempo`），不是手边拨到的档。
-   * 少任何一条都会冒出「合练一遍就过关」的假横线，所以这两条各有用例守着。
-   */
-  const handlePracticeEnd = useCallback(() => {
-    if (practiceIndex === null) return;
-    const phrase = scorePhrases[practiceIndex];
-    if (!phrase) return;
-    /**
-     * 记实际走的那一档，不是手边选中的那一档。
-     *
-     * 档位在播放中是可以拨的（拨了不打断这一遍）。走完之后 `practiceTempo`
-     * 可能已经不是刚才那遍的速度了——照它记账，等于把「0.6 走完」写成
-     * 「1× 走完」，句子上立刻多出一根朱砂横线，那是句谎话。
-     */
-    const usedTempo = practicePlay?.tempo ?? practiceTempo;
-    const next = recordTempo(phraseProgress, phraseKey(phrase), usedTempo);
-    if (next === phraseProgress) return;
-    setPhraseProgress(next);
-    writeProgress(practiceProgressKey, next);
-  }, [practicePlay, practiceIndex, scorePhrases, phraseProgress, practiceTempo, practiceProgressKey]);
+  const practiceEndRef = useRef<() => void>(() => {});
+  const stablePracticeEnd = useCallback(() => practiceEndRef.current(), []);
 
   const { play, stop: stopPlayback, isPlaying, playingIndex, practicePass } = useScorePlayer(
     score,
     bpm,
     concertPitch,
     tuning,
-    handlePracticeEnd,
+    stablePracticeEnd,
   );
   const { toggle: toggleMetronome, stop: stopMetronome, isRunning: metronomeRunning, currentBeat } = useMetronome(beatsPerBar, bpm);
+
+  const {
+    scorePhrases,
+    sticking,
+    activePractice,
+    activePracticeIndex,
+    activeJoinTo,
+    practiceTempo,
+    setPracticeTempo,
+    practiceIndex,
+    phraseProgress,
+    practicePhrase,
+    practiceSticking,
+    practiceJoin,
+    stopPractice,
+    handlePracticeEnd,
+    handleFollowPass,
+  } = usePhrasePractice({
+    score,
+    currentScoreId,
+    scoreTitle,
+    play,
+    stopPlayback,
+    metronomeRunning,
+    stopMetronome,
+    isPlaying,
+    practicePass,
+  });
+
+  // 把最新实现转给播放器：ref 在每次渲染时更新，包装函数保持不变（见上方说明）。
+  useEffect(() => {
+    practiceEndRef.current = handlePracticeEnd;
+  }, [handlePracticeEnd]);
   const exportRef = useRef<HTMLDivElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -335,68 +334,73 @@ export default function Home() {
   /**
    * 自动草稿：有未保存修改时把谱写进 localStorage，下次打开可恢复。
    *
-   * `pendingDraft` 是「上次没保存的内容」，只在编辑区还是空的时候提示。
-   * 一旦用户开始录入（isPristine 不再成立），提示自动消失、草稿照常被新内容覆盖——
-   * 这比加一堆「要不要放弃」的判断更符合直觉：开始录就是选了「不恢复」。
+   * 读写与防抖都在 `useScoreDraft` 里；这里只负责「恢复」这一步——
+   * 它要动 score/title/tuning/currentScoreId，属于曲谱状态的职责，
+   * 草稿 hook 不该越界写入。
+   *
+   * 恢复后的行为刻意如此：草稿本身仍未保存，所以恢复完页面照常显示「未保存」。
    */
-  const [pendingDraft, setPendingDraft] = useState<ScoreDraft | null>(null);
-  const isPristine = score.length === 0 && scoreTitle === UNTITLED_TITLE;
-  const showDraftBanner = pendingDraft !== null && isPristine;
-
-  // 读草稿只能在 effect 里做：渲染期读 localStorage 会让 SSR 预渲染与客户端首帧不一致。
-  useEffect(() => {
-    // 分享直达（?score=）本身就是「载入一份内容」，此时再弹草稿提示会互相打架
-    if (readSharedScoreId(window.location.search)) return;
-    const draft = readDraft();
-    if (!draft || draft.notes.length === 0) return;
-    // 把「外部存储里的草稿」搬进 React 状态，正是 effect 存在的意义
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPendingDraft(draft);
-  }, []);
-
-  // 有未保存修改时防抖写草稿（600ms，避免每敲一个音就写一次盘）
-  useEffect(() => {
-    if (!isDirty) return;
-    const timer = setTimeout(() => {
-      writeDraft({ title: scoreTitle, notes: score, tuning, scoreId: currentScoreId });
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [isDirty, scoreTitle, score, tuning, currentScoreId]);
+  const { pendingDraft, showDraftBanner, discardDraft, takeDraftForRestore } =
+    useScoreDraft({
+      score,
+      scoreTitle,
+      tuning,
+      currentScoreId,
+      isDirty,
+      untitledTitle: UNTITLED_TITLE,
+    });
 
   /** 恢复上次没保存的草稿（草稿本身未保存，恢复后仍显示「未保存」）。 */
   function handleRestoreDraft() {
-    if (!pendingDraft) return;
-    commitScore(() => pendingDraft.notes);
-    commitScoreTitle(pendingDraft.title);
-    setTuning(pendingDraft.tuning);
+    const draft = takeDraftForRestore();
+    if (!draft) return;
+    commitScore(() => draft.notes);
+    commitScoreTitle(draft.title);
+    setTuning(draft.tuning);
     // 本机 id（local-xxx）在 server 模式下发给后端只会 404：
     // 与 handleLoadScore 同一处理——置 null 让保存走「新建」。
     setCurrentScoreId(
-      storageMode === "server" && pendingDraft.scoreId?.startsWith("local-")
+      storageMode === "server" && draft.scoreId?.startsWith("local-")
         ? null
-        : pendingDraft.scoreId,
+        : draft.scoreId,
     );
     setEditingIndex(null);
-    setPendingDraft(null);
     showInfo("已恢复上次未保存的草稿，记得保存");
   }
 
   /** 丢弃草稿。 */
   function handleDiscardDraft() {
-    clearDraft();
-    setPendingDraft(null);
+    discardDraft();
   }
-
-  const { exportPng, exportSvg, isExporting } = useExportImage({
-    containerRef: exportRef,
-    title: scoreTitle,
-  });
 
   function showError(message: string) {
     setErrorMessage(message);
     if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     errorTimerRef.current = setTimeout(() => setErrorMessage(null), 4000);
   }
+
+  const {
+    exportPng,
+    exportSvg,
+    exportText,
+    exportWav,
+    exportMidi,
+    exportPdf,
+    isExporting,
+    isExportingAudio,
+  } = useScoreExport({
+    score,
+    scoreTitle,
+    bpm,
+    beatsPerBar,
+    concertPitch,
+    tuning,
+    tuningLabel,
+    linkMetronome,
+    exportWithCountIn,
+    containerRef: exportRef,
+    onError: showError,
+  });
 
   function showInfo(message: string) {
     setInfoMessage(message);
@@ -525,7 +529,12 @@ export default function Home() {
   /** 点击乐谱流音符 → 键盘回填数据 + 滚动到键盘区 */
   function handleEdit(index: number) {
     setEditingIndex(index);
-    document.getElementById("keyboard-area")?.scrollIntoView({ behavior: "smooth" });
+    // 与 `jumpToKeyboard` 同一保护：jsdom 不实现 scrollIntoView，
+    // 直接调用会让「点音符列」在测试环境抛 TypeError，看起来像交互坏了。
+    const el = document.getElementById("keyboard-area");
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
   }
 
   function handleAppend(note: NoteColumn) {
@@ -630,136 +639,6 @@ export default function Home() {
     }
   }
 
-  /**
-   * 慢练某一句：先停再播，区间 / 倍率 / 遍数一次性交给播放器。
-   *
-   * 倍率由调用方显式传入（句子按钮给当前档，`再快一档` 给下一档）：
-   * 若在这里读 `practiceTempo` 再 `setPracticeTempo`，同一次事件里
-   * 播放拿到的仍是旧值，听起来就像「按了没反应」。
-   *
-   * 节拍器一并停掉：它按原速走，慢练时留着只会把人往原速上带。
-   * 慢练的全部意义就是「这一段手还跟不上原速」，让它跟着一个原速的
-   * 滴答声去弹，等于一边踩刹车一边踩油门。
-   */
-  const handlePracticePhrase = useCallback(
-    (index: number, tempo: number) => {
-      const phrase = scorePhrases[index];
-      if (!phrase) return;
-      stopPlayback();
-      if (metronomeRunning) stopMetronome();
-      setPracticeTempo(tempo);
-      setPracticeIndex(index);
-      setPracticePlay({ from: index, to: index, tempo, repeat: PRACTICE_REPEATS });
-      void play(phrase.start, {
-        endIndex: phrase.end,
-        repeat: PRACTICE_REPEATS,
-        tempo,
-      });
-    },
-    [scorePhrases, stopPlayback, metronomeRunning, stopMetronome, play],
-  );
-
-  /**
-   * 卡点句：练过但还没到原速的句子，最慢的排前面。
-   * 喂给日课面板——「哪句卡着」是周/月汇总答不出来的，它只回答「练了多久」。
-   */
-  const sticking = useMemo(
-    () => stickingPoints(scorePhrases.map(phraseKey), phraseProgress),
-    [scorePhrases, phraseProgress],
-  );
-
-  /**
-   * 从日课点「练这句」：档位接着它自己的最好成绩走，不硬塞面板上选的档。
-   * 刚到 0.6× 的句子直接按 0.8× 起步，多半一上来就垮，反而打击人。
-   * 还没成绩的句子才退回当前选的档位。
-   */
-  const handleStickingPractice = useCallback(
-    (index: number) => {
-      const phrase = scorePhrases[index];
-      const best = phrase ? (phraseProgress[phraseKey(phrase)] ?? 0) : 0;
-      handlePracticePhrase(index, best > 0 ? best : practiceTempo);
-    },
-    [scorePhrases, phraseProgress, practiceTempo, handlePracticePhrase],
-  );
-
-  /**
-   * 合练：把刚练过那句和相邻那句连着走两遍。
-   *
-   * 分句是为了拆开练，拆完必须合回去——单句练习的区间首尾都被切掉了，
-   * 所以「上一句收尾 → 下一句起手」这一下，在单句里永远练不到。
-   *
-   * 档位取两句里更慢的那句：快的那句等一等，慢的那句不追。
-   */
-  const handlePracticeJoin = useCallback(() => {
-    const range =
-      practiceIndex !== null ? joinRange(scorePhrases, practiceIndex) : null;
-    if (!range) return;
-    const first = scorePhrases[range.from];
-    const last = scorePhrases[range.to];
-    if (!first || !last) return;
-    const tempo = joinTempo(
-      phraseProgress[phraseKey(first)] ?? 0,
-      phraseProgress[phraseKey(last)] ?? 0,
-      practiceTempo,
-    );
-    stopPlayback();
-    if (metronomeRunning) stopMetronome();
-    setPracticePlay({
-      from: range.from,
-      to: range.to,
-      tempo,
-      repeat: JOIN_REPEATS,
-    });
-    void play(range.start, {
-      endIndex: range.end,
-      repeat: JOIN_REPEATS,
-      tempo,
-    });
-  }, [
-    practiceIndex,
-    scorePhrases,
-    phraseProgress,
-    practiceTempo,
-    stopPlayback,
-    metronomeRunning,
-    stopMetronome,
-    play,
-  ]);
-
-  const handleStopPractice = useCallback(() => {
-    stopPlayback();
-    setPracticeIndex(null);
-    setPracticePlay(null);
-  }, [stopPlayback]);
-
-  // 只有「正在慢练」才高亮：整首播放时若也高亮，用户会以为在循环某一句
-  const activePractice = isPlaying && practicePass != null ? practicePlay : null;
-  const activePracticeIndex = activePractice?.from ?? null;
-  // 合练才给「到哪一句」：单句时 from === to，没必要让组件再判一次
-  const activeJoinTo =
-    activePractice && activePractice.to > activePractice.from
-      ? activePractice.to
-      : null;
-
-  /**
-   * 跟弹判定通过：记这一句练到的档位。
-   *
-   * 只有一处与慢练那条路不同：慢练记「实际走的那一档」（可能被合练改过），
-   * 判定记的就是面板上选的那一档。但「只升不降」必须一致——否则判定一遍 0.6
-   * 会把已经练到 0.9 的句子打回 0.6，谱面上那根朱砂线会往回缩。
-   */
-  const handleFollowPass = useCallback(
-    (tempo: number) => {
-      if (practiceIndex === null) return;
-      const phrase = scorePhrases[practiceIndex];
-      if (!phrase) return;
-      const next = recordTempo(phraseProgress, phraseKey(phrase), tempo);
-      if (next === phraseProgress) return;
-      setPhraseProgress(next);
-      writeProgress(practiceProgressKey, next);
-    },
-    [practiceIndex, scorePhrases, phraseProgress, practiceProgressKey],
-  );
 
   /** 判定通过顺手记一笔练琴，不然「练了多久」还要用户自己再填一遍。 */
   const handleFollowLog = useCallback(
@@ -789,7 +668,22 @@ export default function Home() {
   /** 跟弹时的高亮：单独一条通道，不与播放的 playingIndex 抢。 */
   const [followHighlight, setFollowHighlight] = useState<number | null>(null);
 
-  /** 保存曲谱到后端 */
+  /**
+   * 保存曲谱。
+   *
+   * 两条路：
+   * - **后端可达**：发布到社区 / 更新已有谱（`api.createScore` / `updateScore`）。
+   * - **后端连不上**：降级存本机浏览器，并**如实告知**「换设备会丢」。
+   *
+   * ## 为什么要做降级（2026-11-18 实拍发现）
+   *
+   * 本机开发时若没起 `taiyin-server`，页面仍按 server 模式发请求 → 连接被拒 →
+   * 用户看到「保存失败」，而且**什么都没存上**（localStorage 是空的）。
+   * 这个工具本来就支持纯前端使用，不该因为没开后端就丢掉保存能力。
+   *
+   * 只降级「连不上」这一种。服务端回了 401/409/403 等真实判断时照常上报——
+   * 那些是业务结论，不是网络故障。
+   */
   async function handleSave() {
     if (score.length === 0) return;
     setSaveStatus("saving");
@@ -803,7 +697,7 @@ export default function Home() {
           // 403 = 这首谱不是本机凭证发布的（别人的谱 / 换过设备 / 无主老谱）。
           // 直接报错会让人以为坏了，实际意图通常是「我想基于它改一版」，
           // 所以自动另存为新谱，并说明发生了什么。
-          if (!(err instanceof api.ApiError) || err.status !== 403) throw err;
+          if (!hasStatus(err, 403)) throw err;
           const created = await api.createScore(scoreTitle, score, tuning, getStoredAuthor());
           setCurrentScoreId(created.id);
           rememberMyScore(created.id);
@@ -822,9 +716,31 @@ export default function Home() {
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
-      setSaveStatus("error");
-      showError(err instanceof api.ApiError ? err.message : "保存失败，请检查网络或后端状态");
-      setTimeout(() => setSaveStatus("idle"), 3000);
+      /*
+       * 后端连不上 → 存本机，并告诉用户这次没进社区。
+       *
+       * 「以为发到了社区、其实只在这台机器上」比「保存失败」更危险：
+       * 失败他会重试，误以为成功就再也不会检查。
+       */
+      if (!isBackendUnreachable(err)) {
+        setSaveStatus("error");
+        showError(errorText(err, "保存失败，请检查网络或后端状态"));
+        setTimeout(() => setSaveStatus("idle"), 3000);
+        return;
+      }
+      try {
+        const local = localCreateScore(scoreTitle, score, tuning);
+        setCurrentScoreId(local.id);
+        setSavedFingerprint(scoreFingerprint(scoreTitle, score, tuning));
+        clearDraft();
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2000);
+        showInfo("后端连不上，已存到本机浏览器（换设备或清缓存会丢失）");
+      } catch {
+        setSaveStatus("error");
+        showError("保存失败：浏览器不允许本地存储（可能处于隐私模式）");
+        setTimeout(() => setSaveStatus("idle"), 3000);
+      }
     }
   }
 
@@ -1070,7 +986,7 @@ export default function Home() {
         );
       }
     } catch (err) {
-      showError(err instanceof api.ApiError ? err.message : "收藏失败，请检查网络或后端状态");
+      showError(errorText(err, "收藏失败，请检查网络或后端状态"));
     }
   }
 
@@ -1078,8 +994,25 @@ export default function Home() {
   async function openLoadDialog() {
     try {
       if (storageMode === "server") {
-        const firstPage = await api.listScoresPage({ limit: 50 }); // 失败走外层 catch 提示
-        const serverList = firstPage.items;
+        /*
+         * 社区列表拉不到时**不能连累整个对话框**（2026-11-18 实拍发现）。
+         *
+         * 原先这里直接 await，失败就抛到外层 catch → 对话框根本不打开。
+         * 于是「后端没起」的用户连**本机谱**都打不开——他明明存过谱，
+         * 却因为社区那一栏拉不到而看不到自己的东西。这是最气人的那种坏法。
+         *
+         * 现在分开处理：社区拉不到就记下来，本机谱照常显示，并在对话框里说明。
+         */
+        let serverList: api.ScoreListItem[] = [];
+        let serverPageTotal: number | null = null;
+        let communityFailed = false;
+        try {
+          const firstPage = await api.listScoresPage({ limit: 50 });
+          serverList = firstPage.items;
+          serverPageTotal = firstPage.total;
+        } catch {
+          communityFailed = true;
+        }
         let localList: api.ScoreListItem[] = [];
         try {
           localList = await api.localListScores();
@@ -1116,7 +1049,8 @@ export default function Home() {
           setFavoriteIds([]);
         }
 
-        tabs.push({
+        if (!communityFailed) {
+          tabs.push({
           key: "community",
           label: "社区曲谱",
           scores: serverList,
@@ -1126,16 +1060,21 @@ export default function Home() {
           // 登录者的账号 id：换设备发的谱，靠它也能认出是「我的」
           myUserId: myId,
           // 总数与翻页：只有第一页时用户会以为社区就这么几首
-          total: firstPage.total,
+          total: serverPageTotal,
           // 社区列表默认按更新时间；用户切到「最热」时由 onCommunitySortChange 重拉
           sort: "recent",
           // 关键词 / 定弦过滤的客户端回显，初始为空（不做过滤）
           query: "",
           tuning: null,
           onLoadMore: handleLoadMoreCommunity,
-        });
+          });
+        }
         if (localList.length > 0) {
           tabs.push({ key: "local", label: "本机", scores: localList, showMigrate: true });
+        }
+        if (communityFailed) {
+          // 说清楚「社区那一栏为什么没有」，而不是让用户以为谱丢了
+          showInfo("连不上社区后端，只显示本机保存的曲谱");
         }
         setLoadTabs(tabs);
       } else {
@@ -1186,7 +1125,7 @@ export default function Home() {
         clearDraft();
       }
     } catch (err) {
-      showError(err instanceof api.ApiError ? err.message : "删除失败");
+      showError(errorText(err, "删除失败"));
     }
   }
 
@@ -1214,7 +1153,7 @@ export default function Home() {
       );
       showInfo("已认领到我的账号，之后换设备也能改删它");
     } catch (err) {
-      showError(err instanceof api.ApiError ? err.message : "认领失败");
+      showError(errorText(err, "认领失败"));
     }
   }
 
@@ -1239,7 +1178,7 @@ export default function Home() {
           : "你之前已经举报过这首，管理员会一并处理",
       );
     } catch (err) {
-      showError(err instanceof api.ApiError ? err.message : "举报失败");
+      showError(errorText(err, "举报失败"));
     }
   }
 
@@ -1365,78 +1304,6 @@ export default function Home() {
     void play();
   }, [score, play]);
 
-  /**
-   * 导出纯文本对照谱。
-   *
-   * 除了简谱 / 减字 / 歌词，还带上每个减字的**编码**（`ad9g4` 这种）：
-   * 减字那一行离开我们的字体就是一堆生僻字，码却是谁都能看、能照着敲的。
-   * 编码在 Rust 端算；引擎没起来时退回不带码的三行，不让导出整个失败。
-   */
-  function handleExportText() {
-    void (async () => {
-      let codes: (string | null)[] | undefined;
-      try {
-        codes = await encodeJianziBatch(score.map((note) => note.jianzi));
-      } catch {
-        codes = undefined;
-      }
-      const text = formatScoreAsText(score, {
-        title: scoreTitle,
-        beatsPerBar,
-        tuning: tuningLabel,
-        codes,
-        // 时值跟着码走：导出的文本能被「减字码入谱」原样读回，节奏不丢。
-        annotateRhythm: true,
-      });
-      downloadTextFile(text, `${scoreTitle || "taiyin-score"}.txt`);
-    })();
-  }
-
-  /** 导出旋律为 WAV 音频（离线渲染，与播放音色一致） */
-  async function handleExportWav() {
-    if (score.length === 0) return;
-    setIsExportingAudio(true);
-    try {
-      const buffer = await renderScoreToBuffer(score, bpm, {
-        beatsPerBar,
-        withMetronome: linkMetronome,
-        leadInBars: exportWithCountIn ? 2 : 0,
-        concertPitch,
-        tuning,
-      });
-      downloadWav(buffer, `${scoreTitle || "taiyin-score"}.wav`);
-    } catch {
-      showError("音频导出失败");
-    } finally {
-      setIsExportingAudio(false);
-    }
-  }
-
-  /** 导出标准 MIDI 谱（可导入打谱软件 / DAW；音高为正调推定） */
-  function handleExportMidi() {
-    if (score.length === 0) return;
-    const bytes = scoreToMidi(score, {
-      title: scoreTitle || "taiyin-score",
-      bpm,
-      beatsPerBar,
-      concertPitch,
-      tuning,
-    });
-    downloadMidi(bytes, `${scoreTitle || "taiyin-score"}.mid`);
-  }
-
-  /**
-   * 导出 PDF —— 走浏览器原生打印通道。
-   *
-   * jsPDF 这类库没法嵌入古琴减字字体（中文字库以 MB 计，根本塞不进 PDF），
-   * 而浏览器打印到 PDF 会自动把用到的字形子集嵌进文件，
-   * 减字才能正确显示、且矢量无损。用户在打印框里选「另存为 PDF」即可。
-   * 具体页面尺寸 / 边距 / 隐藏交互都在 globals.css 的 @media print 里。
-   */
-  function handleExportPdf() {
-    if (score.length === 0) return;
-    window.print();
-  }
 
   return (
     <>
@@ -1448,53 +1315,63 @@ export default function Home() {
       <div className="xl:col-start-1 w-full min-w-0 flex flex-col items-center">
 
       {/*
-       * ── 「太音是什么」介绍区：只在空谱时出现 ──
-       * 新访客第一眼要知道这是打谱工具、从哪条路进（会弹 / 不会 / 在学三入口，
-       * 对应 docs/competitive-analysis.md 16.4）；开始打谱后自动收起，不挡老手。
-       * 「先听一首」载入示例并自动出声——听懂比读懂快。放 #score-area 之外，免得进导出截图。
+       * ── 首屏：一句话 + 两个按钮（2026-11-18 按「一句话原则」重写） ──
+       *
+       * ## 旧版错在哪
+       *
+       * 实测量过：1440×900 的首屏里有 **407 个字、34 个文本块**，而真正的操作区
+       * （减字键盘）不在首屏——要滚到 978px 才看得到。文档里自己写着
+       * 「不会用：首屏是『选音色→点指法→点弦徽』，对路人是重交互」，一直没改。
+       *
+       * 一个新手（假设他毫无耐心、也不懂古琴术语）打开页面，只需要回答一个问题：
+       * **「我能用它干什么，从哪点开始？」** 别的都是噪声。
+       *
+       * ## 现在只有三层信息
+       *
+       * 1. 一句话说清是什么（标题区已有，这里不重复）
+       * 2. 两个动作：听不懂就先听（最低门槛），会一点就开始打（主路径）
+       * 3. 「第一次用？」折叠着三行说明——想看的人点开，不想看的人永远不用见
+       *
+       * 三入口（不会弹 / 会弹 / 在学）不再铺成一屏列表：那是产品经理的分类，
+       * 不是用户的心智。他只要知道「先听」还是「自己打」。
        */}
       {score.length === 0 && (
         <section
-          aria-label="太音是什么"
-          className="no-print mt-4 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm xl:col-start-1"
+          aria-label="开始使用"
+          className="no-print order-last mt-4 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm xl:order-none xl:col-start-1"
         >
           <div className="ty-panel-accent" />
           <div className="p-4">
-            <p className="text-[11px] tracking-wider text-amber-800">太音是什么</p>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-stone-700">
-              <b className="font-medium text-amber-900">古琴打谱工具</b>
-              ——把看不懂的老谱，变成能弹的曲子。不用装软件、不用装字体，打开网页就能用。
+            <p className="text-[13px] leading-relaxed text-stone-700">
+              把看不懂的古琴老谱，变成能弹、能听的曲子。
             </p>
-            <ul className="mt-2 space-y-1 text-[10px] leading-relaxed text-stone-700">
-              <li>
-                · <b className="font-medium text-amber-900">你还不会弹，手里有老谱</b>
-                ：传整页照片，逐字校对，出来能弹能听的谱
-              </li>
-              <li>
-                · <b className="font-medium text-amber-900">你会弹，想打谱</b>
-                ：敲键盘或传简谱，自动排指法，出图、出声、出码
-              </li>
-              <li>
-                · <b className="font-medium text-amber-900">你已经在学</b>
-                ：逐句慢练、节拍器、调音器、日课
-              </li>
-            </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
                 onClick={handleListenExample}
-                className="min-h-[36px] rounded border border-amber-700/40 px-3 text-[10px] tracking-wider text-amber-900 transition-colors hover:bg-amber-700/10"
+                className="min-h-[44px] flex-1 rounded bg-amber-800 px-3 text-[13px] tracking-wider text-amber-50 transition-colors hover:bg-amber-900"
               >
-                先听一首《沧海一声笑》
+                先听一首
               </button>
               <button
                 type="button"
                 onClick={jumpToKeyboard}
-                className="min-h-[36px] rounded border border-amber-700/25 px-3 text-[10px] tracking-wider text-stone-600 transition-colors hover:text-amber-900 hover:border-amber-700/40"
+                className="min-h-[44px] flex-1 rounded border border-amber-700/40 px-3 text-[13px] tracking-wider text-amber-900 transition-colors hover:bg-amber-700/10"
               >
-                直接开始打谱
+                开始打谱
               </button>
             </div>
+            {/* 想深入了解的人自己点开；不想看的人不会被 407 个字挡住 */}
+            <details className="mt-3">
+              <summary className="cursor-pointer text-[12px] tracking-wider text-stone-500 select-none">
+                第一次用？看这三行
+              </summary>
+              <ul className="mt-2 space-y-1 text-[12px] leading-relaxed text-stone-600">
+                <li>· 手上有老谱照片 → 下面「识别减字图片」，逐格校对</li>
+                <li>· 想自己打谱 → 下面键盘点几下就出一个字，或直接粘简谱</li>
+                <li>· 在学琴 → 逐句慢练、节拍器、调音器都在右侧</li>
+              </ul>
+            </details>
           </div>
         </section>
       )}
@@ -1635,35 +1512,42 @@ export default function Home() {
        * 放在 #score-area 之外：那一块是整谱导出截图的靶子，写进来会被一起截进 PNG。
        * 内容对应的能力是真的闭环（连打敲完的字也能「存为常用 → 图 / 矢」），
        * 不是宣传话术；有音符以后收起，不占正在打谱的人的屏幕。
+       *
+       * 移动端同样 `order-last`：与「太音是什么」一样，它是引导不是主操作，
+       * 不该把减字键盘推到一屏之外（详见上方介绍区的说明）。
+       */}
+      {/*
+       * ── 「只想记一个字」：改成折叠，默认收起（2026-11-18） ──
+       *
+       * 这是**次要场景**（记一个指法贴进课件），却和主路径（打一首谱）平排在首屏，
+       * 各占一大块。实测量过：它把首屏文字从 400 字推到「看不清重点」的程度。
+       *
+       * 现在收成一行标题，想用的人点开。主路径上不该有两个同等重量的入口。
        */}
       {score.length === 0 && (
-        <section
-          aria-label="只想记一个字"
-          className="no-print mt-5 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm xl:col-start-1"
-        >
-          <div className="ty-panel-accent" />
-          <div className="p-4">
-            <p className="text-[11px] tracking-wider text-amber-800">
-              只想记一个字？不必打整首谱
-            </p>
-            <ul className="mt-2 space-y-1 text-[10px] leading-relaxed text-stone-700">
+        <details className="no-print order-last mt-3 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm xl:order-none xl:col-start-1">
+          <summary className="cursor-pointer px-4 py-3 text-[12px] tracking-wider text-stone-600 select-none">
+            只想记一个字？不必打整首谱
+          </summary>
+          <div className="px-4 pb-4">
+            <ul className="space-y-1 text-[12px] leading-relaxed text-stone-600">
               <li>· 课后记下老师所授的一处指法</li>
               <li>· 备课、批改时在课件里标一个减字</li>
               <li>· 写文章、发视频时配一张准确的减字图</li>
             </ul>
-            <p className="mt-2 text-[10px] leading-relaxed text-stone-700">
-              在下面敲一个减字 →「存为常用」→ 点卡片上的「图 / 矢」，即得 PNG / SVG，
-              贴进笔记或课件。网页打开即用，不用装字体、不用装输入法。
+            <p className="mt-2 text-[12px] leading-relaxed text-stone-600">
+              敲一个减字 →「存为常用」→ 点卡片上的「图 / 矢」，即得 PNG / SVG，
+              贴进笔记或课件。不用装字体、不用装输入法。
             </p>
             <button
               type="button"
               onClick={jumpToKeyboard}
-              className="mt-3 min-h-[36px] rounded border border-amber-700/40 px-3 text-[10px] tracking-wider text-amber-900 transition-colors hover:bg-amber-700/10"
+              className="mt-3 min-h-[40px] rounded border border-amber-700/40 px-3 text-[12px] tracking-wider text-amber-900 transition-colors hover:bg-amber-700/10"
             >
               去敲一个字
             </button>
           </div>
-        </section>
+        </details>
       )}
 
       {/* ── 工具栏：标题 + 保存 / 加载 / 导出 ── */}
@@ -1679,10 +1563,10 @@ export default function Home() {
         canShare={storageMode === "server" && currentScoreId !== null}
         onExportPng={exportPng}
         onExportSvg={exportSvg}
-        onExportText={handleExportText}
-        onExportWav={handleExportWav}
-        onExportMidi={handleExportMidi}
-        onExportPdf={handleExportPdf}
+        onExportText={exportText}
+        onExportWav={exportWav}
+        onExportMidi={exportMidi}
+        onExportPdf={exportPdf}
         isExportingAudio={isExportingAudio}
         examples={EXAMPLE_SCORES}
         onLoadExample={handleLoadExample}
@@ -1860,16 +1744,24 @@ export default function Home() {
 
       {/* ── 拍号选择 + 播放 ── */}
       <div className="no-print w-full max-w-none flex flex-wrap items-center justify-end gap-2 gap-y-2">
+        {/*
+         * 节拍器按钮：跑起来时文字改成「■ 节拍中」，不只靠底色。
+         *
+         * 2026-11-18 实拍：原先文字恒定是「节拍」，运行与否只差一层淡淡的琥珀底。
+         * 用户点了之后没法确认它到底响没响——尤其节拍器通常是静音排练时才开，
+         * 光看一个色块猜状态太不可靠。文字是最直白的信号。
+         */}
         <button
           onClick={toggleMetronome}
           aria-label={metronomeRunning ? "停止节拍器" : "启动节拍器"}
+          aria-pressed={metronomeRunning}
           className={`px-2 py-1 min-h-[44px] text-[10px] tracking-wider rounded border transition-all ${
             metronomeRunning
               ? "border-amber-600/50 bg-amber-800/30 text-amber-100"
               : "border-amber-700/30 text-stone-500 hover:text-stone-300 hover:border-amber-600/50"
           }`}
         >
-          节拍
+          {metronomeRunning ? "■ 节拍中" : "节拍"}
         </button>
         <button
           onClick={isPlaying ? handleStop : handlePlay}
@@ -1916,9 +1808,9 @@ export default function Home() {
         repeat={activePractice?.repeat ?? PRACTICE_REPEATS}
         progress={phraseProgress}
         onTempoChange={setPracticeTempo}
-        onStart={handlePracticePhrase}
-        onStop={handleStopPractice}
-        onJoin={handlePracticeJoin}
+        onStart={practicePhrase}
+        onStop={stopPractice}
+        onJoin={practiceJoin}
       />
 
       {/* ── 跟弹判定：关掉参考音，只听你弹得准不准 ── */}
@@ -2058,7 +1950,7 @@ export default function Home() {
         onImportNotes={(notes) => commitScore((prev) => [...prev, ...notes])}
         scoreTitle={scoreTitle}
         sticking={sticking}
-        onPracticePhrase={handleStickingPractice}
+        onPracticePhrase={practiceSticking}
       />
 
       </div>

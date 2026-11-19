@@ -1,10 +1,39 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   parseRapidInput,
   normalizeRapidInput,
   RAPID_SLOTS_BY_TONE,
 } from "../jianzi-rapid";
 import { jianziToText } from "../jianzi";
+
+/**
+ * 这一套用例跑的是**真实 WASM 产物**，不是替身。
+ *
+ * 文法与码表的唯一实现在 Rust（`crates/taiyin-core/src/jianzi_rapid.rs`），
+ * 用 mock 测等于什么都没测——码头漂移正是这次迁移要消灭的 bug。
+ * 这里只把 `fetch` 指向仓库里的 `wasm/taiyin_core_bg.wasm`，其余走生产同一条加载路径。
+ */
+beforeAll(async () => {
+  const wasmPath = resolve(__dirname, "../../../wasm/taiyin_core_bg.wasm");
+  const bytes = readFileSync(wasmPath);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("taiyin_core_bg.wasm")) {
+        return new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "application/wasm" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+  const { initWasmSync } = await import("../taiyin-wasm");
+  await initWasmSync();
+});
 
 describe("normalizeRapidInput", () => {
   it("去掉空白与标点、转小写", () => {
