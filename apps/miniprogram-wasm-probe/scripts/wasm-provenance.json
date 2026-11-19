@@ -1,39 +1,62 @@
 {
   "schema": 1,
   "note": "由 scripts/build-worker.mjs 生成，勿手改。不含时间戳，无变化重跑不会产生 diff。",
-  "sourceFingerprint": "sha256:6b8039f2ac05a0e24d0dc3d93c01d147df6249425ece93a072ec2dd2f9a9c363",
+  "sourceFingerprint": "sha256:e96f809d80030bb311c950d6b75d7b44f5062b6f596cf03dc0be5ee99a076477",
   "sourceInputs": [
     "Cargo.toml",
     "crates/taiyin-core/Cargo.toml",
     "crates/taiyin-core/src/bin/gen_types.rs",
+    "crates/taiyin-core/src/explain.rs",
     "crates/taiyin-core/src/jianpu.rs",
+    "crates/taiyin-core/src/jianpu_parse.rs",
     "crates/taiyin-core/src/jianzi_code.rs",
     "crates/taiyin-core/src/jianzi_dictionary.rs",
+    "crates/taiyin-core/src/jianzi_rapid.rs",
     "crates/taiyin-core/src/jianzi_stats.rs",
+    "crates/taiyin-core/src/jianzi_text.rs",
+    "crates/taiyin-core/src/lianmei.rs",
     "crates/taiyin-core/src/lib.rs",
+    "crates/taiyin-core/src/pitch.rs",
     "crates/taiyin-core/src/wasm.rs"
   ],
   "wasm": {
-    "bytes": 235302,
-    "sha256": "3637a534a20bb3872998f39f59ed3083c9c4ea51e171038bdfd4a8e832b963c5"
+    "bytes": 346012,
+    "sha256": "41ca30e56ca4f2deea5b8e73604a55349b887047eaed998dd3cbb8c42db7d725"
   },
   "glue": {
-    "bytes": 15308,
-    "sha256": "3a4be92be46fd11b085b0b471ab4de5b8d91df818026fef3928e11b817c50991"
+    "bytes": 28594,
+    "sha256": "c142c238c008e493f7562204071539d4e9012b8d7c65774ab254fb4eb229eeea"
   },
   "publicExports": [
     "analyze_jianzi_frequency",
     "arrange_jianpu_sequence_to_jianzi",
+    "clear_lianmei",
     "decode_jianzi_batch",
+    "describe_hui_position",
     "encode_jianzi_batch",
+    "explain_jianzi",
+    "get_jianpu_units",
     "get_jianzi_dictionary",
     "get_jianzi_variant_groups",
+    "get_lianmei_options",
+    "get_rapid_slots",
+    "jianzi_pitch",
+    "jianzi_to_text",
+    "lianmei_groups",
+    "lianmei_relation",
+    "link_lianmei",
+    "normalize_lianmei",
+    "parse_jianpu",
+    "parse_jianzi_text",
+    "parse_rapid_input",
+    "short_caption",
     "split_phrases_to_json",
+    "structure_marks",
     "translate_jianpu_sequence_to_jianzi",
     "translate_jianpu_to_jianzi"
   ],
   "toolchain": {
-    "rustc": "1.98.1",
+    "rustc": "1.100.0",
     "wasmPack": "0.15.0",
     "wasmOpt": "133"
   }
