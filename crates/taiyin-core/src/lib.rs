@@ -23,10 +23,16 @@ use ts_rs::TS;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+pub mod explain;
 pub mod jianpu;
+pub mod jianpu_parse;
 pub mod jianzi_code;
 pub mod jianzi_dictionary;
+pub mod jianzi_rapid;
 pub mod jianzi_stats;
+pub mod jianzi_text;
+pub mod lianmei;
+pub mod pitch;
 
 // ──────────────────────────────────────────────
 // 基础类型

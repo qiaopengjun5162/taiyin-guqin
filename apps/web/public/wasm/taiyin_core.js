@@ -74,6 +74,147 @@ function getStringFromWasm0(ptr, len) {
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 /**
+ * 减字释义 —— 把谱字读成人话，文案只在 Rust 一份。
+ *
+ * 输入 JSON: `{"state":{"toneType":"按","leftFinger":"大","hui":"九",
+ *   "rightAction":"勹","stringNumber":"四"},"tuning":"zhengdiao","concertPitch":440}`
+ * 输出 JSON: `{"complete":true,"summary":"按音 · 左手大指按于四弦九徽，右手中指勾",
+ *   "parts":[{"label":"音色","text":"…"}],"pitchHint":"简谱 5 · 正调推定","missing":[]}`
+ *
+ * 文案放核心里，是为了让网页、小程序、App 读出**同一句话**——
+ * 两处说法不一，用户只会怀疑自己记错了。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function explain_jianzi(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.explain_jianzi(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 候选音位的短标签 —— 两行小字 + 读屏全称。
+ *
+ * 输入 JSON: `{"state":{"toneType":"散","rightAction":"勹","stringNumber":"一"}}`
+ * 输出 JSON: `{"primary":"一弦 · 散","secondary":"中指勾","full":"散音，一弦，右手中指勾"}`
+ *
+ * 与 `explain_jianzi` 同一批指法表：短标签与完整读法不可能说法不一。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function short_caption(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.short_caption(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 徽位 + 分位的位置描述（供前端同步渲染路径复用同一套文案）。
+ *
+ * 输入：`{"hui":"七","fen":"六分"}`；输出：`"七徽六分 · 七徽与八徽之间，过七徽 6 成"`
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function describe_hui_position(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.describe_hui_position(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 5 个谱面结构记号及其释义。
+ * @returns {string}
+ */
+export function structure_marks() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.structure_marks();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * 减字状态 → 字体可渲染的减字文本（「大九勾四」）。
+ *
+ * 输入 JSON: `{"state":{"toneType":"按","leftFinger":"大","hui":"九",
+ *   "rightAction":"勹","stringNumber":"四"}}`
+ * 输出 JSON: `"大九勾四"`
+ *
+ * 序列化顺序就是字体连字规则：分数在前、内折记号在后、吟猱挂字尾。
+ * 网页 / 小程序 / App 必须拼出同一个字，否则用户会以为「这个字坏了」。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function jianzi_to_text(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.jianzi_to_text(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 减字文本 → 状态。解析不出完整减字时返回 `null`。
+ *
+ * 输入 JSON: `{"text":"大九勾四"}`；输出：状态对象或 `null`。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function parse_jianzi_text(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.parse_jianzi_text(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * 输出 JSON: `{"candidates": [{"score": 150, "note": {...}}]}`
  * @param {string} input_json
  * @returns {string}
@@ -147,6 +288,185 @@ export function arrange_jianpu_sequence_to_jianzi(input_json) {
         const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.arrange_jianpu_sequence_to_jianzi(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 解析所有成立的联袂组。输入 `{"notes":[...]}` → `{"groups":[...]}`。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function lianmei_groups(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.lianmei_groups(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 判定两个频率的关系（同度 / 八度 / 不合）。
+ *
+ * 输入 JSON: `{"freqA":440.0,"freqB":880.0}` → `{"relation":"八度"}`
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function lianmei_relation(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.lianmei_relation(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 四种联袂指法的元数据（提示语、成员数、是否允许八度）。
+ * @returns {string}
+ */
+export function get_lianmei_options() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.get_lianmei_options();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * 成组：把组首起的若干后续音连成一组。
+ *
+ * 输入 JSON: `{"notes":[...],"headIndex":0,"kind":"同声","memberCount":1}`
+ * 输出 JSON: `{"notes":[...],"changed":true}`
+ *
+ * 越界时不硬凑（`changed=false`），调用方据此沿用原数组引用。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function link_lianmei(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.link_lianmei(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 解组：解除该下标所在的一整组联袂。
+ *
+ * 输入 JSON: `{"notes":[...],"index":0}` → `{"notes":[...],"changed":true}`
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function clear_lianmei(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.clear_lianmei(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 简谱字符串解析 —— 纯字符串转结构，逻辑只在 Rust 一份。
+ *
+ * 输入 JSON: `{"input":"5 6 1 2 | 3 5 6 -"}`
+ * 输出 JSON: `{"items":[{"kind":"note","number":5,"octave":0,"units":8,
+ *   "duration":"四分","dotted":false,"raw":"5"},...],"units":[8,8,8,8]}`
+ *
+ * `units` 是「1/8 拍」为单位的时值（四分 = 8），与指法编排、切句同一口径。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function parse_jianpu(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.parse_jianpu(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 只要时值单位（切句 / 编排用）：`{"input":"5 - 0_"}` → `{"units":[16,4]}`
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function get_jianpu_units(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.get_jianpu_units(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 减字 → 实际音高与简谱唱名 —— 物理模型只在 Rust 一份。
+ *
+ * 输入 JSON: `{"stringNumber":4,"toneType":"按","hui":9,"fenFraction":null,
+ *   "tuning":"zhengdiao","concertPitch":440}`
+ * 输出 JSON: `{"frequency":196.0,"jianpu":{"number":5,"octave":""}}`
+ *
+ * 推不出时两个字段都是 `null`——**不猜**。一个错的音高比没有音高更糟：
+ * 没人会去核对，只会照着一个错音练。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function jianzi_pitch(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.jianzi_pitch(ptr0, len0);
         deferred2_0 = ret[0];
         deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
@@ -295,6 +615,76 @@ export function decode_jianzi_batch(input_json) {
         const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.decode_jianzi_batch(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 连打解析 —— 键盘逐键输入的核心文法，逻辑只在 Rust 这一份。
+ *
+ * 输入 JSON: `{"input":"djg4","tone":"按","force":false}`
+ * 输出 JSON: `{"state":{...},"consumed":4,"complete":true,"tokens":[...],"nextSlot":null}`
+ *
+ * 网页、小程序、App 都调同一个函数：码表与回溯逻辑不再各写一份。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function parse_rapid_input(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.parse_rapid_input(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 各音色的连打槽位顺序，供客户端渲染输入提示。
+ *
+ * 输出 JSON: `{"散":["rightAction","stringNumber","structureMark"],"泛":[...],"按":[...]}`
+ * @returns {string}
+ */
+export function get_rapid_slots() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.get_rapid_slots();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * 联袂成组归一化 —— 清掉删除/插入后不成立的联袂关系。
+ *
+ * 输入 JSON: `{"notes":[{"id":"a","lianmei":{"kind":"同声","headId":"a"}}]}`
+ * 输出 JSON: `{"notes":[...],"changed":false}`
+ *
+ * `changed == false` 时调用方应沿用原数组引用：渲染路径每帧都会跑它，
+ * 每次返回新数组会让 React 认为谱面一直在变。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function normalize_lianmei(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.normalize_lianmei(ptr0, len0);
         deferred2_0 = ret[0];
         deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);

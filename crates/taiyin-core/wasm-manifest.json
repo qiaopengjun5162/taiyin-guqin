@@ -1,0 +1,8 @@
+{
+  "sourceFingerprint": "eaba3e171bb5710945e38f58c14f87da458e9e414cb9f526b5d84b2bd3542dff",
+  "sourceFileCount": 14,
+  "artifacts": {
+    "apps/web/wasm/taiyin_core_bg.wasm": "41ca30e56ca4f2deea5b8e73604a55349b887047eaed998dd3cbb8c42db7d725",
+    "apps/web/public/wasm/taiyin_core_bg.wasm": "41ca30e56ca4f2deea5b8e73604a55349b887047eaed998dd3cbb8c42db7d725"
+  }
+}

@@ -185,3 +185,203 @@ pub fn decode_jianzi_batch(input_json: &str) -> String {
         Err(e) => json_error(&e),
     }
 }
+
+/// 连打解析 —— 键盘逐键输入的核心文法，逻辑只在 Rust 这一份。
+///
+/// 输入 JSON: `{"input":"djg4","tone":"按","force":false}`
+/// 输出 JSON: `{"state":{...},"consumed":4,"complete":true,"tokens":[...],"nextSlot":null}`
+///
+/// 网页、小程序、App 都调同一个函数：码表与回溯逻辑不再各写一份。
+#[wasm_bindgen]
+pub fn parse_rapid_input(input_json: &str) -> String {
+    crate::jianzi_rapid::parse_rapid_input_json(input_json)
+}
+
+/// 各音色的连打槽位顺序，供客户端渲染输入提示。
+///
+/// 输出 JSON: `{"散":["rightAction","stringNumber","structureMark"],"泛":[...],"按":[...]}`
+#[wasm_bindgen]
+pub fn get_rapid_slots() -> String {
+    crate::jianzi_rapid::slots_json().to_string()
+}
+
+/// 联袂成组归一化 —— 清掉删除/插入后不成立的联袂关系。
+///
+/// 输入 JSON: `{"notes":[{"id":"a","lianmei":{"kind":"同声","headId":"a"}}]}`
+/// 输出 JSON: `{"notes":[...],"changed":false}`
+///
+/// `changed == false` 时调用方应沿用原数组引用：渲染路径每帧都会跑它，
+/// 每次返回新数组会让 React 认为谱面一直在变。
+#[wasm_bindgen]
+pub fn normalize_lianmei(input_json: &str) -> String {
+    match crate::lianmei::normalize_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 解析所有成立的联袂组。输入 `{"notes":[...]}` → `{"groups":[...]}`。
+#[wasm_bindgen]
+pub fn lianmei_groups(input_json: &str) -> String {
+    match crate::lianmei::groups_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 判定两个频率的关系（同度 / 八度 / 不合）。
+///
+/// 输入 JSON: `{"freqA":440.0,"freqB":880.0}` → `{"relation":"八度"}`
+#[wasm_bindgen]
+pub fn lianmei_relation(input_json: &str) -> String {
+    match crate::lianmei::relation_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 四种联袂指法的元数据（提示语、成员数、是否允许八度）。
+#[wasm_bindgen]
+pub fn get_lianmei_options() -> String {
+    crate::lianmei::options_json()
+}
+
+/// 成组：把组首起的若干后续音连成一组。
+///
+/// 输入 JSON: `{"notes":[...],"headIndex":0,"kind":"同声","memberCount":1}`
+/// 输出 JSON: `{"notes":[...],"changed":true}`
+///
+/// 越界时不硬凑（`changed=false`），调用方据此沿用原数组引用。
+#[wasm_bindgen]
+pub fn link_lianmei(input_json: &str) -> String {
+    match crate::lianmei::link_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 解组：解除该下标所在的一整组联袂。
+///
+/// 输入 JSON: `{"notes":[...],"index":0}` → `{"notes":[...],"changed":true}`
+#[wasm_bindgen]
+pub fn clear_lianmei(input_json: &str) -> String {
+    match crate::lianmei::clear_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 简谱字符串解析 —— 纯字符串转结构，逻辑只在 Rust 一份。
+///
+/// 输入 JSON: `{"input":"5 6 1 2 | 3 5 6 -"}`
+/// 输出 JSON: `{"items":[{"kind":"note","number":5,"octave":0,"units":8,
+///   "duration":"四分","dotted":false,"raw":"5"},...],"units":[8,8,8,8]}`
+///
+/// `units` 是「1/8 拍」为单位的时值（四分 = 8），与指法编排、切句同一口径。
+#[wasm_bindgen]
+pub fn parse_jianpu(input_json: &str) -> String {
+    match crate::jianpu_parse::parse_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 只要时值单位（切句 / 编排用）：`{"input":"5 - 0_"}` → `{"units":[16,4]}`
+#[wasm_bindgen]
+pub fn get_jianpu_units(input_json: &str) -> String {
+    match crate::jianpu_parse::units_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 减字 → 实际音高与简谱唱名 —— 物理模型只在 Rust 一份。
+///
+/// 输入 JSON: `{"stringNumber":4,"toneType":"按","hui":9,"fenFraction":null,
+///   "tuning":"zhengdiao","concertPitch":440}`
+/// 输出 JSON: `{"frequency":196.0,"jianpu":{"number":5,"octave":""}}`
+///
+/// 推不出时两个字段都是 `null`——**不猜**。一个错的音高比没有音高更糟：
+/// 没人会去核对，只会照着一个错音练。
+#[wasm_bindgen]
+pub fn jianzi_pitch(input_json: &str) -> String {
+    match crate::pitch::frequency_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 减字释义 —— 把谱字读成人话，文案只在 Rust 一份。
+///
+/// 输入 JSON: `{"state":{"toneType":"按","leftFinger":"大","hui":"九",
+///   "rightAction":"勹","stringNumber":"四"},"tuning":"zhengdiao","concertPitch":440}`
+/// 输出 JSON: `{"complete":true,"summary":"按音 · 左手大指按于四弦九徽，右手中指勾",
+///   "parts":[{"label":"音色","text":"…"}],"pitchHint":"简谱 5 · 正调推定","missing":[]}`
+///
+/// 文案放核心里，是为了让网页、小程序、App 读出**同一句话**——
+/// 两处说法不一，用户只会怀疑自己记错了。
+#[wasm_bindgen]
+pub fn explain_jianzi(input_json: &str) -> String {
+    match crate::explain::explain_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 候选音位的短标签 —— 两行小字 + 读屏全称。
+///
+/// 输入 JSON: `{"state":{"toneType":"散","rightAction":"勹","stringNumber":"一"}}`
+/// 输出 JSON: `{"primary":"一弦 · 散","secondary":"中指勾","full":"散音，一弦，右手中指勾"}`
+///
+/// 与 `explain_jianzi` 同一批指法表：短标签与完整读法不可能说法不一。
+#[wasm_bindgen]
+pub fn short_caption(input_json: &str) -> String {
+    match crate::explain::short_caption_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 徽位 + 分位的位置描述（供前端同步渲染路径复用同一套文案）。
+///
+/// 输入：`{"hui":"七","fen":"六分"}`；输出：`"七徽六分 · 七徽与八徽之间，过七徽 6 成"`
+#[wasm_bindgen]
+pub fn describe_hui_position(input_json: &str) -> String {
+    match crate::explain::describe_hui_position_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 5 个谱面结构记号及其释义。
+#[wasm_bindgen]
+pub fn structure_marks() -> String {
+    crate::explain::structure_marks_json().unwrap_or_else(|e| json_error(&e))
+}
+
+/// 减字状态 → 字体可渲染的减字文本（「大九勾四」）。
+///
+/// 输入 JSON: `{"state":{"toneType":"按","leftFinger":"大","hui":"九",
+///   "rightAction":"勹","stringNumber":"四"}}`
+/// 输出 JSON: `"大九勾四"`
+///
+/// 序列化顺序就是字体连字规则：分数在前、内折记号在后、吟猱挂字尾。
+/// 网页 / 小程序 / App 必须拼出同一个字，否则用户会以为「这个字坏了」。
+#[wasm_bindgen]
+pub fn jianzi_to_text(input_json: &str) -> String {
+    match crate::jianzi_text::to_text_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 减字文本 → 状态。解析不出完整减字时返回 `null`。
+///
+/// 输入 JSON: `{"text":"大九勾四"}`；输出：状态对象或 `null`。
+#[wasm_bindgen]
+pub fn parse_jianzi_text(input_json: &str) -> String {
+    match crate::jianzi_text::from_text_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
