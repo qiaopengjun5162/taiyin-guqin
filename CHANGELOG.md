@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### 领域逻辑归位 Rust：批 1~4 落地 + 客户端门面 + 薄客户端端点（2026-11-17 ~ 11-19）
+
+`docs/rust-migration-phase0.md` 的批次表从「待拍板」走到执行完毕。前端不再各写一份领域规则，
+Rust 成为唯一实现；UI 只做搬运与展示。
+
+- **六个新核心模块**（`crates/taiyin-core/src/`，合计 4,610 行、142 个 Rust 单测）：
+  `lianmei.rs`（联袂成组，21 测）、`jianpu_parse.rs`（简谱解析 + 时值表，15 测）、
+  `jianzi_rapid.rs`（连打文法，19 测）、`jianzi_text.rs`（减字文本互转，**37 测**，这是字体连字顺序那套实测规则的唯一落点）、
+  `pitch.rs`（减字 → 音高，15 测）、`explain.rs`（减字释义，31 测）。
+- **前端变成薄壳**：`jianzi.ts` 454→255 行、`jianzi-rapid.ts` 450→217、`jianzi-explain.ts` 566→250、
+  `jianpu-parser.ts` 189→141；`lianmei.ts` 行数没减（它保留了 UI 侧的成组视图），但判定逻辑已在 Rust。
+- **`src/lib/client/` 门面**（153 行）：UI 与绑定层之间唯一接触面。此前 7 个组件直连 WASM、7 个直连 `api`，
+  换实现会波及整片 UI；现在组件只认门面导出的函数签名。`api` 以命名空间导出，避免后端加一个函数就要人肉同步清单。
+- **`page.tsx` 关注点拆分**：`usePhrasePractice` / `useScoreExport` / `useScoreDraft` 三个 hook 落地，
+  `useState` 25 → 19、页面 2071 → 1963 行。**`useCommunity` 刻意不做**——实测它不是一个独立关注点，
+  而是与加载对话框 UI 状态深度纠缠（tab 对象内嵌回调、`loadTabsRef` 镜像防闭包过期），强行拆会引入更大复杂度。
+- **15 个薄客户端端点**（`/api/v1/{jianzi,jianpu,pitch,explain,lianmei}/…`）：给 App / 小程序用，
+  纯计算、无状态、不挂 LLM 限流（那条锁是为 LLM 成本设的）。网页走 WASM 调**同一份**核心代码。
+
+**修掉的两个真实缺口**（本轮验证时发现）：
+
+1. **WASM 产物落后于源码** — `verify-wasm-fresh.mjs` 判红（`5f6cc67` vs `788aba2`）。不重建的话，本地跑
+   「真实 WASM」的测试测的是旧逻辑，会绿得很可疑。已 `just build-wasm` 重建三份产物与清单。
+2. **两个测试漏了迁移约定** — `jianzi-block.test.tsx` / `score-export.test.ts` 调已迁 Rust 的 `jianziToText`，
+   却没装真实 WASM，薄壳走降级路径输出字形「散乚一」而非可读名「散挑一」，11 条断言红在意外的地方。
+   `load-wasm.ts` 这份助手早已写好、也写明了这个坑，只是这两个文件没用上。
+
+> 迁移后的**新坑**：领域逻辑一旦搬进 Rust，薄壳在引擎未就绪时一律返回空值/降级拼接。
+> 任何依赖它的测试都必须在 `beforeAll(loadRealWasm)` 装载真实产物——否则测的不是逻辑，是降级分支。
+
+**补上的覆盖缺口**：`domain_app()` 测试路由原先只注册 4 个端点，其余 11 个从未经过 HTTP 层
+（网页走 WASM，碰不到它们）。补全路由 + 8 条用例：坏请求体 400 带原因、简谱 items+units、
+音高越界返回 `null` 不猜、文本互转往返、释义 `summary`、联袂 组/解组/归一化/关系/选项。
+做**变异验证**两处：解析结果换成空数组、把 400 改成 200，均如实判红且红在目标断言（非编译崩）。
+
+**验证**：Rust `cargo test --workspace --lib` **247 + 97**（服务端 +9）；前端 **92 文件 / 1393 条**；
+`tsc --noEmit` / `eslint --max-warnings 0` / `cargo fmt --check` / clippy `-D warnings` 全 0；
+`verify-wasm` / `verify-domain-contracts`（18 项）/ `verify-tuning-contract`（11 项）/ `verify-wasm-fresh` 全绿；
+`pnpm build` 8 页预渲染；`scripts/smoke-browser.mjs` 全通过（含 390px 移动端）。
+真实 Chromium 打开 `/taiyin-guqin/`：零 console 报错、零横向溢出，点「先听一首」渲染 25 个减字、播放键变「停止」。
+
+⚠️ **环境坑**：`pnpm build` 首次失败于 `fonts.gstatic.com` 连接（沙箱网络抖动，最慢一次单 URL 19 秒），
+重试即过。报错形式是 204 个 `module-not-found` warning + 退出码 1，容易被误判成代码回归。
+
 ### S2 桥接层改造：启动预加载 + 9 个同步 getter（2026-11-16）
 
 **先销项 S1**：逐文件核查后确认 S1（只迁「本来就在 await 后面」的逻辑）已无落点——9 个 WASM 导出（翻译 / 编排 / 分句 / 字典 / 统计 / 变体 / 批量编解码）本就在 Rust；剩下的三个导出模块里，`score-export` 依赖 `jianziToText`（42 处引用的渲染核心）、`midi-export` 依赖 `columnMidi` + `tuning`、`audio-export` 强绑 `AudioBuffer`，都不是小步；批 1 的六个低扇出模块又全是同步调用路径，S1 下迁过去会把 async 传染进渲染热路径。结论：**S1 事实上已完成，运行时迁移只剩 S2**。

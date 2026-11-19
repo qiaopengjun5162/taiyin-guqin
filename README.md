@@ -41,7 +41,7 @@
 | 层 | 技术 | 说明 |
 | --- | --- | --- |
 | **核心库** | Rust + serde | GuqinNote/GuqinScore 数据结构，WASM 编译 |
-| **后端** | Axum (Rust) | 社区 API、简谱翻译 LLM 候选择优转发、积分记账 |
+| **后端** | Axum (Rust) | 社区 API（曲谱 / 用户 / 收藏 / 审核）、简谱翻译 LLM 候选择优转发 |
 | **前端** | Next.js 16 + React 19 | H5 网页（可离线 PWA）；另有原生微信小程序壳 `apps/miniprogram-wasm-probe`（未发布） |
 | **样式** | Tailwind CSS 4 + shadcn/ui | 减字键盘 CSS 拼装渲染 |
 | **AI** | OpenAI 兼容接口（Rust，可选） | 只做**候选择优与兜底**（`/api/v1/translate/select` 等），不是主路径；识别走模板匹配，但该路径已判定受限（见下） |

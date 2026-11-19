@@ -43,3 +43,6 @@ docs/articles/drafts/*.html
 
 # 生产部署的数据库数据卷（备份对象，不进版本库）
 deploy/pgdata/
+
+# 会话工具的本地配置（与 .claude 同理，不入库）
+.commandcode/
