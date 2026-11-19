@@ -26,19 +26,26 @@
  *   这条能抓住「两端一起改、集合仍然对齐，但物理上已经错了」的情况。
  *
  * ── B 组：减字记号（编码字母 ↔ 汉字，且顺序即正确性） ────
- *   ① crates/taiyin-core/src/jianzi_code.rs —— TONE/SLIDE/HUI/FEN/STRING_TOKENS
- *   ② apps/web/src/lib/jianzi-rapid.ts      —— TONE_TOKENS / TOKENS.{slide,hui,fen,stringNumber,structureMark}
- *   ③ apps/web/src/lib/jianzi.ts            —— SLIDE_MARKS / STRUCTURE_MARKS
- *   ④ apps/web/src/lib/types.ts             —— StructureMark 联合
- *   ⑤ crates/taiyin-core/src/lib.rs         —— StructureMark 枚举的 serde 标签
+ *   ① crates/taiyin-core/src/jianzi_code.rs —— TONE/SLIDE/HUI/FEN/STRING_TOKENS（**唯一来源**）
+ *   ② apps/web/src/lib/jianzi.ts            —— SLIDE_MARKS / STRUCTURE_MARKS（渲染用）
+ *   ③ apps/web/src/lib/types.ts             —— StructureMark 联合
+ *   ④ crates/taiyin-core/src/lib.rs         —— StructureMark 枚举的 serde 标签
  *
- *   **故意不比** ACTION_TOKENS / LEFT_TOKENS ↔ TOKENS.rightAction / leftFinger：
- *   Rust 侧存全字（挑/抹/食/名），连打侧存省写字形（乚/木/亻/夕），
+ *   **码表已收归 Rust 一份**：连打文法从 `jianzi-rapid.ts` 迁进
+ *   `crates/taiyin-core/src/jianzi_rapid.rs`，前端只剩薄壳。原先这里逐项比对
+ *   「Rust ↔ 连打」两份表，就是为防它们漂移；现在没有第二份，比对照样删掉。
+ *   **码表内容**（哪个字母对应哪个指法）改由 Rust 单测 + 跑真实 WASM 的
+ *   `jianzi-rapid.test.ts` 验证；本脚本只保留「单一来源内部的自洽性」：
+ *   ① `match_longest` 取第一个前缀命中 → 长码必须排在前；
+ *   ② 渲染用的 SLIDE_MARKS / STRUCTURE_MARKS 必须与 Rust 记号集合一致。
+ *
+ *   仍**故意不比** ACTION_TOKENS / LEFT_TOKENS ↔ 前端字形表：
+ *   Rust 侧存全字（挑/抹/食/名），前端存省写字形（乚/木/亻/夕），
  *   两者是「归一化映射」关系而非同一张表。把它们塞进来只会制造误报。
  *   SlideMark 联合也不在这里比：多一个不在联合里的值 tsc 会直接红。
  *
  * 用法：node scripts/verify-domain-contracts.mjs
- *       node scripts/verify-domain-contracts.mjs --self-test   # 20 条变异，含双文件同步改
+ *       node scripts/verify-domain-contracts.mjs --self-test   # 变异验证，含双文件同步改
  * 退出码 1 = 契约被破坏，或自测里某条变异没被指定检查抓到。
  *
  * 本脚本**只读**：变异只在内存副本上做，不写回任何源码；按项目惯例不接 CI。
@@ -59,7 +66,6 @@ const FILES = {
   qinFingeringTs: "apps/web/src/lib/qin-fingering.ts",
   exampleScoresTestTs: "apps/web/src/lib/__tests__/example-scores.test.ts",
   jianziTs: "apps/web/src/lib/jianzi.ts",
-  jianziRapidTs: "apps/web/src/lib/jianzi-rapid.ts",
   typesTs: "apps/web/src/lib/types.ts",
 };
 
@@ -119,13 +125,6 @@ function pairs(text) {
   );
 }
 
-/** `TOKENS` 对象里某个 slot 的数组体，靠 `^  slot: [` 与 `^  ],` 定界。 */
-function rapidTokens(text, slot) {
-  const re = new RegExp("^  " + slot + ":\\s*\\[([\\s\\S]*?)^  \\],", "m");
-  const m = re.exec(text);
-  return m ? pairs(m[1]) : [];
-}
-
 function gcd(a, b) {
   while (b) [a, b] = [b, a % b];
   return a;
@@ -178,14 +177,6 @@ function parse(files) {
   const rustFen = rustTokens(files.jianziCodeRs, "FEN_TOKENS");
   const rustString = rustTokens(files.jianziCodeRs, "STRING_TOKENS");
 
-  const rapidTone = pairs(tsArray(files.jianziRapidTs, "TONE_TOKENS"));
-  const rapidSlide = rapidTokens(files.jianziRapidTs, "slide");
-  // 连打表在数字键之后还挂着火蜘蛛字母旧法，只取数字键部分与 Rust 对齐。
-  const rapidHui = rapidTokens(files.jianziRapidTs, "hui").filter(([k]) => /^\d+$/.test(k));
-  const rapidFen = rapidTokens(files.jianziRapidTs, "fen");
-  const rapidString = rapidTokens(files.jianziRapidTs, "stringNumber").filter(([k]) => /^\d+$/.test(k));
-  const rapidStructure = rapidTokens(files.jianziRapidTs, "structureMark").map(([, v]) => v);
-
   const slideMarks = quoted(tsArray(files.jianziTs, "SLIDE_MARKS"));
   const structureMarks = quoted(tsArray(files.jianziTs, "STRUCTURE_MARKS"));
   const tsStructure = quoted(section(files.typesTs, /export type StructureMark\s*=/, /;/));
@@ -199,7 +190,6 @@ function parse(files) {
     rustRatios, rustHarmonic, rustDegrees, rustHarmonicHui,
     tsFractions, tsHarmonic, tsDegrees, huiTicksDerived, playerDerived, testNoHardcode,
     rustTone, rustSlide, rustHui, rustFen, rustString,
-    rapidTone, rapidSlide, rapidHui, rapidFen, rapidString, rapidStructure,
     slideMarks, structureMarks, tsStructure, rustStructure,
   };
 }
@@ -208,10 +198,6 @@ function parse(files) {
 
 function sameSeq(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i]);
-}
-
-function samePairSeq(a, b) {
-  return a.length === b.length && a.every((p, i) => p[0] === b[i]?.[0] && p[1] === b[i]?.[1]);
 }
 
 function sameSet(a, b) {
@@ -313,28 +299,40 @@ function check(p) {
   add(
     "减字/各表都解析出内容（非空）",
     p.rustTone.length > 0 && p.rustSlide.length > 0 && p.rustHui.length > 0 &&
-      p.rustFen.length > 0 && p.rustString.length > 0 && p.rapidSlide.length > 0 &&
+      p.rustFen.length > 0 && p.rustString.length > 0 &&
       p.slideMarks.length > 0 && p.structureMarks.length > 0 && p.rustStructure.length > 0,
-    `slide ${p.rustSlide.length}/${p.rapidSlide.length}/${p.slideMarks.length}；structure ${p.rustStructure.length}/${p.structureMarks.length}`,
+    `slide ${p.rustSlide.length}/${p.slideMarks.length}；structure ${p.rustStructure.length}/${p.structureMarks.length}`,
   );
-  add("减字/TONE_TOKENS Rust ↔ 连打逐项相等", samePairSeq(p.rustTone, p.rapidTone),
-    `Rust ${p.rustTone.length} / 连打 ${p.rapidTone.length}`);
-  add("减字/SLIDE_TOKENS Rust ↔ TOKENS.slide 逐项相等（字母+汉字+顺序）",
-    samePairSeq(p.rustSlide, p.rapidSlide), `Rust ${p.rustSlide.length} / 连打 ${p.rapidSlide.length}`);
+
+  // 码表只有 Rust 一份，故不再做跨语言逐项比对——改为守住单一来源的**内部**契约。
+  // `match_longest` 取「第一个前缀命中」，所以同一槽位里长码必须排在短码之前；
+  // 一旦有人把 ("c","绰") 挪到 ("cy","绰吟") 前面，ad9cyg4 会被截成绰 + yg4 而整条报错。
+  // 判据：**靠前的码不能是后面某个码的前缀**（是则说明短的抢先命中）。
+  const sortedLongestFirst = (list) => {
+    for (let i = 0; i < list.length; i += 1) {
+      for (let j = i + 1; j < list.length; j += 1) {
+        const [earlier] = list[i];
+        const [later] = list[j];
+        if (earlier !== later && later.startsWith(earlier)) return false;
+      }
+    }
+    return true;
+  };
+  add("减字/SLIDE_TOKENS 长码排在短码之前（否则 cy 被 c 截断）",
+    sortedLongestFirst(p.rustSlide), fmt(p.rustSlide.map(([k]) => k)));
+  add("减字/HUI_TOKENS 长码排在短码之前（否则 13 被 1 截断）",
+    sortedLongestFirst(p.rustHui), fmt(p.rustHui.map(([k]) => k)));
+  add("减字/FEN_TOKENS 长码排在短码之前",
+    sortedLongestFirst(p.rustFen), fmt(p.rustFen.map(([k]) => k)));
+  add("减字/TONE_TOKENS 长码排在短码之前（否则 san 被 s 吃成散+an）",
+    sortedLongestFirst(p.rustTone), fmt(p.rustTone.map(([k]) => k)));
+
   add("减字/SLIDE_MARKS 序列 == Rust SLIDE_TOKENS 的汉字序列",
     sameSeq(p.slideMarks, p.rustSlide.map(([, v]) => v)), `${fmt(p.slideMarks)}`);
-  add("减字/HUI_TOKENS Rust ↔ 连打数字键逐项相等", samePairSeq(p.rustHui, p.rapidHui),
-    `Rust ${p.rustHui.length} / 连打 ${p.rapidHui.length}`);
-  add("减字/FEN_TOKENS Rust ↔ TOKENS.fen 逐项相等", samePairSeq(p.rustFen, p.rapidFen),
-    `Rust ${p.rustFen.length} / 连打 ${p.rapidFen.length}`);
-  add("减字/STRING_TOKENS Rust ↔ 连打数字键逐项相等", samePairSeq(p.rustString, p.rapidString),
-    `Rust ${p.rustString.length} / 连打 ${p.rapidString.length}`);
   add("减字/STRUCTURE_MARKS == TS StructureMark 联合",
     sameSet(p.structureMarks, p.tsStructure), `${fmt(p.structureMarks)} / ${fmt(p.tsStructure)}`);
   add("减字/STRUCTURE_MARKS == Rust StructureMark 枚举标签",
     sameSet(p.structureMarks, p.rustStructure), `${fmt(p.structureMarks)} / ${fmt(p.rustStructure)}`);
-  add("减字/STRUCTURE_MARKS == 连打 TOKENS.structureMark",
-    sameSet(p.structureMarks, p.rapidStructure), `${fmt(p.structureMarks)} / ${fmt(p.rapidStructure)}`);
 
   const failures = checks.filter((c) => !c.ok);
   return { checks, failures };
@@ -361,8 +359,8 @@ function healthy(p) {
   return p.rustRatios.length > 0 && p.tsFractions.length > 0 &&
     p.rustHarmonic.length > 0 && p.tsHarmonic.length > 0 &&
     p.rustDegrees.length > 0 && p.tsDegrees.length > 0 &&
-    p.rustSlide.length > 0 && p.rapidSlide.length > 0 && p.slideMarks.length > 0 &&
-    p.structureMarks.length > 0 && p.rustStructure.length > 0 && p.rapidStructure.length > 0;
+    p.rustSlide.length > 0 && p.slideMarks.length > 0 &&
+    p.structureMarks.length > 0 && p.rustStructure.length > 0;
 }
 
 /**
@@ -401,32 +399,26 @@ function selfTest(base) {
       edits: [{ key: "qinFingeringTs", from: "ratio: huiFraction(i + 1, null) ?? 0", to: "ratio: 0.5" }],
       expect: "徽位/HUI_TICKS 由 huiFraction 派生（不许抄第二份表）" },
     // ── B 组 ──
-    { name: "Rust 绰吟汉字拼错", edits: [{ key: "jianziCodeRs", from: '("cy", "绰吟")', to: '("cy", "绰吟X")' }],
-      expect: "减字/SLIDE_TOKENS Rust ↔ TOKENS.slide 逐项相等（字母+汉字+顺序）" },
+    // 码表只剩 Rust 一份后，变异改为验证「单一来源内部的自洽性」能被抓住：
+    // 顺序契约（长码必须靠前）与渲染用记号表的一致性。
+    { name: "把「绰」挪到「绰吟」之前（集合不变，顺序破了）",
+      edits: [{ key: "jianziCodeRs", from: '    ("cy", "绰吟"),', to: '    ("c", "绰"),\n    ("cy", "绰吟"),' }],
+      expect: "减字/SLIDE_TOKENS 长码排在短码之前（否则 cy 被 c 截断）" },
+    { name: "把「1」挪到「13」之前（十三会被读成一）",
+      edits: [{ key: "jianziCodeRs", from: '    ("13", "十三"),', to: '    ("1", "一"),\n    ("13", "十三"),' }],
+      expect: "减字/HUI_TOKENS 长码排在短码之前（否则 13 被 1 截断）" },
+    { name: "Rust 绰吟汉字拼错（渲染表与码表分家）",
+      edits: [{ key: "jianziCodeRs", from: '("cy", "绰吟")', to: '("cy", "绰吟X")' }],
+      expect: "减字/SLIDE_MARKS 序列 == Rust SLIDE_TOKENS 的汉字序列" },
     { name: "SLIDE_MARKS 把单字绰注换个顺序（集合不变）",
       edits: [{ key: "jianziTs", from: '"绰", "注", "急", "吟", "猱",', to: '"注", "绰", "急", "吟", "猱",' }],
       expect: "减字/SLIDE_MARKS 序列 == Rust SLIDE_TOKENS 的汉字序列" },
-    { name: "Rust 音色前缀 san 改成 sanX", edits: [{ key: "jianziCodeRs", from: '("san", "散")', to: '("sanX", "散")' }],
-      expect: "减字/TONE_TOKENS Rust ↔ 连打逐项相等" },
-    { name: "连打 TONE_TOKENS 把 f 映射成按", edits: [{ key: "jianziRapidTs", from: '["f", "泛"]', to: '["f", "按"]' }],
-      expect: "减字/TONE_TOKENS Rust ↔ 连打逐项相等" },
-    { name: "Rust 十三徽写成十二", edits: [{ key: "jianziCodeRs", from: '("13", "十三")', to: '("13", "十二")' }],
-      expect: "减字/HUI_TOKENS Rust ↔ 连打数字键逐项相等" },
-    { name: "Rust 分位半拼错", edits: [{ key: "jianziCodeRs", from: '("fb", "半")', to: '("fb", "半X")' }],
-      expect: "减字/FEN_TOKENS Rust ↔ TOKENS.fen 逐项相等" },
-    // 锚点必须带表尾：`("7", "七")` 在 HUI_TOKENS 里也有一份，
-    // 不带 `\n];` 会改到徽位表去，红的就是别的检查了。
-    { name: "Rust 七弦写成八", edits: [{ key: "jianziCodeRs", from: '("7", "七"),\n];', to: '("7", "八"),\n];' }],
-      expect: "减字/STRING_TOKENS Rust ↔ 连打数字键逐项相等" },
     { name: "STRUCTURE_MARKS 多一个小息",
       edits: [{ key: "jianziTs", from: '"少息", "大息", "再作", "从头再作", "入拍",', to: '"少息", "大息", "再作", "从头再作", "入拍", "小息",' }],
       expect: "减字/STRUCTURE_MARKS == TS StructureMark 联合" },
     { name: "Rust StructureMark 少息改名",
       edits: [{ key: "libRs", from: '#[serde(rename = "少息")]', to: '#[serde(rename = "少息X")]' }],
       expect: "减字/STRUCTURE_MARKS == Rust StructureMark 枚举标签" },
-    { name: "连打结构记号入拍拼错",
-      edits: [{ key: "jianziRapidTs", from: '["rp", "入拍"]', to: '["rp", "入拍X"]' }],
-      expect: "减字/STRUCTURE_MARKS == 连打 TOKENS.structureMark" },
   ];
 
   let bad = 0;

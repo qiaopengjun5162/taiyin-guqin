@@ -3,7 +3,7 @@ use axum::{
     extract::{DefaultBodyLimit, Extension, Path, Query, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post, put},
 };
 use serde_json::json;
@@ -197,6 +197,28 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .route_layer(GovernorLayer::new(translate_limiter))
         .route_layer(from_fn_with_state(translate_key, require_api_key));
 
+    // 纯计算端点：不碰数据库、不耗 LLM 额度、无状态。
+    //
+    // 这些是「薄客户端」的入口——App / 小程序 / 第三方不打包 WASM 也能拿到
+    // 与网页逐字节一致的领域逻辑（码表、回溯、编码）。不挂 translate 限流：
+    // 那条锁是为 LLM 成本设的，套在纯 CPU 计算上只会误伤正常输入。
+    let domain_routes = Router::new()
+        .route("/api/v1/jianzi/rapid-parse", post(rapid_parse))
+        .route("/api/v1/jianzi/rapid-slots", get(rapid_slots))
+        .route("/api/v1/jianzi/encode-batch", post(encode_batch))
+        .route("/api/v1/jianzi/decode-batch", post(decode_batch))
+        .route("/api/v1/jianpu/parse", post(parse_jianpu_route))
+        .route("/api/v1/pitch/jianzi", post(jianzi_pitch_route))
+        .route("/api/v1/explain/jianzi", post(explain_jianzi_route))
+        .route("/api/v1/jianzi/text", post(jianzi_to_text_route))
+        .route("/api/v1/jianzi/parse", post(parse_jianzi_text_route))
+        .route("/api/v1/lianmei/normalize", post(lianmei_normalize))
+        .route("/api/v1/lianmei/groups", post(lianmei_groups))
+        .route("/api/v1/lianmei/relation", post(lianmei_relation))
+        .route("/api/v1/lianmei/link", post(lianmei_link))
+        .route("/api/v1/lianmei/clear", post(lianmei_clear))
+        .route("/api/v1/lianmei/options", get(lianmei_options));
+
     Router::new()
         .route("/health", get(health_check))
         .route("/api/v1/scores", scores_collection)
@@ -228,6 +250,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         .merge(auth_routes)
         .merge(me_route)
         .merge(translate_routes)
+        .merge(domain_routes)
         // 请求体上限**只有这一处**。之前用 tower-http 的 `RequestBodyLimitLayer::new(5MB)`
         // 是无效配置：`Json` 提取器读的是 axum 自己的 `DefaultBodyLimit`（默认 2MB），
         // 两者取小，于是 2.7MB 的手机截图（base64 后）直接被 413——而这类图正是
@@ -824,6 +847,141 @@ fn validate_author(author: &str) -> AppResult<()> {
 
 async fn health_check() -> &'static str {
     "🪕 taiyin ok"
+}
+
+// ──────────────────────────────────────────────
+// 纯计算端点（薄客户端入口）
+//
+// 四个 handler 都只是把 `taiyin-core` 的同一份实现对非浏览器客户端暴露出来。
+// 它们刻意不做业务校验、不落库：逻辑在核心里，这里只负责传输格式。
+// 网页走 WASM 调同一份代码，因此三个客户端的行为天然一致。
+// ──────────────────────────────────────────────
+
+/// 连打解析：`{"input":"djg4","tone":"按","force":false}` → 解析结果。
+///
+/// 请求体直接透传给核心，因为核心已经定义了这套 JSON 契约（`parse_rapid_input_json`）。
+async fn rapid_parse(body: String) -> Response {
+    let out = taiyin_core::jianzi_rapid::parse_rapid_input_json(&body);
+    json_text(out)
+}
+
+/// 各音色的连打槽位顺序——客户端渲染输入提示用，不必抄一份槽位表。
+async fn rapid_slots() -> Response {
+    json_text(taiyin_core::jianzi_rapid::slots_json().to_string())
+}
+
+/// 批量编码：`{"notes":[{...}]}` → `{"codes":["sg3",null,...]}`。
+async fn encode_batch(body: String) -> Response {
+    match taiyin_core::jianzi_code::encode_batch_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 批量解码：`{"text":"ad9g4 sg3"}` → 逐条结果（坏码只坏一条）。
+async fn decode_batch(body: String) -> Response {
+    match taiyin_core::jianzi_code::decode_batch_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 联袂成组归一化：清理删除/插入后不成立的关系。
+async fn lianmei_normalize(body: String) -> Response {
+    match taiyin_core::lianmei::normalize_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 解析所有成立的联袂组。
+async fn lianmei_groups(body: String) -> Response {
+    match taiyin_core::lianmei::groups_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 判定两个频率的关系（同度 / 八度 / 不合）。
+async fn lianmei_relation(body: String) -> Response {
+    match taiyin_core::lianmei::relation_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 四种联袂指法的元数据，供客户端渲染按钮而不必抄一份。
+async fn lianmei_options() -> Response {
+    json_text(taiyin_core::lianmei::options_json())
+}
+
+/// 成组：`{"notes":[...],"headIndex":0,"kind":"同声"}`。
+async fn lianmei_link(body: String) -> Response {
+    match taiyin_core::lianmei::link_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 解组：`{"notes":[...],"index":0}`。
+async fn lianmei_clear(body: String) -> Response {
+    match taiyin_core::lianmei::clear_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 简谱字符串解析：`{"input":"5 6 1 2"}` → 逐项音符/休止 + 时值单位。
+async fn parse_jianpu_route(body: String) -> Response {
+    match taiyin_core::jianpu_parse::parse_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 减字 → 音高与简谱唱名：`{"stringNumber":4,"toneType":"按","hui":9}`。
+async fn jianzi_pitch_route(body: String) -> Response {
+    match taiyin_core::pitch::frequency_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 减字释义：`{"state":{...}}` → 逐项读法 + 一句话总结。
+async fn explain_jianzi_route(body: String) -> Response {
+    match taiyin_core::explain::explain_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 减字状态 → 字体可渲染文本：`{"state":{...}}` → `"大九勾四"`。
+async fn jianzi_to_text_route(body: String) -> Response {
+    match taiyin_core::jianzi_text::to_text_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 减字文本 → 状态：`{"text":"大九勾四"}` → 状态或 `null`。
+async fn parse_jianzi_text_route(body: String) -> Response {
+    match taiyin_core::jianzi_text::from_text_json(&body) {
+        Ok(out) => json_text(out),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// 把核心返回的 JSON 字符串原样作为 `application/json` 响应。
+///
+/// 不经过 `serde_json::from_str` 再序列化：核心已经产出合法 JSON，
+/// 再解一遍只是白白多一次分配，还会在数字精度上引入无谓的往返。
+fn json_text(body: String) -> Response {
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        body,
+    )
+        .into_response()
 }
 
 /// 简谱数字只有 1–7（八度用 `octave` 表达）。
@@ -1429,6 +1587,348 @@ async fn claim_score(
 mod tests {
     use super::*;
     use crate::template_match::{INDEX, RecognizeStrategy};
+    use axum::body::Body;
+    use axum::extract::Request;
+    use tower::ServiceExt;
+
+    /// 域端点（纯计算）的路由：不挂状态、不挂限流，正好验证「薄客户端」这一层。
+    fn domain_app() -> Router {
+        Router::new()
+            .route("/api/v1/jianzi/rapid-parse", post(rapid_parse))
+            .route("/api/v1/jianzi/rapid-slots", get(rapid_slots))
+            .route("/api/v1/jianzi/encode-batch", post(encode_batch))
+            .route("/api/v1/jianzi/decode-batch", post(decode_batch))
+            .route("/api/v1/jianpu/parse", post(parse_jianpu_route))
+            .route("/api/v1/pitch/jianzi", post(jianzi_pitch_route))
+            .route("/api/v1/explain/jianzi", post(explain_jianzi_route))
+            .route("/api/v1/jianzi/text", post(jianzi_to_text_route))
+            .route("/api/v1/jianzi/parse", post(parse_jianzi_text_route))
+            .route("/api/v1/lianmei/normalize", post(lianmei_normalize))
+            .route("/api/v1/lianmei/groups", post(lianmei_groups))
+            .route("/api/v1/lianmei/relation", post(lianmei_relation))
+            .route("/api/v1/lianmei/link", post(lianmei_link))
+            .route("/api/v1/lianmei/clear", post(lianmei_clear))
+            .route("/api/v1/lianmei/options", get(lianmei_options))
+    }
+
+    async fn get_uri(uri: &str) -> (StatusCode, String) {
+        let resp = domain_app()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8(bytes.to_vec()).unwrap())
+    }
+
+    async fn post_json(uri: &str, body: &str) -> (StatusCode, String) {
+        let resp = domain_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8(bytes.to_vec()).unwrap())
+    }
+
+    /// HTTP 出口必须与 WASM 出口同源——这是「App / 小程序共用一套逻辑」的前提。
+    #[tokio::test]
+    async fn rapid_parse_endpoint_matches_core_behaviour() {
+        let (status, body) = post_json(
+            "/api/v1/jianzi/rapid-parse",
+            r#"{"input":"djg4","tone":"按"}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["complete"], json!(true));
+        assert_eq!(v["state"]["leftFinger"], json!("大"));
+        assert_eq!(v["state"]["hui"], json!("九"));
+        assert_eq!(v["state"]["rightAction"], json!("勹"));
+        assert_eq!(v["state"]["stringNumber"], json!("四"));
+        // 与 WASM 出口同一契约：rhythmMode 恒为 null
+        assert_eq!(v["state"]["rhythmMode"], serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    async fn rapid_parse_endpoint_reports_partial_input() {
+        let (status, body) = post_json(
+            "/api/v1/jianzi/rapid-parse",
+            r#"{"input":"dj","tone":"按"}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["complete"], json!(false));
+        assert_eq!(v["nextSlot"], json!("rightAction"));
+    }
+
+    #[tokio::test]
+    async fn rapid_slots_endpoint_returns_all_three_tones() {
+        let resp = domain_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/jianzi/rapid-slots")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("rapid-slots 应返回合法 JSON");
+        assert_eq!(
+            v["散"],
+            json!(["rightAction", "stringNumber", "structureMark"])
+        );
+        assert!(v["按"].as_array().unwrap().contains(&json!("slide")));
+        assert!(!v["散"].as_array().unwrap().contains(&json!("slide")));
+    }
+
+    #[tokio::test]
+    async fn encode_endpoint_returns_codes() {
+        let (status, body) = post_json(
+            "/api/v1/jianzi/encode-batch",
+            r#"{"notes":[{"toneType":"散","rightAction":"勾","stringNumber":"三",
+                          "leftFinger":null,"hui":null,"fen":null,"slide":null}]}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["codes"][0], json!("sg3"));
+    }
+
+    #[tokio::test]
+    async fn decode_endpoint_round_trips() {
+        let (status, body) = post_json("/api/v1/jianzi/decode-batch", r#"{"text":"sg3"}"#).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["ok"], json!(1));
+        assert_eq!(v["entries"][0]["code"], json!("sg3"));
+    }
+
+    /// 坏请求体必须 400 且带原因——这些端点是给 App / 小程序用的公开面，
+    /// 静默返回 `{}` 会让客户端把「我传错了」误当成「这里没有数据」。
+    #[tokio::test]
+    async fn domain_endpoints_reject_malformed_body_with_reason() {
+        for uri in [
+            "/api/v1/jianpu/parse",
+            "/api/v1/pitch/jianzi",
+            "/api/v1/explain/jianzi",
+            "/api/v1/jianzi/text",
+            "/api/v1/jianzi/parse",
+            "/api/v1/lianmei/normalize",
+            "/api/v1/lianmei/groups",
+            "/api/v1/lianmei/relation",
+            "/api/v1/lianmei/link",
+            "/api/v1/lianmei/clear",
+        ] {
+            let (status, body) = post_json(uri, "not json").await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{uri} 应拒绝坏 JSON");
+            let v: serde_json::Value = serde_json::from_str(&body).expect("错误体仍是 JSON");
+            assert!(
+                v["error"].as_str().is_some_and(|s| !s.is_empty()),
+                "{uri} 的错误体应带原因：{body}"
+            );
+        }
+    }
+
+    /// 简谱解析端点：HTTP 出口与网页 WASM 出口必须给同一份 items + units。
+    #[tokio::test]
+    async fn jianpu_parse_endpoint_returns_items_and_units() {
+        let (status, body) = post_json("/api/v1/jianpu/parse", r#"{"input":"5_ 6. 0"}"#).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["items"].as_array().unwrap().len(), 3);
+        // 八分 = 4、附点四分 = 12、休止四分 = 8（1/8 拍为单位）
+        assert_eq!(v["units"], json!([4, 12, 8]));
+        assert_eq!(v["items"][0]["duration"], json!("八分"));
+        assert_eq!(v["items"][1]["dotted"], json!(true));
+        assert_eq!(v["items"][2]["kind"], json!("rest"));
+    }
+
+    /// 音高端点：推不出时必须是两个 null，而不是猜一个数字。
+    #[tokio::test]
+    async fn pitch_endpoint_reports_null_when_unresolvable() {
+        let (status, body) = post_json(
+            "/api/v1/pitch/jianzi",
+            r#"{"stringNumber":4,"toneType":"按","hui":9}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let freq = v["frequency"].as_f64().expect("应给出频率");
+        assert!((freq - 293.99657698631194).abs() < 0.01, "freq={freq}");
+        assert_eq!(v["jianpu"]["number"], json!(6));
+
+        let (status, body) = post_json(
+            "/api/v1/pitch/jianzi",
+            r#"{"stringNumber":4,"toneType":"按","hui":99}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "越界徽位不该 500：{body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["frequency"], serde_json::Value::Null);
+        assert_eq!(v["jianpu"], serde_json::Value::Null);
+    }
+
+    /// 未知音色 / 定弦是输入错误，要说清可用值。
+    #[tokio::test]
+    async fn pitch_endpoint_names_unknown_tone_and_tuning() {
+        let (status, body) = post_json(
+            "/api/v1/pitch/jianzi",
+            r#"{"stringNumber":1,"toneType":"不存在的音色"}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("散 / 按 / 泛"), "应列出可用音色：{body}");
+
+        let (status, body) = post_json(
+            "/api/v1/pitch/jianzi",
+            r#"{"stringNumber":1,"toneType":"散","tuning":"不存在"}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("未知定弦"), "应说明是哪一项错：{body}");
+    }
+
+    /// 减字文本互转端点：出去能渲染、回来能还原。
+    #[tokio::test]
+    async fn jianzi_text_endpoints_round_trip() {
+        let state = json!({
+            "toneType": "按", "leftFinger": "大", "hui": "九",
+            "rightAction": "勹", "stringNumber": "四"
+        });
+        let (status, body) = post_json(
+            "/api/v1/jianzi/text",
+            &json!({ "state": state }).to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let text: String = serde_json::from_str(&body).unwrap();
+        assert_eq!(text, "大九勾四");
+
+        let (status, body) =
+            post_json("/api/v1/jianzi/parse", &json!({ "text": text }).to_string()).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["leftFinger"], json!("大"));
+        // 解析回来的右手指法是**可读名**（勾），不是键盘字形（勹）——
+        // 键盘渲染才做字形映射，状态本身存的是名。
+        assert_eq!(v["rightAction"], json!("勾"));
+    }
+
+    /// 释义端点：给人读的一句话必须在，且不需要客户端再拼一遍术语。
+    #[tokio::test]
+    async fn explain_endpoint_returns_human_readable_summary() {
+        let state = json!({
+            "toneType": "按", "leftFinger": "大", "hui": "九",
+            "rightAction": "勹", "stringNumber": "四"
+        });
+        let (status, body) = post_json(
+            "/api/v1/explain/jianzi",
+            &json!({ "state": state }).to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["complete"], json!(true));
+        let summary = v["summary"].as_str().expect("应有 summary");
+        assert!(summary.contains("大指"), "summary 应是完整读法：{summary}");
+        assert!(v["parts"].as_array().is_some_and(|a| !a.is_empty()));
+        assert_eq!(v["missing"], json!([]));
+    }
+
+    /// 联袂四个端点：成组 → 查组 → 解组，HTTP 层走一遍与 WASM 同一条路径。
+    #[tokio::test]
+    async fn lianmei_endpoints_link_group_and_clear() {
+        let notes = json!([{ "id": "a" }, { "id": "b" }]);
+
+        let (status, body) = post_json(
+            "/api/v1/lianmei/link",
+            &json!({ "notes": notes, "headIndex": 0, "kind": "同声" }).to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let linked: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(linked["changed"], json!(true));
+
+        let linked_notes = linked["notes"].clone();
+        let (status, body) = post_json(
+            "/api/v1/lianmei/groups",
+            &json!({ "notes": linked_notes }).to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["groups"].as_array().unwrap().len(), 1);
+        assert_eq!(v["groups"][0]["kind"], json!("同声"));
+
+        let (status, body) = post_json(
+            "/api/v1/lianmei/clear",
+            &json!({ "notes": linked_notes, "index": 0 }).to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["changed"], json!(true));
+        assert_eq!(v["notes"][0]["lianmei"], serde_json::Value::Null);
+    }
+
+    /// 归一化端点：删除后悬空的关系要被清掉，否则列表里会留下点开就断的组。
+    #[tokio::test]
+    async fn lianmei_normalize_endpoint_drops_dangling_links() {
+        let notes = json!([
+            { "id": "a", "lianmei": { "kind": "同声", "headId": "gone" } },
+            { "id": "b" }
+        ]);
+        let (status, body) = post_json(
+            "/api/v1/lianmei/normalize",
+            &json!({ "notes": notes }).to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["changed"], json!(true));
+        assert_eq!(v["notes"][0]["lianmei"], serde_json::Value::Null);
+    }
+
+    /// 频率关系端点与选项端点：纯查表，不必让客户端抄一份指法元数据。
+    #[tokio::test]
+    async fn lianmei_relation_and_options_endpoints() {
+        let (status, body) =
+            post_json("/api/v1/lianmei/relation", r#"{"freqA":440,"freqB":880}"#).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["relation"], json!("八度"));
+
+        let (status, body) = get_uri("/api/v1/lianmei/options").await;
+        assert_eq!(status, StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let kinds: Vec<&str> = v["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| o["kind"].as_str().unwrap())
+            .collect();
+        for kind in ["同声", "应合", "放合", "分开"] {
+            assert!(kinds.contains(&kind), "缺少 {kind}");
+        }
+    }
 
     /// 简谱数字越界以前会静默返回空候选，用户以为是琴谱或琴的问题。
     #[test]

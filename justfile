@@ -50,6 +50,12 @@ build-wasm:
     rm -rf apps/web/wasm apps/web/public/wasm
     cp -r crates/taiyin-core/pkg apps/web/wasm
     cp -r crates/taiyin-core/pkg apps/web/public/wasm
+    node scripts/verify-wasm-fresh.mjs --write
+
+# WASM 产物新鲜度：提交的 .wasm 必须与 Rust 源码同步。
+# 产物是进 git 的，改了核心却忘了重建，本地跑真实 WASM 的测试会测旧逻辑而全绿。
+verify-wasm-fresh:
+    node scripts/verify-wasm-fresh.mjs
 
 # 重建 web + 小程序探针的 WASM（一条命令闭环）。
 # 只跑 build-wasm 会让探针停在旧二进制 —— 2026-11-08 就是这么漂移了四天。
@@ -93,6 +99,15 @@ ts-check:
 verify-wasm:
     node scripts/verify-wasm.mjs
 
+# 真浏览器冒烟：实际渲染 + 实际视口 + 实际交互，断言「能用」而不只是「不报错」。
+# 前置：另开终端跑 `just dev`（或在 SMOKE_URL 指定已部署地址）。
+#
+# 为什么需要：2026-11-18 那天 1390 条单测全绿、tsc/eslint 干净、next build 通过，
+# 但用户打开页面说「感觉根本不能用」——jsdom 看不到真实布局、像素与触控。
+# 这一条覆盖假字、sticky 叠压、栅格溢出、字号过小、触控目标过小、键盘被推太远。
+smoke-browser:
+    node scripts/smoke-browser.mjs
+
 # 定弦名单四份同源校验（纯 Node，不需要构建产物）；--self-test 跑 7 条变异
 verify-tuning:
     node scripts/verify-tuning-contract.mjs --self-test && node scripts/verify-tuning-contract.mjs
@@ -105,8 +120,8 @@ verify-duration:
 verify-domain:
     node scripts/verify-domain-contracts.mjs --self-test && node scripts/verify-domain-contracts.mjs
 
-# 所有静态契约闸门（本地工具，不接 CI）
-verify-contracts: verify-tuning verify-duration verify-domain
+# 所有静态契约闸门（与 CI 的 build.yml 保持一致；本地跑得到就等于提前发现）
+verify-contracts: verify-tuning verify-duration verify-domain verify-wasm-fresh
 
 # S2 可行性实测：真实 Chromium 里跑静态导出产物的同步 WASM 初始化（需先 pnpm build）
 probe-wasm-sync:

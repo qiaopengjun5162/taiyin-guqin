@@ -170,6 +170,12 @@ jobs:
         # tuning 参数确实改变候选。前置条件由上一 Build WASM 步骤满足（apps/web/wasm 已生成）。
         # 见 scripts/verify-wasm.mjs 与 just verify-wasm。
         run: node scripts/verify-wasm.mjs
+      - name: Verify WASM freshness
+        # 提交进 git 的 .wasm 必须与 Rust 源码同步（按内容指纹，不看 mtime）。
+        # CI 每次都重建，所以这里主要防「产物与清单被提交成不一致的两份」；
+        # 本地价值更大：忘了 build-wasm 时，跑真实 WASM 的测试会测旧逻辑而全绿。
+        # 见 scripts/verify-wasm-fresh.mjs 与 just verify-wasm-fresh。
+        run: node scripts/verify-wasm-fresh.mjs
       - name: Verify pending article copy
         # 待群发物料口径闸门：docs/articles/drafts/*.md 全扫 + fail-closed
         # （草稿不写进台账就判红，防止「改了仓库口径、忘了改待发稿」）。
@@ -182,6 +188,16 @@ jobs:
         # --self-test 用 7 条变异证明闸门自身不会假绿。纯 Node、不需要构建产物。
         # 见 scripts/verify-tuning-contract.mjs 与 just verify-tuning。
         run: node scripts/verify-tuning-contract.mjs --self-test && node scripts/verify-tuning-contract.mjs
+      - name: Verify duration & domain contracts
+        # 时值码（16 处同源）与领域常量（徽位音高 + 减字记号，18 项）两组闸门。
+        #
+        # 这两个脚本此前只挂在 justfile 里，本地跑、CI 不跑——
+        # 于是「改了 Rust 码表忘了同步前端」这类错误只能靠人记得执行，等于没有门禁。
+        # 门禁的价值全在「不通过就放不过去」，本地可选执行的检查不是门禁。
+        # 两者都是 --self-test 先自证（各自 8 / 16 条变异），再跑真实比对。
+        run: |
+          node scripts/verify-duration-code-contract.mjs --self-test && node scripts/verify-duration-code-contract.mjs
+          node scripts/verify-domain-contracts.mjs --self-test && node scripts/verify-domain-contracts.mjs
       - name: Lint
         run: pnpm --filter web lint
       - name: Type check
