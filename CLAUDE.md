@@ -399,6 +399,11 @@ export https_proxy=http://127.0.0.1:7890
     本机记 0，而它的上一行与下一行两边都是 142987。
   - 结论：**本机 `--fail-under-lines 75` 会假红，别据此判代码退步**；要判覆盖率以 CI 为准。
     本机只适合看「哪些行没被测到」这种相对信息。
+- ⚠️ **`--lib` 口径下某个文件 0% 不等于有缺口**（2026-11-19 实测踩到并修正）：
+  `--lib` 本来就不跑 `tests/` 下的集成测试。`favorites.rs` 在 `--lib` 下是 0/102，
+  但 `--workspace`（含集成测试）下是 **97.06%（99/102）**，由 `tests/favorites.rs` 的
+  8 条集成测试完整覆盖。判「是不是真缺口」必须看全量口径，别看到 0% 就补重复测试。
+  `just coverage-local` 已内置这层归因（对零命中文件自动跑全量复核）。
 - 前端：`env -u NODE_OPTIONS NODE_ENV=test pnpm --filter web exec vitest run --coverage`
   （阈值在 `apps/web/vitest.config.ts:29-34`：**行 94 / 语句 91 / 分支 84 / 函数 92**，
   注释写明「防退步，不是刷高分」）。
