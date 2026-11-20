@@ -64,3 +64,67 @@ fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
         .and_then(|v| v.trim().parse().ok())
         .unwrap_or(default)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /*
+     * Rust 测试并行跑，而 `set_var` 是**进程级**全局状态。用各自唯一的 key
+     * 避免互相踩；每个用例结束时清掉，不给后续用例留残留。
+     */
+    fn with_env<T>(key: &str, value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        match value {
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+        let out = f();
+        unsafe { std::env::remove_var(key) };
+        out
+    }
+
+    #[test]
+    fn env_parse_falls_back_when_missing() {
+        let got = with_env("TAIYIN_TEST_DB_MISSING", None, || {
+            env_parse("TAIYIN_TEST_DB_MISSING", 10u32)
+        });
+        assert_eq!(got, 10);
+    }
+
+    #[test]
+    fn env_parse_reads_valid_value() {
+        let got = with_env("TAIYIN_TEST_DB_VALID", Some("25"), || {
+            env_parse("TAIYIN_TEST_DB_VALID", 10u32)
+        });
+        assert_eq!(got, 25);
+    }
+
+    /// 笔误的调参变量不该让进程起不来——回退默认值，而不是 panic。
+    #[test]
+    fn env_parse_falls_back_on_garbage() {
+        for bad in ["abc", "10.5", "", "  ", "-1"] {
+            let got = with_env("TAIYIN_TEST_DB_GARBAGE", Some(bad), || {
+                env_parse("TAIYIN_TEST_DB_GARBAGE", 10u32)
+            });
+            assert_eq!(got, 10, "输入 {bad:?} 应回退默认值");
+        }
+    }
+
+    /// 前后空格要容忍：环境变量文件里手写 `DB_MAX_CONNECTIONS= 5` 很常见。
+    #[test]
+    fn env_parse_trims_whitespace() {
+        let got = with_env("TAIYIN_TEST_DB_SPACES", Some("  7  "), || {
+            env_parse("TAIYIN_TEST_DB_SPACES", 10u32)
+        });
+        assert_eq!(got, 7);
+    }
+
+    /// 解析成不同目标类型也必须成立（init_pool 里用了 u32 与 u64）。
+    #[test]
+    fn env_parse_works_for_u64() {
+        let got = with_env("TAIYIN_TEST_DB_U64", Some("5"), || {
+            env_parse("TAIYIN_TEST_DB_U64", 5u64)
+        });
+        assert_eq!(got, 5u64);
+    }
+}
