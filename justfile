@@ -120,6 +120,11 @@ verify-duration:
 verify-domain:
     node scripts/verify-domain-contracts.mjs --self-test && node scripts/verify-domain-contracts.mjs
 
+# 本机 Rust 覆盖率：**不能**用来判 CI 的 75% 闸门（macOS aarch64 分母更大，同代码显示 ~56%）。
+# 只在要找「哪些行没跑到」时用；零命中文件在任何平台都成立，是真实缺口。
+coverage-local:
+    node scripts/coverage-local.mjs
+
 # 所有静态契约闸门（与 CI 的 build.yml 保持一致；本地跑得到就等于提前发现）
 verify-contracts: verify-tuning verify-duration verify-domain verify-wasm-fresh verify-audit-exemptions
 

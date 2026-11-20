@@ -43,8 +43,8 @@
 |------|------|------------------|
 | 格式门 | `cargo fmt` 检查（CI + pre-commit） | `LlmConfig` base_url 单行格式不符 rustfmt |
 | 安全门 | `cargo audit` + `.cargo/audit.toml` 豁免政策（ADR-0003） | 2026-10-28 新披露的 11 个 advisory（quinn-proto / rustls / tokio 链） |
-| 构建 / 测试门 | `cargo nextest`（69 条）+ 前端 `vitest`（298 条 / 26 文件） | `waitFor` 不重试、`getByText` 多命中这类交互 bug |
-| 覆盖率门 | Rust `cargo llvm-cov --fail-under-lines 70`；前端 `vitest --coverage` 阈值（行 92 / 分支 83 / 函数 88 / 语句 89） | 2026-10-29 之前这两个数字**只上传 artifact、全程 `continue-on-error`**，等于没设防 |
+| 构建 / 测试门 | `cargo nextest`（`--lib` 349 条 + 集成测试）+ 前端 `vitest`（1393 条 / 92 文件） | `waitFor` 不重试、`getByText` 多命中这类交互 bug |
+| 覆盖率门 | Rust `cargo llvm-cov nextest --lib --fail-under-lines 75`；前端 `vitest --coverage` 阈值（行 94 / 语句 91 / 分支 84 / 函数 92） | 2026-10-29 之前这两个数字**只上传 artifact、全程 `continue-on-error`**，等于没设防。⚠️ Rust 这条**只能以 CI 判定**：本机（macOS aarch64）会把更多行算进分母，同代码显示 ~56% 而 CI 84%，本地跑必假红（见 CLAUDE.md「覆盖率」节与 `scripts/coverage-local.mjs`） |
 | Lint 门 | 前端 `eslint --max-warnings 0`（2026-10-30 起） | 之前 warning 不算失败，`handlePlay` 未 `useCallback` 导致空格键监听每渲染重装的告警就这么溜过去 |
 | 部署门 | 前端静态导出 → GitHub Pages 构建 | 保证线上产物可构建 |
 | 流程门 | `build` + `Deploy` 两个 workflow **都绿** | 防止「只推了就说 CI 兜底」的假确认 |

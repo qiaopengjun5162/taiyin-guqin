@@ -389,19 +389,34 @@ export https_proxy=http://127.0.0.1:7890
 
 ### 覆盖率（数字必须自己跑出来）
 - Rust：`DATABASE_URL=... cargo llvm-cov nextest --workspace --summary-only`（含集成测试）；
-  CI 用 `--lib --fail-under-lines 70` 作闸门（`--lib` 不含 `tests/`，故 `routes.rs` 在该口径下为 0%，别误判）。
-- 前端：`pnpm --filter web exec vitest run --coverage`（阈值在 `apps/web/vitest.config.ts`：
-  行 92 / 语句 89 / 分支 83 / 函数 88，= 2026-10-30 实测基线（行 94.44）略降约 2 个点）。
+  CI 用 `--lib --fail-under-lines 75` 作闸门（`--lib` 不含 `tests/`，故 `routes.rs` 在该口径下为 0%，别误判）。
+- ⚠️ **本机跑 Rust 覆盖率会低于 CI，这是平台差异，不是质量下降**（2026-11-19 实测追查）：
+  - CI（Linux x86_64）：行 84.16%，可执行行 9,955；
+  - 本机（macOS aarch64）：行 51~56%，可执行行 14,974。
+  - **实际执行的代码完全相同**：本机在 CI 的可执行行集合上，命中数与 CI 逐行一致（9,233/9,626 行），
+    多出来的 1,667 行**全部命中 0 次**——macOS 的 llvm 把更多行（含 `#[cfg(test)]` 区段）
+    归为可执行行。另一类差异是 region→line 归因：`jianpu.rs:257` 在 CI 记 142987 次、
+    本机记 0，而它的上一行与下一行两边都是 142987。
+  - 结论：**本机 `--fail-under-lines 75` 会假红，别据此判代码退步**；要判覆盖率以 CI 为准。
+    本机只适合看「哪些行没被测到」这种相对信息。
+- 前端：`env -u NODE_OPTIONS NODE_ENV=test pnpm --filter web exec vitest run --coverage`
+  （阈值在 `apps/web/vitest.config.ts:29-34`：**行 94 / 语句 91 / 分支 84 / 函数 92**，
+  注释写明「防退步，不是刷高分」）。
   口径只含 `src/{lib,components,app}`，测试自身与生成代码排除。
+  **2026-11-19 实测**：行 94.49 / 语句 91.86 / 分支 84.67 / 函数 92.76，全部过线。
+- ⚠️ **`NODE_ENV=production` 会让整个测试套件假红**（实测 334 条失败 / 53 文件）。
+  症状很误导人：报 `React.act is not a function`（React 被解析成 production 版，
+  `react-dom/test-utils` 里没有 act）、`No such built-in module: node:`。
+  **不是代码问题**，是你 shell 里残留了 `NODE_ENV`（多来自之前起过 dev server 或
+  `pnpm build` 的会话）。跑测试显式 `NODE_ENV=test`。CI 环境干净所以不会遇到。
 - **别名顺序坑**：vitest 的 `resolve.alias` 里 `@/wasm` 必须排在 `@` **前面**。
   反了会让 `@/wasm/taiyin_core` 解析成不存在的 `src/wasm/…`，该文件进不了测试，
   覆盖率工具解析失败后会**静默把它踢出分母**（日志只留一行 `Failed to parse …`）→ 分数虚高。
   看覆盖率顺手 grep 一下 `Failed to parse`。
 - Lint 闸门：`pnpm --filter web lint` = `eslint --max-warnings 0`，warning 即红。
 - **本机 BUG 规避**：本机直接 `pnpm --filter web test` 可能因并发起 vitest worker 超时报
-  `Failed to start worker`（表现为只跑 5/26 个文件 + 14 个 unhandled error，退出码 1）。
-  用 `pnpm --filter web test:serial`（`--no-file-parallelism --maxWorkers=1`）可稳定跑完 26/298；
-  CI 并行没问题，不要为了本机把 CI 改成串行。
+  `Failed to start worker`。用 `pnpm --filter web test:serial`（`--no-file-parallelism --maxWorkers=1`）
+  可稳定跑完 92 个文件 / 1393 条。CI 并行没问题，不要为了本机把 CI 改成串行。
 - 覆盖率报告生成吃内存：本机需 `NODE_OPTIONS=--max-old-space-size=4096`，否则进程被 SIGTERM（退出码 137）。
 
 ### 写作素材记录（强制）
