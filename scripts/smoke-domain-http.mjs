@@ -27,7 +27,7 @@
  *     限流（1/s burst 5）上；真挂上了第 6 个请求就会 429
  *
  * 前置：服务要起得来（需要 Postgres）。默认配置 GLOBAL_RATE_BURST=60，
- * 本脚本总请求数约 45 个，够用；把 burst 调到 20 以下会让第 7 项误报，
+ * 本脚本总请求数约 57 个，够用；把 burst 调到 20 以下会让第 7 项误报，
  * 那种情况加 `--no-ratelimit`。
  */
 import { readFileSync, existsSync } from "node:fs";
@@ -278,6 +278,32 @@ for (const ep of ENDPOINTS.filter((e) => e.method === "POST")) {
 // 抛 write ECONNRESET）。对 App / 小程序来说这是**网络错误**而不是可读的 413，
 // 所以两种结果都算「被拒绝」，但要分开说清楚——这是真服务才看得到的细节。
 if (CHECK_SIZE) {
+  // ── 计算预算（256 KiB / 2048 条 / 8192 字符）──
+  // 这些载荷都远小于 5 MiB，所以过的不是 body_limit，而是 routes.rs 里的
+  // check_compute_budget——闸门有没有真的接上，只有真服务上看得见。
+  const note = {
+    toneType: "散", rightAction: "勾", stringNumber: "三",
+    leftFinger: null, hui: null, fen: null, slide: null,
+  };
+  const budgetCases = [
+    ["encode-batch 2049 条 → 400", "/api/v1/jianzi/encode-batch", { notes: Array.from({ length: 2049 }, () => note) }, "单批最多"],
+    ["decode-batch 2049 片段 → 400", "/api/v1/jianzi/decode-batch", { text: "sg3 ".repeat(2049) }, "单批最多"],
+    ["简谱 8193 字符 → 400", "/api/v1/jianpu/parse", { input: "5 ".repeat(8193) }, "最多"],
+    ["300 KiB padding → 400", "/api/v1/jianzi/decode-batch", { text: "sg3", padding: "x".repeat(300 * 1024) }, "上限"],
+  ];
+  for (const [name, path, body, keyword] of budgetCases) {
+    const r = await call("POST", path, body);
+    check(
+      name,
+      r.status === 400 && r.body.includes(keyword),
+      `status=${r.status} body=${r.body.slice(0, 120)}`,
+    );
+  }
+  const okBatch = await call("POST", "/api/v1/jianzi/encode-batch", {
+    notes: Array.from({ length: 100 }, () => note),
+  });
+  check("100 条批量仍 200（预算没有误伤）", okBatch.status === 200, `status=${okBatch.status}`);
+
   // 限流层跑在体积检查**之前**（route_layer 包住整个路由），预算耗尽时
   // 6 MiB 请求先吃 429、根本轮不到 413。预算不够就跳过，别把顺序问题
   // 报成「体积上限失效」。

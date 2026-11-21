@@ -852,10 +852,109 @@ async fn health_check() -> &'static str {
 // ──────────────────────────────────────────────
 // 纯计算端点（薄客户端入口）
 //
-// 四个 handler 都只是把 `taiyin-core` 的同一份实现对非浏览器客户端暴露出来。
-// 它们刻意不做业务校验、不落库：逻辑在核心里，这里只负责传输格式。
+// 这 15 个 handler 只是把 `taiyin-core` 的同一份实现对非浏览器客户端暴露出来。
+// 它们刻意不做业务校验、不落库：领域逻辑在核心里，这里只负责传输格式与资源边界。
 // 网页走 WASM 调同一份代码，因此三个客户端的行为天然一致。
+//
+// 资源边界只存在于 HTTP 出口，不进 core / WASM：它是服务端防滥用的闸门，
+// 不是领域规则——浏览器本地算得慢只影响浏览器自己。
 // ──────────────────────────────────────────────
+
+/// 单个计算请求体上限 256 KiB。外层 `MAX_BODY_BYTES`（5 MiB）管整条 HTTP 请求，
+/// 这里再收一层：core 的输出会按输入长度放大（简谱实测约 30 倍）。
+const MAX_COMPUTE_BODY_BYTES: usize = 256 * 1024;
+
+/// 批量端点单批最多 2048 条。一首长曲也就几百个音；实测 20k 条解码
+/// 会产生 3.6 MB 响应（47 倍放大），够不着这么大的真实需求。
+const MAX_COMPUTE_BATCH_ITEMS: usize = 2048;
+
+/// `input` 字段（连打串 / 简谱串）最多 8192 字符。3.2 MiB 简谱曾产出
+/// 96.9 MB 响应、单核 8.4 秒——不是算法慢，是没有边界。
+const MAX_COMPUTE_INPUT_CHARS: usize = 8192;
+
+/// 把 core 的同步计算挪到 blocking 线程。
+///
+/// tokio worker 是协作式调度：一个 worker 上跑满 CPU 的 8 秒，期间同 worker 上的
+/// `/health`、限流、别的请求全部排队。10 核本机 p95 1 ms 永远测不出来；
+/// 单核 VPS 上一发大请求就是健康检查超时 → 重启风暴。
+async fn compute<F>(f: F) -> Response
+where
+    F: FnOnce() -> Response + Send + 'static,
+{
+    match tokio::task::spawn_blocking(f).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::error!(error = %e, "domain compute task failed to join");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "计算线程异常，请重试" })),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// 带请求体的计算端点：预算检查与 core 调用都在 blocking 线程里，
+/// 不占 tokio worker 的时间片。
+async fn compute_with_body<F>(body: String, f: F) -> Response
+where
+    F: FnOnce(String) -> Response + Send + 'static,
+{
+    compute(move || match check_compute_budget(&body) {
+        Ok(()) => f(body),
+        Err(reason) => bad_request(reason),
+    })
+    .await
+}
+
+/// 超限直接 400 + 原因，不让 core 先算 8 秒再说「太大」。
+/// 请求体不是 JSON / 字段缺失时不在这里拦：core 有更精确的错误报文，
+/// 这里抢答只会把「坏 JSON」与「超过预算」混成一类。
+fn check_compute_budget(body: &str) -> Result<(), String> {
+    if body.len() > MAX_COMPUTE_BODY_BYTES {
+        return Err(format!(
+            "请求体 {} KiB，超过 {} KiB 上限；请分批提交",
+            body.len() / 1024,
+            MAX_COMPUTE_BODY_BYTES / 1024
+        ));
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return Ok(());
+    };
+    if let Some(notes) = value.get("notes").and_then(serde_json::Value::as_array)
+        && notes.len() > MAX_COMPUTE_BATCH_ITEMS
+    {
+        return Err(format!(
+            "notes 有 {} 条，单批最多 {MAX_COMPUTE_BATCH_ITEMS} 条；请分批提交",
+            notes.len()
+        ));
+    }
+    if let Some(text) = value.get("text").and_then(serde_json::Value::as_str)
+        && text.split_whitespace().count() > MAX_COMPUTE_BATCH_ITEMS
+    {
+        return Err(format!(
+            "text 有 {} 个片段，单批最多 {MAX_COMPUTE_BATCH_ITEMS} 个；请分批提交",
+            text.split_whitespace().count()
+        ));
+    }
+    if let Some(input) = value.get("input").and_then(serde_json::Value::as_str)
+        && input.chars().count() > MAX_COMPUTE_INPUT_CHARS
+    {
+        return Err(format!(
+            "input 有 {} 个字符，最多 {MAX_COMPUTE_INPUT_CHARS} 个；请分批提交",
+            input.chars().count()
+        ));
+    }
+    Ok(())
+}
+
+fn bad_request(reason: impl Into<String>) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": reason.into() })),
+    )
+        .into_response()
+}
 
 /// 连打解析：`{"input":"djg4","tone":"按","force":false}` → 解析结果。
 ///
@@ -867,117 +966,155 @@ async fn health_check() -> &'static str {
 /// 端点对坏请求体一律 400，这里若照抄 200，客户端 `if (res.ok)` 会把
 /// 「我传错了」当成解析成功，然后在缺字段的地方炸掉（真服务实测发现）。
 async fn rapid_parse(body: String) -> Response {
-    let out = taiyin_core::jianzi_rapid::parse_rapid_input_json(&body);
-    match serde_json::from_str::<serde_json::Value>(&out) {
-        Ok(v) if v.get("error").is_some() => (StatusCode::BAD_REQUEST, Json(v)).into_response(),
-        _ => json_text(out),
-    }
+    compute_with_body(body, |body| {
+        let out = taiyin_core::jianzi_rapid::parse_rapid_input_json(&body);
+        match serde_json::from_str::<serde_json::Value>(&out) {
+            Ok(v) if v.get("error").is_some() => (StatusCode::BAD_REQUEST, Json(v)).into_response(),
+            _ => json_text(out),
+        }
+    })
+    .await
 }
 
 /// 各音色的连打槽位顺序——客户端渲染输入提示用，不必抄一份槽位表。
 async fn rapid_slots() -> Response {
-    json_text(taiyin_core::jianzi_rapid::slots_json().to_string())
+    compute(|| json_text(taiyin_core::jianzi_rapid::slots_json().to_string())).await
 }
 
 /// 批量编码：`{"notes":[{...}]}` → `{"codes":["sg3",null,...]}`。
 async fn encode_batch(body: String) -> Response {
-    match taiyin_core::jianzi_code::encode_batch_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(
+        body,
+        |body| match taiyin_core::jianzi_code::encode_batch_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        },
+    )
+    .await
 }
 
 /// 批量解码：`{"text":"ad9g4 sg3"}` → 逐条结果（坏码只坏一条）。
 async fn decode_batch(body: String) -> Response {
-    match taiyin_core::jianzi_code::decode_batch_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(
+        body,
+        |body| match taiyin_core::jianzi_code::decode_batch_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        },
+    )
+    .await
 }
 
 /// 联袂成组归一化：清理删除/插入后不成立的关系。
 async fn lianmei_normalize(body: String) -> Response {
-    match taiyin_core::lianmei::normalize_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(body, |body| {
+        match taiyin_core::lianmei::normalize_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        }
+    })
+    .await
 }
 
 /// 解析所有成立的联袂组。
 async fn lianmei_groups(body: String) -> Response {
-    match taiyin_core::lianmei::groups_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(body, |body| {
+        match taiyin_core::lianmei::groups_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        }
+    })
+    .await
 }
 
 /// 判定两个频率的关系（同度 / 八度 / 不合）。
 async fn lianmei_relation(body: String) -> Response {
-    match taiyin_core::lianmei::relation_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(body, |body| {
+        match taiyin_core::lianmei::relation_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        }
+    })
+    .await
 }
 
 /// 四种联袂指法的元数据，供客户端渲染按钮而不必抄一份。
 async fn lianmei_options() -> Response {
-    json_text(taiyin_core::lianmei::options_json())
+    compute(|| json_text(taiyin_core::lianmei::options_json())).await
 }
 
 /// 成组：`{"notes":[...],"headIndex":0,"kind":"同声"}`。
 async fn lianmei_link(body: String) -> Response {
-    match taiyin_core::lianmei::link_json(&body) {
+    compute_with_body(body, |body| match taiyin_core::lianmei::link_json(&body) {
         Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+        Err(e) => bad_request(e),
+    })
+    .await
 }
 
 /// 解组：`{"notes":[...],"index":0}`。
 async fn lianmei_clear(body: String) -> Response {
-    match taiyin_core::lianmei::clear_json(&body) {
+    compute_with_body(body, |body| match taiyin_core::lianmei::clear_json(&body) {
         Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+        Err(e) => bad_request(e),
+    })
+    .await
 }
 
 /// 简谱字符串解析：`{"input":"5 6 1 2"}` → 逐项音符/休止 + 时值单位。
 async fn parse_jianpu_route(body: String) -> Response {
-    match taiyin_core::jianpu_parse::parse_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(body, |body| {
+        match taiyin_core::jianpu_parse::parse_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        }
+    })
+    .await
 }
 
 /// 减字 → 音高与简谱唱名：`{"stringNumber":4,"toneType":"按","hui":9}`。
 async fn jianzi_pitch_route(body: String) -> Response {
-    match taiyin_core::pitch::frequency_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(body, |body| {
+        match taiyin_core::pitch::frequency_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        }
+    })
+    .await
 }
 
 /// 减字释义：`{"state":{...}}` → 逐项读法 + 一句话总结。
 async fn explain_jianzi_route(body: String) -> Response {
-    match taiyin_core::explain::explain_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(body, |body| {
+        match taiyin_core::explain::explain_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        }
+    })
+    .await
 }
 
 /// 减字状态 → 字体可渲染文本：`{"state":{...}}` → `"大九勾四"`。
 async fn jianzi_to_text_route(body: String) -> Response {
-    match taiyin_core::jianzi_text::to_text_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(body, |body| {
+        match taiyin_core::jianzi_text::to_text_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        }
+    })
+    .await
 }
 
 /// 减字文本 → 状态：`{"text":"大九勾四"}` → 状态或 `null`。
 async fn parse_jianzi_text_route(body: String) -> Response {
-    match taiyin_core::jianzi_text::from_text_json(&body) {
-        Ok(out) => json_text(out),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
-    }
+    compute_with_body(
+        body,
+        |body| match taiyin_core::jianzi_text::from_text_json(&body) {
+            Ok(out) => json_text(out),
+            Err(e) => bad_request(e),
+        },
+    )
+    .await
 }
 
 /// 把核心返回的 JSON 字符串原样作为 `application/json` 响应。
@@ -1649,6 +1786,108 @@ mod tests {
             .await
             .unwrap();
         (status, String::from_utf8(bytes.to_vec()).unwrap())
+    }
+
+    /// 计算不能占住 tokio worker：单核机器上这曾让 `/health` 卡 8 秒。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn domain_compute_runs_off_the_runtime_worker() {
+        let worker = tokio::task::spawn(async { std::thread::current().id() })
+            .await
+            .unwrap();
+        // 必须 spawn 到 worker 上 poll：直接 await 时 future 跑在测试线程，
+        // 即使把 spawn_blocking 去掉，线程 id 也不等 worker，测试会假绿。
+        let resp = tokio::spawn(compute(move || {
+            json_text(json!({ "onWorker": std::thread::current().id() == worker }).to_string())
+        }))
+        .await
+        .unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(bytes.to_vec()).unwrap(),
+            r#"{"onWorker":false}"#
+        );
+    }
+
+    /// 预算闸门：超限要在 core 开算之前 400，并把「怎么办」写进错误报文。
+    #[tokio::test]
+    async fn domain_compute_budget_rejects_oversized_requests() {
+        // 用 core 认的合法 note：否则 400 来自字段校验，测的就不是预算闸门了。
+        let note = r#"{"toneType":"散","rightAction":"勾","stringNumber":"三","leftFinger":null,"hui":null,"fen":null,"slide":null}"#;
+        let notes = |n: usize| {
+            format!(
+                r#"{{"notes":[{}]}}"#,
+                (0..n).map(|_| note).collect::<Vec<_>>().join(",")
+            )
+        };
+        let bodies = [
+            (
+                "/api/v1/jianzi/encode-batch",
+                notes(MAX_COMPUTE_BATCH_ITEMS + 1),
+                "单批最多",
+            ),
+            (
+                "/api/v1/jianzi/decode-batch",
+                format!(
+                    r#"{{"text":"{}"}}"#,
+                    "sg3 ".repeat(MAX_COMPUTE_BATCH_ITEMS + 1)
+                ),
+                "单批最多",
+            ),
+            (
+                "/api/v1/jianpu/parse",
+                format!(
+                    r#"{{"input":"{}"}}"#,
+                    "5 ".repeat(MAX_COMPUTE_INPUT_CHARS + 1)
+                ),
+                "最多",
+            ),
+            (
+                "/api/v1/jianzi/decode-batch",
+                format!(
+                    r#"{{"text":"sg3","padding":"{}"}}"#,
+                    "x".repeat(MAX_COMPUTE_BODY_BYTES + 1)
+                ),
+                "上限",
+            ),
+        ];
+        for (uri, body, keyword) in bodies {
+            let (status, text) = post_json(uri, &body).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}: {text}");
+            assert!(
+                text.contains(keyword),
+                "{uri} 的错误报文缺 {keyword:?}: {text}"
+            );
+        }
+    }
+
+    /// 闸门不能误伤真实请求：刚好到上限的批量、常见短串都该照常 200。
+    #[tokio::test]
+    async fn domain_compute_budget_allows_real_requests() {
+        let note = r#"{"toneType":"散","rightAction":"勾","stringNumber":"三","leftFinger":null,"hui":null,"fen":null,"slide":null}"#;
+        let notes = (0..MAX_COMPUTE_BATCH_ITEMS)
+            .map(|_| note)
+            .collect::<Vec<_>>()
+            .join(",");
+        let (status, _) = post_json(
+            "/api/v1/jianzi/encode-batch",
+            &format!(r#"{{"notes":[{notes}]}}"#),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (status, text) = post_json(
+            "/api/v1/jianzi/decode-batch",
+            &format!(r#"{{"text":"{}"}}"#, "sg3 ".repeat(MAX_COMPUTE_BATCH_ITEMS)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "2048 条解码边界: {text}");
+
+        // 坏 JSON 仍由 core 报，预算层不抢答——否则两种错误会被混成一类。
+        let (status, text) = post_json("/api/v1/jianpu/parse", "{").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(text.contains("请求体解析失败"), "{text}");
     }
 
     /// HTTP 出口必须与 WASM 出口同源——这是「App / 小程序共用一套逻辑」的前提。
