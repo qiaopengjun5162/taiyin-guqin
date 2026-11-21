@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### S2 批 1：同步 getter 第一次跑在真实业务路径上（2026-11-22）
+
+S2 的桥接（`taiyin-wasm.ts` 的 9 个 `...Sync`）与启动预加载（`WasmBootstrap`）早在
+11-16 就完成了，但一直是「桥接建好了没人用」：`client` 门面只导出 encode/decode
+两个同步版，其余 7 个 UI 够不着（分层守卫禁止直连绑定层），且**零个真实业务调用
+方**走同步路径——和 rapid-parse「测试通过但实际不可用」是同一类问题。
+
+- 门面补齐全部 9 个同步 getter，并加静态断言「9 个都在且是函数」——少导一个就红。
+- `jianzi-code-import` 迁到 `decodeJianziBatchSync`：按钮 `disabled={!ready}` 保证同步
+  getter 不会在未初始化时被调用；解码是纯计算，去掉 async 状态机，Rust 抛错仍由
+  try/catch 接住。这是第一个真正走同步路径的业务用例。
+- 测试改进：组件 mock 给 async 版 `decodeJianziBatch` 加哨兵（误调即抛错），否则
+  async/sync 行为一致、功能用例分辨不出走哪条路；桥接层补 decode 的 sync/async
+  逐字节对照（原只覆盖 translate / split / arrange）。
+- 两处变异验证有效：门面删一个同步导出、组件改回 async 调用，对应测试都变红。
+- 不动 `taiyin-core`，`verify-wasm-fresh` 确认产物与源码同步，三份 WASM 无需重建。
+
+验证：前端全量 **1395 用例 / 92 文件全绿**，覆盖率四项达标（行 94.51 / 语句 91.87 /
+分支 84.64 / 函数 92.84），tsc + eslint 0，`just verify-contracts` 三组 + `verify-wasm`
+全绿。
+
 ### 错误报文可读化：429 / 413 统一 JSON（2026-11-21）
 
 上节量到的 ③ 也已修掉。tower-governor 与 axum 各自构造的错误体是 `text/plain`、无

@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import type { NoteColumn } from "@/lib/types";
-import { decodeJianziBatch, useWasmInit } from "@/lib/client";
+import { decodeJianziBatchSync, useWasmInit } from "@/lib/client";
 import { jianziToJianpu } from "@/lib/jianzi-pitch";
 import { createEmptyState } from "@/lib/jianzi";
 import { usePitchContext } from "@/lib/use-pitch-context";
@@ -46,7 +46,10 @@ export function JianziCodeImport({ onImport }: JianziCodeImportProps) {
 
   const ready = wasmState === "ready";
 
-  async function handleImport() {
+  // 同步路径（S2）：WASM 由 WasmBootstrap 启动时预加载，按钮在 ready 前禁用，
+  // 所以这里调同步 getter 不会撞上「未初始化」。解码是纯计算，几毫秒内返回，
+  // 不需要 async 状态机；Rust 抛错由下面的 try/catch 接住，与原来的 async 版同构。
+  function handleImport() {
     const raw = text.trim();
     if (!raw) {
       setError("先粘一段码进来（如 ad9g4 sg3）");
@@ -56,7 +59,7 @@ export function JianziCodeImport({ onImport }: JianziCodeImportProps) {
     setBusy(true);
     setError(null);
     try {
-      const result = await decodeJianziBatch(raw);
+      const result = decodeJianziBatchSync(raw);
       const notes: NoteColumn[] = [];
       let rest = 0;
       for (const entry of result.entries) {

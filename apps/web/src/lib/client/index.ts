@@ -52,6 +52,26 @@ export {
 } from "@/lib/taiyin-wasm";
 
 // ──────────────────────────────────────────────
+// 同步 getter（S2）
+//
+// WASM 已由 WasmBootstrap 在启动时预加载；就绪后纯函数可以同步调用，
+// 不必再 await——事件处理与渲染派生里少一个微任务与一处中间态。
+// 9 个同步版与各自的 async 版共用同一段 Rust 与同一份后处理，输出逐字节一致。
+// 未就绪时它们会抛错（不隐式初始化），所以调用方必须自己看 `isWasmReady()`
+// 或 `useWasmInit()` 的 ready 状态——组件里凡是用同步版的，门控都在。
+// 之前这里只导出了 encode/decode 两个，其余 7 个业务侧够不着，等于桥接白建。
+// ──────────────────────────────────────────────
+export {
+  translateJianpuToJianziSync,
+  translateJianpuSequenceToJianziSync,
+  arrangeJianpuSequenceSync,
+  splitPhrasesSync,
+  getJianziDictionarySync,
+  analyzeJianziFrequencySync,
+  getJianziVariantGroupsSync,
+} from "@/lib/taiyin-wasm";
+
+// ──────────────────────────────────────────────
 // 减字编码 / 解码（导出文本谱、整段粘贴回来）
 // ──────────────────────────────────────────────
 export {

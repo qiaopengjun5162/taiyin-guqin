@@ -12,7 +12,7 @@ import type { NoteColumn } from "@/lib/types";
 // 这里只验接线：粘进去的文本是否原样送给 Rust、结果是否按音高建成音符列、
 // 坏码是否单独回显而不连坐。
 
-const decodeJianziBatch = vi.fn();
+const decodeJianziBatchSync = vi.fn();
 
 /*
  * 用 `importOriginal` 保留真实模块：`loadRealWasm` 要调 `initWasmSync`，
@@ -23,8 +23,13 @@ vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
   return {
     ...actual,
-  useWasmInit: () => ({ state: "ready" as const, error: null }),
-  decodeJianziBatch: (text: string) => decodeJianziBatch(text),
+    useWasmInit: () => ({ state: "ready" as const, error: null }),
+    decodeJianziBatchSync: (text: string) => decodeJianziBatchSync(text),
+    // 哨兵：本组件已迁到 S2 同步路径，若有人改回 async 版，这里立刻抛错，
+    // 让测试变红——否则 async/sync 行为一致，功能用例根本分辨不出走哪条路。
+    decodeJianziBatch: () => {
+      throw new Error("组件仍在走 async decodeJianziBatch，S2 迁移未完成");
+    },
   };
 });
 
@@ -89,11 +94,11 @@ beforeAll(loadRealWasm);
 
 describe("减字码入谱", () => {
   beforeEach(() => {
-    decodeJianziBatch.mockReset();
+    decodeJianziBatchSync.mockReset();
   });
 
   it("粘入的文本原样交给 Rust，解出的减字按顺序入谱", async () => {
-    decodeJianziBatch.mockResolvedValue(MIXED);
+    decodeJianziBatchSync.mockReturnValue(MIXED);
     const onImport = vi.fn<(notes: NoteColumn[]) => void>();
     render(<JianziCodeImport onImport={onImport} />);
 
@@ -103,7 +108,7 @@ describe("减字码入谱", () => {
     fireEvent.click(screen.getByRole("button", { name: "解析并加入曲谱" }));
 
     await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
-    expect(decodeJianziBatch).toHaveBeenCalledWith("sg3 | ad9g4  d9g4");
+    expect(decodeJianziBatchSync).toHaveBeenCalledWith("sg3 | ad9g4  d9g4");
 
     const notes = onImport.mock.calls[0][0];
     expect(notes).toHaveLength(2);
@@ -122,7 +127,7 @@ describe("减字码入谱", () => {
   });
 
   it("坏码单条报原因，好码照常入谱", async () => {
-    decodeJianziBatch.mockResolvedValue(MIXED);
+    decodeJianziBatchSync.mockReturnValue(MIXED);
     const onImport = vi.fn();
     render(<JianziCodeImport onImport={onImport} />);
 
@@ -136,7 +141,7 @@ describe("减字码入谱", () => {
   });
 
   it("休止符 r 也入谱：占拍、减字为空、不算坏码", async () => {
-    decodeJianziBatch.mockResolvedValue({
+    decodeJianziBatchSync.mockReturnValue({
       total: 2,
       ok: 2,
       failed: 0,
@@ -177,7 +182,7 @@ describe("减字码入谱", () => {
   });
 
   it("全部读不通时不往谱里加东西", async () => {
-    decodeJianziBatch.mockResolvedValue({
+    decodeJianziBatchSync.mockReturnValue({
       total: 1,
       ok: 0,
       failed: 1,
@@ -200,11 +205,13 @@ describe("减字码入谱", () => {
     fireEvent.click(screen.getByRole("button", { name: "解析并加入曲谱" }));
 
     expect(await screen.findByText(/先粘一段码进来/)).toBeInTheDocument();
-    expect(decodeJianziBatch).not.toHaveBeenCalled();
+    expect(decodeJianziBatchSync).not.toHaveBeenCalled();
   });
 
   it("Rust 侧整体报错（一个码都没切出来）时展示原因", async () => {
-    decodeJianziBatch.mockRejectedValue(new Error("没找到可解析的减字码"));
+    decodeJianziBatchSync.mockImplementation(() => {
+      throw new Error("没找到可解析的减字码");
+    });
     render(<JianziCodeImport onImport={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText("减字码"), { target: { value: "共 12 音" } });

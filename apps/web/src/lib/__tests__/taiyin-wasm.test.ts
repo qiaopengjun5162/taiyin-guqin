@@ -757,6 +757,35 @@ describe("taiyin-wasm · S2 同步 getter", () => {
     expect(() => w.splitPhrasesSync([8])).toThrow("bad");
   });
 
+  it("同步解码与异步逐字节一致：后处理只写一份（sync/async 都过 parseDecodeBatch）", async () => {
+    const w = await loadWasm();
+    await w.initWasm();
+    glue.decode_jianzi_batch.mockReturnValue(
+      JSON.stringify({
+        total: 2,
+        ok: 1,
+        failed: 1,
+        entries: [
+          {
+            code: "sg3",
+            state: { toneType: "散", rightAction: "勾", stringNumber: "三" },
+            error: null,
+            duration: "四分",
+            dotted: false,
+            isRest: false,
+          },
+          { code: "d9g4", state: null, error: "码要以音色前缀开头", duration: null, dotted: false, isRest: false },
+        ],
+      }),
+    );
+
+    const sync = w.decodeJianziBatchSync("sg3 d9g4");
+    await expect(w.decodeJianziBatch("sg3 d9g4")).resolves.toEqual(sync);
+    // 缺字段补空 / rhythmMode 补 null 只在 parseDecodeBatch 一处，sync 也吃到
+    expect(sync.entries[0].state?.rhythmMode).toBeNull();
+    expect(sync.entries[1].state).toBeNull();
+  });
+
   it("同步编排与异步逐字节一致：stats 补零、phrases 映射不各写一份", async () => {
     const w = await loadWasm();
     await w.initWasm();

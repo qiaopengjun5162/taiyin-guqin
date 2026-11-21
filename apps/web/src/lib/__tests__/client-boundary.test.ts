@@ -119,4 +119,24 @@ describe("分层守卫 · UI 不绕过 @/lib/client", () => {
       expect(client, `门面缺少导出 ${name}`).toHaveProperty(name);
     }
   });
+
+  it("门面导出全部 9 个同步 getter（S2：桥接建好还得让业务侧够得着）", async () => {
+    const client = await import("@/lib/client");
+    // 桥接层 taiyin-wasm.ts 有 9 个 ...Sync，门面少导一个，那个能力对 UI 就等于不存在
+    // （分层守卫禁止 UI 直连 taiyin-wasm）。曾经只导了 encode/decode 两个，其余 7 个白建。
+    for (const name of [
+      "translateJianpuToJianziSync",
+      "translateJianpuSequenceToJianziSync",
+      "arrangeJianpuSequenceSync",
+      "splitPhrasesSync",
+      "getJianziDictionarySync",
+      "analyzeJianziFrequencySync",
+      "getJianziVariantGroupsSync",
+      "encodeJianziBatchSync",
+      "decodeJianziBatchSync",
+    ]) {
+      expect(client, `门面缺少同步 getter ${name}，UI 够不着`).toHaveProperty(name);
+      expect(client, `门面 ${name} 不是函数`).toHaveProperty(name, expect.any(Function));
+    }
+  });
 });
