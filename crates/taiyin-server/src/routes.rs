@@ -1,8 +1,11 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Extension, Path, Query, State},
-    http::{HeaderMap, HeaderValue, Method, StatusCode},
-    middleware::from_fn_with_state,
+    http::{
+        HeaderMap, HeaderValue, Method, StatusCode,
+        header::{CONTENT_TYPE, RETRY_AFTER},
+    },
+    middleware::{from_fn_with_state, map_response},
     response::{IntoResponse, Response},
     routing::{get, post, put},
 };
@@ -102,6 +105,46 @@ fn build_cors(allowed: &[String]) -> CorsLayer {
             axum::http::HeaderName::from_static(ADMIN_TOKEN_HEADER),
         ]))
         .expose_headers(expose)
+}
+
+/// 把限流（429）与体积超限（413）的错误体统一成 JSON。
+///
+/// 这两类错误原先由 tower-governor / axum 各自构造：`text/plain`、没有 content-type、
+/// 文案是「Too Many Requests! Wait for 0s」。App / 小程序按 `res.ok` 判断后想读
+/// `error` 字段，结果拿到一段英文散文；而 `retry-after: 0` 会让客户端立刻重试，
+/// 把限流变成重试风暴。
+///
+/// 只改错误响应：状态码、`x-ratelimit-*` 头与所有成功路径一律不动。
+/// 放在外层中间件，覆盖全局限流、认证/发布/翻译三组限流与 DefaultBodyLimit。
+pub async fn normalize_error_response(resp: Response) -> Response {
+    let status = resp.status();
+    if status != StatusCode::TOO_MANY_REQUESTS && status != StatusCode::PAYLOAD_TOO_LARGE {
+        return resp;
+    }
+    let (mut parts, _) = resp.into_parts();
+    let body = if status == StatusCode::TOO_MANY_REQUESTS {
+        // 不足 1 秒的等待被 governor 截成 0 秒：抬到至少 1 秒，否则客户端
+        // 收到「等 0 秒」会立即重发，限流反而放大成重试风暴。
+        let wait = parts
+            .headers
+            .get(RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(1)
+            .max(1);
+        parts.headers.insert(
+            RETRY_AFTER,
+            HeaderValue::from_str(&wait.to_string())
+                .unwrap_or_else(|_| HeaderValue::from_static("1")),
+        );
+        json!({ "error": "请求太频繁，请稍后再试", "retryAfterSeconds": wait })
+    } else {
+        json!({ "error": "请求体过大，请压缩或分批提交", "maxBodyBytes": MAX_BODY_BYTES })
+    };
+    parts
+        .headers
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    Response::from_parts(parts, body.to_string().into())
 }
 
 pub fn app(state: AppState, config: &ServerConfig) -> Router {
@@ -259,6 +302,7 @@ pub fn app(state: AppState, config: &ServerConfig) -> Router {
         // 5MB 是 base64 文本的大小，换算成原图约 3.7MB；解码成 RGBA8 后可能到
         // 数十 MB（像素数不受字节数约束），并发由 translate 限流（1/s，burst 5）兜住。
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        .layer(map_response(normalize_error_response))
         .layer(cors)
         .layer(Extension(publish_quota))
         .layer(Extension(admin_auth))
@@ -1786,6 +1830,94 @@ mod tests {
             .await
             .unwrap();
         (status, String::from_utf8(bytes.to_vec()).unwrap())
+    }
+
+    /// 429 / 413 的错误体必须让 App 能解析：`application/json` + `error` 字段，
+    /// 且等待时间不能是 0 秒（`retry-after: 0` 会诱发重试风暴）。
+    #[tokio::test]
+    async fn error_response_is_json_with_useful_retry_after() {
+        let resp = Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .header(RETRY_AFTER, "0")
+            .header("x-ratelimit-limit", "60")
+            .body(Body::from("Too Many Requests! Wait for 0s"))
+            .unwrap();
+        let resp = normalize_error_response(resp).await;
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            resp.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        assert_eq!(resp.headers().get(RETRY_AFTER).unwrap(), "1");
+        assert_eq!(resp.headers().get("x-ratelimit-limit").unwrap(), "60");
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["error"], json!("请求太频繁，请稍后再试"));
+        assert_eq!(v["retryAfterSeconds"], json!(1));
+
+        let resp = Response::builder()
+            .status(StatusCode::PAYLOAD_TOO_LARGE)
+            .body(Body::from("Failed to deserialize the JSON body"))
+            .unwrap();
+        let resp = normalize_error_response(resp).await;
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            resp.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(v["error"].as_str().unwrap().contains("请求体过大"));
+        assert_eq!(v["maxBodyBytes"], json!(MAX_BODY_BYTES));
+    }
+
+    /// 成功响应不能被归一化层碰到——否则所有 `text/plain` 会被改成 JSON。
+    #[tokio::test]
+    async fn error_response_normalization_leaves_success_alone() {
+        let resp = Response::builder()
+            .status(StatusCode::OK)
+            .header(CONTENT_TYPE, "text/plain")
+            .body(Body::from("🪕 taiyin ok"))
+            .unwrap();
+        let resp = normalize_error_response(resp).await;
+        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain");
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), "🪕 taiyin ok".as_bytes());
+    }
+
+    /// 归一化层真的挂在 DefaultBodyLimit 外面：413 能被拦到并改写。
+    #[tokio::test]
+    async fn error_normalization_layer_catches_body_limit() {
+        let app = Router::new()
+            .route("/echo", post(|body: String| async move { body }))
+            .layer(DefaultBodyLimit::max(64))
+            .layer(map_response(normalize_error_response));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/echo")
+                    .body(Body::from("x".repeat(100)))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            resp.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(v["error"].as_str().unwrap().contains("请求体过大"));
     }
 
     /// 计算不能占住 tokio worker：单核机器上这曾让 `/health` 卡 8 秒。

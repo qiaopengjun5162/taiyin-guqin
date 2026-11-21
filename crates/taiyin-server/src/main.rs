@@ -7,7 +7,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use taiyin_server::{AppState, ServerConfig, app, db, llm::LlmConfig};
+use axum::middleware::map_response;
+use taiyin_server::{AppState, ServerConfig, app, db, llm::LlmConfig, normalize_error_response};
 use tower_governor::{
     GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
 };
@@ -71,7 +72,9 @@ async fn main() -> anyhow::Result<()> {
         },
         &config,
     )
-    .route_layer(GovernorLayer::new(governor_conf));
+    .route_layer(GovernorLayer::new(governor_conf))
+    // 全局限流在 app() 之外，错误体也要在它之外归一化，才能覆盖 429。
+    .layer(map_response(normalize_error_response));
 
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
     let port = std::env::var("PORT")

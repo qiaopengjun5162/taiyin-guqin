@@ -27,7 +27,7 @@
  *     限流（1/s burst 5）上；真挂上了第 6 个请求就会 429
  *
  * 前置：服务要起得来（需要 Postgres）。默认配置 GLOBAL_RATE_BURST=60，
- * 本脚本总请求数约 57 个，够用；把 burst 调到 20 以下会让第 7 项误报，
+ * 本脚本总请求数约 70 个（末尾会主动撞一次 429）；把 burst 调到 20 以下会让第 7 项误报，
  * 那种情况加 `--no-ratelimit`。
  */
 import { readFileSync, existsSync } from "node:fs";
@@ -326,10 +326,48 @@ if (CHECK_SIZE) {
     );
     if (r.status === 0) {
       info("超限时服务直接断开连接，客户端读不到 413 的 body——App / 小程序要有「请求过大」的兜底文案");
+    } else if (r.status === 413) {
+      const ct = r.headers.get("content-type") ?? "";
+      let payload = null;
+      try {
+        payload = JSON.parse(r.body);
+      } catch {}
+      check(
+        "413 错误体是 JSON + 可读原因",
+        ct.includes("application/json") && Boolean(payload?.error),
+        `ct=${ct} body=${r.body.slice(0, 100)}`,
+      );
     }
     const ok = JSON.stringify({ input: "5_ 6 0" });
     const r2 = await call("POST", "/api/v1/jianpu/parse", ok);
     check("小请求体仍 200（上限没有误伤）", r2.status === 200, `status=${r2.status}`);
+  }
+}
+
+// ── 6. 429 错误体：放在最后撞，别让限流污染前面的功能结论 ──
+if (CHECK_RATELIMIT) {
+  let hit = null;
+  for (let i = 0; i < 15; i++) {
+    const r = await rawCall("GET", "/health");
+    if (r.status === 429) {
+      hit = r;
+      break;
+    }
+  }
+  if (hit) {
+    const ct = hit.headers.get("content-type") ?? "";
+    const wait = Number(hit.headers.get("retry-after") ?? NaN);
+    let payload = null;
+    try {
+      payload = JSON.parse(hit.body);
+    } catch {}
+    check(
+      "429 错误体是 JSON + 中文原因 + retry-after ≥ 1",
+      ct.includes("application/json") && Boolean(payload?.error) && wait >= 1,
+      `ct=${ct} retry-after=${wait} body=${hit.body.slice(0, 100)}`,
+    );
+  } else {
+    info("15 连发未撞到 429（burst 配得很大），跳过错误体验证");
   }
 }
 

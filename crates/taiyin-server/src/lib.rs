@@ -17,4 +17,4 @@ pub mod template_match;
 
 pub use config::ServerConfig;
 pub use db::AppState;
-pub use routes::app;
+pub use routes::{app, normalize_error_response};

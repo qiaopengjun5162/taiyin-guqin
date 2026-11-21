@@ -2,9 +2,27 @@
 
 ## [Unreleased]
 
+### 错误报文可读化：429 / 413 统一 JSON（2026-11-21）
+
+上节量到的 ③ 也已修掉。tower-governor 与 axum 各自构造的错误体是 `text/plain`、无
+content-type、文案「Too Many Requests! Wait for 0s」，App 按 `res.ok` 分支后读不到
+`error` 字段；`retry-after: 0` 更会让客户端立即重试，把限流放大成重试风暴。
+
+- 新增 `normalize_error_response()`：只处理 429 / 413，改成 `application/json` +
+  中文原因（`retryAfterSeconds` / `maxBodyBytes`），把 `retry-after` 抬到至少 1 秒，
+  保留 `x-ratelimit-*` 头；状态码、成功路径与其它错误一律不动。
+- 挂两层：`app()` 外层覆盖三组局部限流与 DefaultBodyLimit，`main.rs` 全局限流之外
+  再挂一层覆盖全局 429——oneshot 与真服务两边都验得到。
+- 真服务实测：低 burst 实例第 3 次请求拿到 `429 {"error":"请求太频繁，请稍后再试",
+  "retryAfterSeconds":1}`，`retry-after: 1`（原来 0）；6 MiB 请求用 curl 读到
+  `413 {"error":"请求体过大，请压缩或分批提交","maxBodyBytes":5242880}`。
+  Node/undici 仍可能只看到 `ECONNRESET`——那是超限时服务端提前断连，应用层改不了，
+  客户端仍需「请求过大」兜底文案。
+- 验证：单测 108 全绿（新增 3 项）；`just smoke-domain` 57 → **59 项全绿**。
+
 ### 真服务量测的后续修复：计算移出 worker + 输入预算（2026-11-21）
 
-上一节量到的 ①② 当天已修；③（429 / 413 错误报文）影响面覆盖所有端点，留待拍板。
+上一节量到的 ①② 当天已修；③（429 / 413 错误报文）见上方段落，也已修掉。
 
 - `routes.rs` 新增 `compute()` / `compute_with_body()`：15 个纯计算端点统一走
   `tokio::task::spawn_blocking`，同步 CPU 不再占 tokio worker。单 worker + 40 个并发
@@ -34,7 +52,7 @@ handler 无脑 `json_text`），其余 13 个 POST 端点都是 400。客户端 
 「我传错了」当成解析成功，再在缺字段处炸掉。已改成 400，并把「坏请求体必须 400」的
 用例从 10 个端点扩到全部 15 个——不按实现签名分派，否则下一个照抄的人还会漏。
 
-**三处「oneshot 永远看不到」的量测**（①② 已于同日修掉，见上方段落；③ 待拍板）：
+**三处「oneshot 永远看不到」的量测**（①②③ 均已于同日修掉，见上方两段）：
 
 1. **同步 CPU 跑在 tokio worker 上**：单 worker（≈ 单核 VPS）时，一个 3.2 MiB 简谱请求
    让 `/health` 卡 **8,248 ms**（384 次采样，p50=1 ms，max=8248 ms）；10 核本机上
