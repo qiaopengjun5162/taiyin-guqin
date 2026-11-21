@@ -860,9 +860,18 @@ async fn health_check() -> &'static str {
 /// 连打解析：`{"input":"djg4","tone":"按","force":false}` → 解析结果。
 ///
 /// 请求体直接透传给核心，因为核心已经定义了这套 JSON 契约（`parse_rapid_input_json`）。
+///
+/// 唯一的例外是「请求体本身不是 JSON」：核心的签名返回 `String` 而不是
+/// `Result`（WASM 出口没有状态码，只能把错误编进 body），所以它会把失败
+/// 编码成 `{"error":…}` 交回来。HTTP 出口有状态码就必须用上——其余 10 个
+/// 端点对坏请求体一律 400，这里若照抄 200，客户端 `if (res.ok)` 会把
+/// 「我传错了」当成解析成功，然后在缺字段的地方炸掉（真服务实测发现）。
 async fn rapid_parse(body: String) -> Response {
     let out = taiyin_core::jianzi_rapid::parse_rapid_input_json(&body);
-    json_text(out)
+    match serde_json::from_str::<serde_json::Value>(&out) {
+        Ok(v) if v.get("error").is_some() => (StatusCode::BAD_REQUEST, Json(v)).into_response(),
+        _ => json_text(out),
+    }
 }
 
 /// 各音色的连打槽位顺序——客户端渲染输入提示用，不必抄一份槽位表。
@@ -1723,9 +1732,17 @@ mod tests {
 
     /// 坏请求体必须 400 且带原因——这些端点是给 App / 小程序用的公开面，
     /// 静默返回 `{}` 会让客户端把「我传错了」误当成「这里没有数据」。
+    ///
+    /// 15 个端点**全部**在列：`rapid-parse` 曾经是唯一的例外（核心返回
+    /// `String`，handler 无脑 200，错误被包在 body 里），真服务实测时
+    /// `if (res.ok)` 会把它当成成功。凡是「坏输入」就只能是 400，不按实现
+    /// 签名分派，否则下一个照着抄的人还会漏。
     #[tokio::test]
     async fn domain_endpoints_reject_malformed_body_with_reason() {
         for uri in [
+            "/api/v1/jianzi/rapid-parse",
+            "/api/v1/jianzi/encode-batch",
+            "/api/v1/jianzi/decode-batch",
             "/api/v1/jianpu/parse",
             "/api/v1/pitch/jianzi",
             "/api/v1/explain/jianzi",

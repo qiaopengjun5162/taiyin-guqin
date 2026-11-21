@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### 真服务验证：15 个薄客户端端点第一次在真启动的服务上跑（2026-11-21）
+
+此前这 15 个端点只在**路由层**（oneshot）验过。oneshot 直接调 `Router`，不经过 `main()`
+里那几层真实装配——全局限流 `GovernorLayer`、`DefaultBodyLimit`、CORS、`ConnectInfo`、
+优雅停机。网页走 WASM 根本不碰它们，于是「测试全绿」与「部署起来能用」之间没有任何人验过。
+
+**做法**：`scripts/smoke-domain-http.mjs`（零依赖，用 node 的 `fetch` 打真 HTTP），
+`just smoke-domain` 起跑，共 52 项：15 端点 200 + `application/json` + **与 `apps/web/wasm`
+的输出逐字节一致**（「App 拿到和网页同一份逻辑」这句话从此是验过的，不是口号）；
+405 且 `Allow` 写明正确方法；坏 JSON / 空体 400 且错误体仍是 JSON；6 MiB → 413；
+限流头存在、前 9 连发无 429（证明这组端点**没有**挂到 translate 限流上）。
+
+**抓到一个真 bug**：`rapid-parse` 对坏请求体返回 **200**（核心返回 `String` 而非 `Result`，
+handler 无脑 `json_text`），其余 13 个 POST 端点都是 400。客户端 `if (res.ok)` 会把
+「我传错了」当成解析成功，再在缺字段处炸掉。已改成 400，并把「坏请求体必须 400」的
+用例从 10 个端点扩到全部 15 个——不按实现签名分派，否则下一个照抄的人还会漏。
+
+**三处「oneshot 永远看不到」的量测**（记录在案，尚未改动，需拍板）：
+
+1. **同步 CPU 跑在 tokio worker 上**：单 worker（≈ 单核 VPS）时，一个 3.2 MiB 简谱请求
+   让 `/health` 卡 **8,248 ms**（384 次采样，p50=1 ms，max=8248 ms）；10 核本机上
+   p95 仍是 1 ms——所以本机永远测不出来，真上了 1 核机器就是「健康检查超时 → 重启风暴」。
+2. **没有输出上限**：3.2 MiB 入 → **96.9 MB** 出、单核 8.4 s；`decode-batch` 78 KiB 入 →
+   3.6 MB 出（47 倍）。配合 burst 60，一台机器就能把 CPU 与带宽打满。
+3. **错误报文对客户端不友好**：429 的 body 是 `text/plain` 且**无 content-type**、
+   `retry-after: 0` / `Wait for 0s`；超限的 413 常在客户端表现为连接被重置
+   （Node/undici 直接 `ECONNRESET`），App / 小程序拿不到可读错误。
+
+顺带钉住的真服务行为：尾斜杠 **404**（严格匹配，客户端不要多写 `/`）；限流层跑在体积
+检查**之前**（预算耗尽时 6 MiB 请求得到 429 而不是 413，脚本据此把体积用例降级为 info）。
+
+**接入**：`just smoke-domain`（需先起服务，`SMOKE_BASE` 可指地址）；`scripts/smoke-backend.sh`
+末尾在真容器上跑同一份脚本（`command -v node` 才跑），`runbook-smoke.yml` 的 path filter
+补了它和 `apps/web/wasm/**`。脚本对 429 做退避重试，所以「服务刚被刷过」不会变成一片假红：
+紧接着重跑（预算只剩 7）仍是 49/49，两项预算相关用例转 info，重试 69 次。
+
+**验证**：`cargo test -p taiyin-server --lib` **102 通过**；真服务 52/52；`cargo fmt --check` 干净。
+
 ### 领域逻辑归位 Rust：批 1~4 落地 + 客户端门面 + 薄客户端端点（2026-11-17 ~ 11-19）
 
 `docs/rust-migration-phase0.md` 的批次表从「待拍板」走到执行完毕。前端不再各写一份领域规则，

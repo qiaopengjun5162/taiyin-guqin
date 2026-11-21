@@ -108,6 +108,19 @@ verify-wasm:
 smoke-browser:
     node scripts/smoke-browser.mjs
 
+# 15 个薄客户端端点的**真服务**冒烟（不是 oneshot）：405 / 400 / 413 / 限流，
+# 并把每个响应与 apps/web/wasm 的输出逐字节比对（证明「同一份逻辑」不是口号）。
+#
+# 前置：另开终端把服务跑起来——
+#   cargo build -p taiyin-server && PORT=3001 ./target/debug/taiyin-server
+# 用 SMOKE_BASE 指到别的地址：SMOKE_BASE=http://127.0.0.1:3101 just smoke-domain
+#
+# 为什么必须有这一条：oneshot 不经过 main() 里的全局限流、请求体上限、CORS，
+# 路由层全绿只证明 handler 对，证明不了部署起来能用。首次跑就抓到
+# rapid-parse 坏请求体回 200（其余端点 400）。
+smoke-domain:
+    node scripts/smoke-domain-http.mjs --base ${SMOKE_BASE:-http://127.0.0.1:3001}
+
 # 定弦名单四份同源校验（纯 Node，不需要构建产物）；--self-test 跑 7 条变异
 verify-tuning:
     node scripts/verify-tuning-contract.mjs --self-test && node scripts/verify-tuning-contract.mjs

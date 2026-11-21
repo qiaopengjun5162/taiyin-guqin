@@ -10,6 +10,8 @@ on:
     paths:
       - Dockerfile
       - scripts/smoke-backend.sh
+      - scripts/smoke-domain-http.mjs
+      - apps/web/wasm/**
       - docs/deploy-backend-runbook.md
       - crates/taiyin-server/**
       - crates/taiyin-server/migrations/**

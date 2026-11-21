@@ -16,7 +16,10 @@
 #      （认领必须出示原凭证，否则注册一下就能认领别人的谱）→ 登出即失效；
 #   6. 列表分页：limit 夹紧、越界返回空数组、响应带总数头；
 #   7. 限流层真的挂上了（响应带 x-ratelimit-* 头）——配置项写了却没接线
-#      是这类「以为有保护、其实没有」的经典事故。
+#      是这类「以为有保护、其实没有」的经典事故；
+#   8. 15 个薄客户端端点在真容器上真能用：405 / 400 / 413 / 限流逐项验，
+#      并把每个响应与 apps/web/wasm 的输出逐字节比对（oneshot 不经过
+#      全局限流、请求体上限、CORS，看不到这一层）。
 #
 set -euo pipefail
 
@@ -271,6 +274,18 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/v1/auth/me" \
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/v1/scores/$ID" \
   -H "x-owner-token: smoke-key-1")
 [[ "$code" == "200" ]] && ok "对钥匙删 → 200" || fail "对钥匙删应 200，实际 $code"
+
+# 8. 15 个薄客户端端点：真容器的 HTTP 面（405 / 400 / 413 / 限流），并逐个与
+#    apps/web/wasm 的输出逐字节比对。
+#
+# 为什么放在这里而不是只加 oneshot 用例：oneshot 不经过 main() 的装配
+# （全局限流、DefaultBodyLimit、CORS），路由层全绿不代表部署起来能用。
+# 2026-11-21 首次真服务实测就抓到 rapid-parse 坏请求体回 200。
+if command -v node >/dev/null 2>&1 && [[ -f scripts/smoke-domain-http.mjs ]]; then
+  node scripts/smoke-domain-http.mjs --base "$BASE" || fail "15 个领域端点在真容器上不达标"
+else
+  echo "（跳过领域端点冒烟：本机没有 node）"
+fi
 
 cleanup
 echo
