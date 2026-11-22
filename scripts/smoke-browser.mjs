@@ -298,8 +298,49 @@ async function desktop(browser) {
    *
    * 这两条是这个工具最基础的「存得住、找得回」，必须在真实浏览器里守住。
    */
-  await page.getByRole("button", { name: "发布到社区", exact: true }).first().click();
-  await page.waitForTimeout(2500);
+  /*
+   * ⚠ 这一步原先把按钮名写死成「发布到社区」，而那是**被判定成有后端**时
+   * 才有的 aria-label。判定规则在 `api.ts::isBrowserOnlyMode()`：
+   * `host !== "localhost" && host !== "127.0.0.1"` 就是纯前端模式。
+   *
+   * 于是本地跑（localhost）永远是 server 模式、线上 Pages 永远是 browser 模式
+   * ——两边按钮名不同（「发布到社区」/「保存」）。写死一个名字的后果是：
+   * **这套烟测从来没在线上跑通过**，线上真正的存储路径（纯前端存本机）
+   * 一直没被验证。2026-11-23 对着线上跑，第一刀就卡在这里。
+   *
+   * 现在按状态徽章判模式，两种模式都验「存得住」，并把模式写进断言名。
+   */
+  const storageMode = await page.evaluate(() => {
+    const text = document.body.innerText;
+    if (text.includes("存本机")) return "browser";
+    if (text.includes("存即公开") || text.includes("已发布（公开）")) return "server";
+    return "unknown";
+  });
+  await page
+    .getByRole("button", {
+      name: storageMode === "server" ? "发布到社区" : "保存",
+      exact: true,
+    })
+    .first()
+    .click({ timeout: 15000 });
+  /*
+   * 「已保存」是**瞬态**：`setSaveStatus("saved")` 之后 2 秒自动回落到 idle。
+   * 早先这里直接 `waitForTimeout(2500)` 再读，读到的必然是回落后的原始按钮名
+   * ——断言于是永远差一步。改成边等边采样，抓到瞬态才算数。
+   */
+  const readSaveLabel = () =>
+    page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll("button")).find((b) =>
+        /^(保存|发布到社区|已保存|保存失败|保存中…)$/.test((b.textContent ?? "").trim()),
+      );
+      return btn ? (btn.textContent ?? "").trim() : "";
+    });
+  let saveLabel = "";
+  for (let i = 0; i < 25; i++) {
+    saveLabel = await readSaveLabel();
+    if (saveLabel === "已保存" || saveLabel === "保存失败") break;
+    await page.waitForTimeout(100);
+  }
   const afterSave = await page.evaluate(() => ({
     stored: Object.keys(localStorage).some((k) => k.includes("scores")),
     hint: Array.from(document.querySelectorAll("div"))
@@ -307,10 +348,17 @@ async function desktop(browser) {
       .find((t) => t && /存到本机|保存失败/.test(t) && t.length < 90),
   }));
   check(
-    "后端连不上时保存降级到本机（不是「保存失败」）",
-    afterSave.stored && !String(afterSave.hint).includes("保存失败"),
-    `localStorage 有数据=${afterSave.stored}，提示=${JSON.stringify(afterSave.hint)}`,
+    `保存落到本机、按钮瞬时回「已保存」（模式：${storageMode}）`,
+    storageMode !== "unknown" && afterSave.stored && saveLabel === "已保存",
+    `localStorage 有数据=${afterSave.stored}，捕捉到的按钮=${JSON.stringify(saveLabel)}`,
   );
+  if (storageMode === "server") {
+    check(
+      "判成有后端但连不上时，如实说「存到本机」而不是假装发布成功",
+      String(afterSave.hint).includes("存到本机"),
+      `提示=${JSON.stringify(afterSave.hint)}`,
+    );
+  }
 
   await page.getByLabel("加载曲谱").first().click();
   await page.waitForTimeout(2200);
