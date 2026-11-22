@@ -16,37 +16,21 @@
 
 import { useEffect, useState } from "react";
 
-// NOTE: 保持类型定义与 wasm/Cargo.toml 中 wasm.rs 的导出签名一致。
-// 重新构建 WASM 后需手动同步类型。
-
-interface WasmModule {
-  translate_jianpu_to_jianzi(input_json: string): string;
-  translate_jianpu_sequence_to_jianzi(input_json: string): string;
-  arrange_jianpu_sequence_to_jianzi(input_json: string): string;
-  split_phrases_to_json(input_json: string): string;
-  get_jianzi_dictionary(input_json: string): string;
-  analyze_jianzi_frequency(input_json: string): string;
-  get_jianzi_variant_groups(): string;
-  encode_jianzi_batch(input_json: string): string;
-  decode_jianzi_batch(input_json: string): string;
-  parse_rapid_input(input_json: string): string;
-  get_rapid_slots(): string;
-  normalize_lianmei(input_json: string): string;
-  lianmei_groups(input_json: string): string;
-  lianmei_relation(input_json: string): string;
-  get_lianmei_options(): string;
-  link_lianmei(input_json: string): string;
-  clear_lianmei(input_json: string): string;
-  parse_jianpu(input_json: string): string;
-  get_jianpu_units(input_json: string): string;
-  jianzi_pitch(input_json: string): string;
-  explain_jianzi(input_json: string): string;
-  short_caption(input_json: string): string;
-  describe_hui_position(input_json: string): string;
-  structure_marks(): string;
-  jianzi_to_text(input_json: string): string;
-  parse_jianzi_text(input_json: string): string;
-}
+/**
+ * WASM 模块的导出签名 —— **从 wasm-pack 生成的声明派生，不再手抄一份**。
+ *
+ * 这里原本是手写 26 个函数的 `interface`，注释还写着「重新构建 WASM 后需手动同步」。
+ * 那是个沉默故障源：Rust 侧改掉一个导出名，TS 这份抄件照旧编译通过，
+ * 要等真跑到那一步才炸——和「端点只在路由层测过」是同一类问题。
+ *
+ * 现在直接取 `apps/web/wasm/taiyin_core.d.ts`（wasm-pack 每次构建都会重写它），
+ * 只 `Omit` 掉 glue 自带的两个初始化入口（本文件自己封装成 async / sync 两条路径）。
+ * Rust 少导一个、改个名，`tsc` 立刻红，不需要任何人记得去同步。
+ */
+type WasmModule = Omit<
+  typeof import("@/wasm/taiyin_core"),
+  "default" | "initSync"
+>;
 
 export type WasmLoadState = "idle" | "loading" | "ready" | "error";
 
