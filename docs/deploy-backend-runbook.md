@@ -173,7 +173,7 @@ curl -i http://127.0.0.1:13001/health     # 返回 200 即成功
 docker compose logs -f server
 ```
 
-> **镜像已公开、匿名可拉**（2026-11-05 实测不带凭据能取到 manifest）。若 `pull` 仍报
+> **镜像已公开、匿名可拉**（2026-11-05 实测不带凭据能取到 manifest；2026-11-23 由 CI 的匿名拉取再次确认）。若 `pull` 仍报
 > `denied`，去 GitHub → 头像 → **Packages** → `taiyin-server` → **Package settings**
 > 确认可见性是 **Public**（曾是私有：CI 的 `GITHUB_TOKEN` 有包读权限所以 CI 一直绿，
 > 私有态时服务器照样 denied——踩过的坑，留着防再踩）。
@@ -186,6 +186,13 @@ docker compose logs -f server
 
 > **回滚**：把 `.env` 里的 `IMAGE_TAG` 改成上一个 `sha-xxxxxx`，再 `docker compose up -d`。
 > 不用重新编译，也不用整包重下。
+
+> **CI 会替你先把镜像拉一遍**（2026-11-23 起）：`.github/workflows/backend-image.yml`
+> 推送成功后有个 `smoke` job，**匿名**拉回本次提交的 `sha-` 标签，照本手册第 2～6 节
+> 跑完整链路。所以「Backend Image 绿」现在的含义是「这个镜像真能拉、真能起」，
+> 而不只是「存进 ghcr 了」。匿名是刻意的：登录的 `GITHUB_TOKEN` 自带包读权限，
+> 包被误设成私有也照样拉得下来——那正是上面那个旧坑。若这一步报 `denied`，
+> 先按上面那条查可见性，别怀疑代码。
 
 ### 3B. 在服务器上编译（只在需要改后端代码时）
 
