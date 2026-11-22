@@ -785,7 +785,7 @@ fn transition_cost(prev: &GuqinNote, prev_units: Option<u32>, curr: &GuqinNote) 
 /// 以及「快句里还硬要换手」这种听着就手忙脚乱的地方。
 /// 刻意不报总代价：那是个抽象分数，涨了跌了对弹琴的人没有意义。
 /// 用户要的是「这一版手少跑几趟」，不是「代价从 1234 降到 1102」。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PathStats {
     /// 换弦次数（相邻两音弦序不同）。
     pub string_changes: u32,
@@ -913,7 +913,7 @@ fn row_min(rows: &RunCostRow) -> Option<(i64, u8, usize)> {
 /// `start` / `end` 是**传进 `arrange_sequence` 的那个数组**的下标（含两端）。
 /// 前端若把休止符滤掉再送进来，就要自己把它映射回带休止符的行号；
 /// 这里不做猜测——猜错一步，整行音符都会错位。
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PhraseSpan {
     /// 第几句（0 起）。
     pub index: usize,

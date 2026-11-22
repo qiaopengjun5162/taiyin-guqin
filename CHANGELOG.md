@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### 阶段 3：桥接层不再有领域口径（2026-11-23）
+
+迁移清单最后一项，两个提交。都在「让漂移不可能发生」这条线上。
+
+**一、WASM 导出签名不再手抄。** `taiyin-wasm.ts` 里原本手写 `interface WasmModule`
+抄了 26 个 `#[wasm_bindgen]` 导出，注释还写着「重新构建 WASM 后需手动同步」——
+Rust 改个名，TS 照旧编译通过、单测照旧全绿，要等用户点到那一步才炸。
+和「15 个端点只在路由层测过」是同构问题。现在直接派生 wasm-pack 每次构建都
+重写的声明：`Omit<typeof import("@/wasm/taiyin_core"), "default" | "initSync">`。
+纯类型推导，运行时不产生任何引用，不改打包结果、不碰产物。
+变异验证：`.d.ts` 里把 `explain_jianzi` 改名 → `tsc` 在 `jianzi-explain.ts:218`
+报 TS2551。
+
+**二、`describePhrases` / `describeArrangement` 归位 Rust。** 新增
+`crates/taiyin-core/src/describe.rs`（14 条 `#[test]`），wasm 导出 26 → 28，
+TS 侧只剩一条桥接。理由和 `explain.rs` 的释义放核心一样：网页、小程序、App
+得说**同一句话**——两处各写一套，用户只会怀疑自己记错了。而这段文字本来就
+是「不许撒谎」的约束（没减少的项不能提、指标变多了也要说、本来就最顺时直说），
+两处实现等于给漂移留门。
+
+- **载荷只发文案用到的四个字段**（`stats` / `greedy_stats` /
+  `identical_to_greedy` / `phrases`）。候选列表与落点索引在长曲里是几百个对象，
+  文案一个都不看；`DescribeInput` 在类型上就把「文案依赖什么」写死。
+- **降级只有一条出口**：引擎未就绪（`getWasmSync` 抛）、浏览器缓存着旧产物
+  （glue 没这个导出 → TypeError）、核心返回 `{"error":…}`，全部 `catch` → 空串。
+  界面少一句话，比编一句不成立的话强；渲染也不会因此白屏。
+- **HTTP 端点没跟着加**：15 个薄客户端端点里本来就没有编排
+  （`/api/v1/jianpu/arrange` 不存在），App 现在也不做编排，凭空加一个等于
+  造一个没人调用的公开面。
+
+踩坑：
+
+- 最初在 `callDescribe` 里同时写了 `if (!isWasmReady()) return "";` 和 try/catch。
+  变异验证直接暴露前者是死代码：删掉守卫，两条降级用例照样绿（catch 早兜住了）。
+  收敛成单一路径后再删 try/catch，两条用例同时红。
+- 那两个 describe 块原本在 `taiyin-wasm.test.ts` 里，而那个文件 mock 了
+  wasm glue——搬进 Rust 后它们只会测到替身。整体迁到新文件
+  `src/lib/__tests__/describe-arrangement.test.ts`，改用真实产物（12 例），
+  黄金字符串一个字没改：**换实现不换输出**，这就是迁移清单第 5 节约定的逐字节对照。
+- `sequence-mode.test.tsx` 早就用真实产物跑（`initWasmSync`），所以它那四句
+  「已编排：少 2 次换弦」的 UI 断言自动升级成端到端跨语言断言——改 Rust 一个字，
+  Rust 单测、TS 黄金样例、组件 UI 三处同时红（已实测）。
+
+验证：核心 **261** 用例（+14）、前端全量 **1397 用例 / 93 文件全绿**，覆盖率四项
+达标（行 94.50 / 语句 91.85 / 分支 84.51 / 函数 92.91），`just verify-contracts`
+三组 + `verify-wasm` / `verify-probe` 全绿。
+
 ### S2 批 2：再迁 3 个事件处理器，并记录「保留 async」的边界（2026-11-22 晚）
 
 批 1 之后继续梳理剩下 6 个调用方，按「async 是否只是因为 API 形状」分级：

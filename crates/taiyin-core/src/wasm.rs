@@ -353,6 +353,29 @@ pub fn describe_hui_position(input_json: &str) -> String {
     }
 }
 
+/// 编排结果的一句话文案（「已编排：少 3 次换弦、少 2 次音色切换」）。
+///
+/// 输入：`{"stats":…,"greedy_stats":…,"identical_to_greedy":…,"phrases":[…]}`；
+/// 输出：裸文本（前端不再自己拼措辞——网页 / 小程序 / App 必须说同一句话）。
+#[wasm_bindgen]
+pub fn describe_arrangement(input_json: &str) -> String {
+    match crate::describe::describe_arrangement_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
+/// 分句的一句话文案；只有一句时返回空串（短曲不硬标「第 1 句」）。
+///
+/// 输入：`{"phrases":[…]}`；输出：裸文本或空串。
+#[wasm_bindgen]
+pub fn describe_phrases(input_json: &str) -> String {
+    match crate::describe::describe_phrases_json(input_json) {
+        Ok(s) => s,
+        Err(e) => json_error(&e),
+    }
+}
+
 /// 5 个谱面结构记号及其释义。
 #[wasm_bindgen]
 pub fn structure_marks() -> String {

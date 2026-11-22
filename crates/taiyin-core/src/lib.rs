@@ -23,6 +23,7 @@ use ts_rs::TS;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+pub mod describe;
 pub mod explain;
 pub mod jianpu;
 pub mod jianpu_parse;

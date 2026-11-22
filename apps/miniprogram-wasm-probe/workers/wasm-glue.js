@@ -149,6 +149,51 @@ function describe_hui_position(input_json) {
 }
 
 /**
+ * 编排结果的一句话文案（「已编排：少 3 次换弦、少 2 次音色切换」）。
+ *
+ * 输入：`{"stats":…,"greedy_stats":…,"identical_to_greedy":…,"phrases":[…]}`；
+ * 输出：裸文本（前端不再自己拼措辞——网页 / 小程序 / App 必须说同一句话）。
+ * @param {string} input_json
+ * @returns {string}
+ */
+function describe_arrangement(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.describe_arrangement(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 分句的一句话文案；只有一句时返回空串（短曲不硬标「第 1 句」）。
+ *
+ * 输入：`{"phrases":[…]}`；输出：裸文本或空串。
+ * @param {string} input_json
+ * @returns {string}
+ */
+function describe_phrases(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.describe_phrases(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * 5 个谱面结构记号及其释义。
  * @returns {string}
  */
@@ -814,6 +859,8 @@ module.exports = {
   explain_jianzi,
   short_caption,
   describe_hui_position,
+  describe_arrangement,
+  describe_phrases,
   structure_marks,
   jianzi_to_text,
   parse_jianzi_text,

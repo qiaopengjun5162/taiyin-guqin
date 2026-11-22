@@ -28,6 +28,19 @@ export function short_caption(input_json: string): string;
  */
 export function describe_hui_position(input_json: string): string;
 /**
+ * 编排结果的一句话文案（「已编排：少 3 次换弦、少 2 次音色切换」）。
+ *
+ * 输入：`{"stats":…,"greedy_stats":…,"identical_to_greedy":…,"phrases":[…]}`；
+ * 输出：裸文本（前端不再自己拼措辞——网页 / 小程序 / App 必须说同一句话）。
+ */
+export function describe_arrangement(input_json: string): string;
+/**
+ * 分句的一句话文案；只有一句时返回空串（短曲不硬标「第 1 句」）。
+ *
+ * 输入：`{"phrases":[…]}`；输出：裸文本或空串。
+ */
+export function describe_phrases(input_json: string): string;
+/**
  * 5 个谱面结构记号及其释义。
  */
 export function structure_marks(): string;
@@ -225,7 +238,9 @@ export interface InitOutput {
   readonly arrange_jianpu_sequence_to_jianzi: (a: number, b: number) => [number, number];
   readonly clear_lianmei: (a: number, b: number) => [number, number];
   readonly decode_jianzi_batch: (a: number, b: number) => [number, number];
+  readonly describe_arrangement: (a: number, b: number) => [number, number];
   readonly describe_hui_position: (a: number, b: number) => [number, number];
+  readonly describe_phrases: (a: number, b: number) => [number, number];
   readonly encode_jianzi_batch: (a: number, b: number) => [number, number];
   readonly explain_jianzi: (a: number, b: number) => [number, number];
   readonly get_jianpu_units: (a: number, b: number) => [number, number];

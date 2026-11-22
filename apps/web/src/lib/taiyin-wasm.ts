@@ -411,83 +411,59 @@ export function arrangeJianpuSequenceSync(
 }
 
 /**
+ * 调核心的文案接口，统一处理「这段话说不出」的情况。
+ *
+ * 措辞与排序口径都在核心 `crates/taiyin-core/src/describe.rs` 一份——
+ * 网页、小程序、App 必须说同一句话，两处各写一套只会让用户怀疑自己记错了。
+ *
+ * 三种说不出话的情况**都从这一个出口降级成空串**，不抛错、不猜：
+ *
+ * 1. 引擎未就绪（SSR / 首屏渲染）——`getWasmSync()` 会抛；
+ * 2. 用户浏览器缓存着**旧** wasm 产物、glue 上没有这个导出——调用即 TypeError；
+ * 3. 核心返回 `{"error":…}`（载荷拼错了）——不把 JSON 摊到界面上。
+ *
+ * 不另加 `isWasmReady()` 早退：那只是同一件事的第二层，删掉任一层行为都不变，
+ * 反而让「到底哪一层在兜底」说不清。调试时把 catch 里的 return 换成 throw 即可。
+ */
+function callDescribe(
+  name: "describe_phrases" | "describe_arrangement",
+  payload: unknown,
+): string {
+  try {
+    const out = getWasmSync()[name](JSON.stringify(payload));
+    return out && !out.includes('"error"') ? out : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * 分句那一句人话。只有一句（或旧 wasm 没给）时返回空串——
  * 短曲上标「第 1 句」纯属噪声，用户还会以为按钮坏了。
  *
- * 排序只按**一个**指标：快句里赶不上的换手次数。它决定「这一句能不能弹下来」，
- * 换弦次数只是它的粗略代理。不看抽象总代价——那个分数涨跌对弹琴的人没有意义。
+ * 排序只看**一个**指标：快句里赶不上的换手次数。它决定「这一句能不能弹下来」，
+ * 换弦次数只是它的粗略代理。这些判断连同措辞都已搬进核心，这里只做桥接。
  */
 export function describePhrases(phrases: PhraseSpan[]): string {
-  if (phrases.length < 2) return "";
-
-  const hardest = phrases.reduce((a, b) => {
-    if (b.stats.rushed_moves !== a.stats.rushed_moves) {
-      return b.stats.rushed_moves > a.stats.rushed_moves ? b : a;
-    }
-    return b.stats.string_changes > a.stats.string_changes ? b : a;
-  });
-  const head = `全曲 ${phrases.length} 句`;
-
-  const rushed = hardest.stats.rushed_moves;
-  if (rushed > 0) {
-    return `${head}，第 ${hardest.index + 1} 句最赶（快句里换手 ${rushed} 次），先慢练这句`;
-  }
-  return `${head}，没有哪一句赶不上手`;
+  return callDescribe("describe_phrases", { phrases });
 }
 
 /**
  * 把编排结果说成一句人话。
  *
- * 只说琴人能直接感觉到的五件事（快句换手 / 散音连缀 / 换弦 / 音色切换 / 挪手），
- * 并且**只说真的减少了的**：编排换了落点但移动次数没变时，不该编一句「已优化」来邀功；
- * 本来就最顺的时候，更应该直说「这条已经是最顺的」——否则用户下次不信这个按钮。
- *
- * 反过来，如果有指标**变多**了，也要说出来。全局编排在长音之后允许手多走一趟，
- * 换来的是快句里不再换手——这个取舍是对的，但用户盯着列表数换弦次数时会发现对不上，
- * 不说就成了另一种撒谎。
- *
- * 长曲再补一句分句的账：整首的总数再漂亮，回到琴上还是得知道从哪一句开始练。
+ * 只说琴人能直接感觉到的五件事，且**只说真的减少了的**；指标变多时也要说出来。
+ * 措辞在核心 `describe.rs`，这里只把文案真正用到的四个字段发过去：
+ * 候选列表与落点索引在长曲里是几百个对象，文案一个都不看——裁掉之后
+ * 载荷从几十 KB 降到几百字节。
  */
 export function describeArrangement(result: JianpuArrangement): string {
-  const phraseNote = describePhrases(result.phrases);
-  const withPhrases = (text: string) => (phraseNote ? `${text}。${phraseNote}` : text);
-
-  if (result.identical_to_greedy) {
-    return withPhrases("这条已经是最顺的走法，逐音挑选和整句编排选的是同一个");
-  }
-
-  const parts: string[] = [];
-  const rushedSaved =
-    result.greedy_stats.rushed_moves - result.stats.rushed_moves;
-  const stringSaved =
-    result.greedy_stats.string_changes - result.stats.string_changes;
-  const toneSaved =
-    result.greedy_stats.technique_switches - result.stats.technique_switches;
-  const shiftSaved =
-    result.greedy_stats.finger_shifts - result.stats.finger_shifts;
-  const openRunBefore = result.greedy_stats.longest_open_run;
-  const openRunAfter = result.stats.longest_open_run;
-
-  // 急处换手排最前：它是「弹得动 / 弹不动」的分界线，换弦次数只是它的粗略代理
-  if (rushedSaved > 0) parts.push(`快句里少 ${rushedSaved} 次换手`);
-  // 散音连缀紧跟其后：它说的不是手好不好动，而是这一句听起来连不连。
-  // 一串空弦弹下来音高没错，但没有走手相连，这是排谱的人最容易被忽略的毛病。
-  if (openRunBefore > openRunAfter) {
-    parts.push(`最长一串散音从 ${openRunBefore} 个缩到 ${openRunAfter} 个`);
-  }
-  if (stringSaved > 0) parts.push(`少 ${stringSaved} 次换弦`);
-  if (toneSaved > 0) parts.push(`少 ${toneSaved} 次音色切换`);
-  if (shiftSaved > 0) parts.push(`少 ${shiftSaved} 次挪手`);
-
-  if (parts.length === 0) {
-    return withPhrases("已重排：落点换了，手的移动次数和逐音挑选一样");
-  }
-
-  const extra =
-    Math.max(0, -stringSaved) + Math.max(0, -shiftSaved);
-  const caveat =
-    extra > 0 ? `；换手总数多 ${extra} 次，但都落在来得及的地方` : "";
-  return withPhrases(`已编排：${parts.join("、")}${caveat}`);
+  const { stats, greedy_stats, identical_to_greedy, phrases } = result;
+  return callDescribe("describe_arrangement", {
+    stats,
+    greedy_stats,
+    identical_to_greedy,
+    phrases,
+  });
 }
 
 /**

@@ -1,11 +1,12 @@
 {
   "schema": 1,
   "note": "由 scripts/build-worker.mjs 生成，勿手改。不含时间戳，无变化重跑不会产生 diff。",
-  "sourceFingerprint": "sha256:e96f809d80030bb311c950d6b75d7b44f5062b6f596cf03dc0be5ee99a076477",
+  "sourceFingerprint": "sha256:39398de0cf90236d8a59d8013087b0ddae571c150ac9b34ad0cd665ed30ea063",
   "sourceInputs": [
     "Cargo.toml",
     "crates/taiyin-core/Cargo.toml",
     "crates/taiyin-core/src/bin/gen_types.rs",
+    "crates/taiyin-core/src/describe.rs",
     "crates/taiyin-core/src/explain.rs",
     "crates/taiyin-core/src/jianpu.rs",
     "crates/taiyin-core/src/jianpu_parse.rs",
@@ -20,19 +21,21 @@
     "crates/taiyin-core/src/wasm.rs"
   ],
   "wasm": {
-    "bytes": 346012,
-    "sha256": "41ca30e56ca4f2deea5b8e73604a55349b887047eaed998dd3cbb8c42db7d725"
+    "bytes": 357781,
+    "sha256": "f90028e39c1b6e58692716a492654be3837daaa0d60bfa55a89e9849591206dc"
   },
   "glue": {
-    "bytes": 28594,
-    "sha256": "c142c238c008e493f7562204071539d4e9012b8d7c65774ab254fb4eb229eeea"
+    "bytes": 30196,
+    "sha256": "8639e8165b04a396468fc31a8a58d53bee05c42b6d244a24908c5e89796365e3"
   },
   "publicExports": [
     "analyze_jianzi_frequency",
     "arrange_jianpu_sequence_to_jianzi",
     "clear_lianmei",
     "decode_jianzi_batch",
+    "describe_arrangement",
     "describe_hui_position",
+    "describe_phrases",
     "encode_jianzi_batch",
     "explain_jianzi",
     "get_jianpu_units",
