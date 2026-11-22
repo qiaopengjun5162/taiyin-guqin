@@ -29,4 +29,4 @@ EXPOSE 3001
 
 # 绝对路径 + exec 形式：不经过 shell，SIGTERM 能直达进程，优雅停机才会生效
 # （shell 形式下 PID 1 是 sh，SIGTERM 到不了 taiyin-server，graceful shutdown 永不触发）。
-CMD ["/usr/local/bin/taiyin-server-TYPO"]
+CMD ["/usr/local/bin/taiyin-server"]
