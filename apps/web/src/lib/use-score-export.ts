@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useState, type RefObject } from "react";
-import { encodeJianziBatch } from "./taiyin-wasm";
+import { encodeJianziBatchSync } from "./taiyin-wasm";
 import { renderScoreToBuffer, downloadWav } from "./audio-export";
 import { scoreToMidi, downloadMidi } from "./midi-export";
 import { formatScoreAsText, downloadTextFile } from "./score-export";
@@ -70,23 +70,24 @@ export function useScoreExport({
    * 码在 Rust 端算；引擎没起来时退回不带码的文本，不让导出整个失败。
    */
   const exportText = useCallback(() => {
-    void (async () => {
-      let codes: (string | null)[] | undefined;
-      try {
-        codes = await encodeJianziBatch(score.map((note) => note.jianzi));
-      } catch {
-        codes = undefined;
-      }
-      const text = formatScoreAsText(score, {
-        title: scoreTitle,
-        beatsPerBar,
-        tuning: tuningLabel,
-        codes,
-        // 时值跟着码走：导出的文本能被「减字码入谱」原样读回，节奏不丢。
-        annotateRhythm: true,
-      });
-      downloadTextFile(text, `${scoreTitle || "taiyin-score"}.txt`);
-    })();
+    // 同步编码（S2）：编码是纯计算，WASM 由启动时预加载。摊平原来的 async IIFE，
+    // 少一层微任务；未就绪时同步 getter 抛错，仍落进 catch 走「不带码」降级，
+    // 与文档里的取舍一致——点了总比没反应好。
+    let codes: (string | null)[] | undefined;
+    try {
+      codes = encodeJianziBatchSync(score.map((note) => note.jianzi));
+    } catch {
+      codes = undefined;
+    }
+    const text = formatScoreAsText(score, {
+      title: scoreTitle,
+      beatsPerBar,
+      tuning: tuningLabel,
+      codes,
+      // 时值跟着码走：导出的文本能被「减字码入谱」原样读回，节奏不丢。
+      annotateRhythm: true,
+    });
+    downloadTextFile(text, `${scoreTitle || "taiyin-score"}.txt`);
   }, [score, scoreTitle, beatsPerBar, tuningLabel]);
 
   /** 导出旋律为 WAV 音频（离线渲染，与播放音色一致）。 */

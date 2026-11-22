@@ -4,8 +4,8 @@ import { Fragment, useState } from "react";
 import type { NoteColumn, JianpuNumber } from "@/lib/types";
 import { createEmptyState } from "@/lib/jianzi";
 import {
-  translateJianpuSequenceToJianzi,
-  arrangeJianpuSequence,
+  translateJianpuSequenceToJianziSync,
+  arrangeJianpuSequenceSync,
   describeArrangement,
   api,
   type JianpuArrangement,
@@ -53,7 +53,11 @@ export function SequenceMode({
 
   const preview = useNotePreview(TUNING_TO_ID[tuning]);
 
-  async function handleTranslate() {
+  // S2 同步路径：WASM 由启动时预加载，就绪后翻译是纯计算。刻意不在这里另加
+  // useWasmInit 门控——父组件 jianpu-translator 已传 disabled={!wasmReady}，
+  // 重复门控会让独立渲染时的「失败降级」用例点不动按钮（曾误加，已回退）。
+  // 未就绪时同步 getter 抛错，下面 try/catch 照常显示原因。
+  function handleTranslate() {
     const parsed = parseJianpuString(input);
     const playable = parsed.filter(
       (n): n is ParsedJianpuNote => n.kind === "note",
@@ -69,7 +73,7 @@ export function SequenceMode({
     setLoading(true);
     setError(null);
     try {
-      const raw = await translateJianpuSequenceToJianzi(
+      const raw = translateJianpuSequenceToJianziSync(
         JSON.stringify({
           notes: playable.map((n) => ({ number: n.number, octave: n.octave })),
           tuning,
@@ -178,7 +182,7 @@ export function SequenceMode({
    * 返回的候选与选中项出自同一次计算，一起替换：候选顺序也跟着变成
    * 「本条路径选中的排首位」，所以不能只更新选中下标。
    */
-  async function handleArrange() {
+  function handleArrange() {
     const playable = notes.filter(
       (n): n is ParsedJianpuNote => n.kind === "note",
     );
@@ -188,7 +192,7 @@ export function SequenceMode({
     try {
       // 带上时值：编排要知道「这个音留了多少时间给手」。
       // 不带时值也能跑（按四分音符算），但那样八分连奏里的换把会被判成「来得及」。
-      const result = await arrangeJianpuSequence(
+      const result = arrangeJianpuSequenceSync(
         playable.map((n) => ({
           number: n.number,
           octave: n.octave,

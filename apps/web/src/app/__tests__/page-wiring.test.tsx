@@ -156,7 +156,7 @@ vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
     translateJianpuToJianzi: h.translateJianpuToJianzi,
     translateJianpuSequenceToJianzi: vi.fn(),
     splitPhrases: h.splitPhrases,
-    encodeJianziBatch: vi.fn().mockResolvedValue([]),
+    encodeJianziBatchSync: vi.fn().mockReturnValue([]),
     decodeJianziBatch: vi.fn(),
     getJianziDictionary: vi.fn().mockResolvedValue({ total: 0, entries: [] }),
     analyzeJianziFrequency: vi.fn().mockResolvedValue({ total: 0, rows: [] }),

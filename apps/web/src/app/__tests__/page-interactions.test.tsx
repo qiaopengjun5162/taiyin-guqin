@@ -57,7 +57,7 @@ const h = vi.hoisted(() => ({
   localDeleteScore: vi.fn(),
   exportPng: vi.fn(),
   exportSvg: vi.fn(),
-  translateJianpuToJianzi: vi.fn(),
+  translateJianpuToJianziSync: vi.fn(),
   // 分句：慢练按钮靠它决定「分几句、每句到哪」
   splitPhrases: vi.fn(),
   // 收藏：登录后打开曲谱列表会拉这两个，点星会调那两个
@@ -212,8 +212,9 @@ vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
   return {
     ...actual,
-    translateJianpuToJianzi: h.translateJianpuToJianzi,
-    translateJianpuSequenceToJianzi: vi.fn(),
+    translateJianpuToJianziSync: h.translateJianpuToJianziSync,
+    translateJianpuSequenceToJianziSync: vi.fn(),
+    translateJianpuToJianzi: () => { throw new Error("仍在走 async 单音翻译"); },
     splitPhrases: h.splitPhrases,
   };
 });
@@ -420,8 +421,8 @@ describe("Home · 音频导出", () => {
 
     fireEvent.click(screen.getByLabelText("导出文本"));
 
-    // 导出走真实的 WASM 编码（`encodeJianziBatch`），比替身多一层 await，
-    // 所以要用 waitFor 等异步 handler 跑完，而不是在 click 后立即断言。
+    // 导出编码已迁到同步版（encodeJianziBatchSync，走真实 WASM）。waitFor 仍保留：
+    // 点击处理里还有别的状态更新，等一轮比立即断言稳。
     await waitFor(() => expect(h.downloadTextFile).toHaveBeenCalledTimes(1));
     const [text, filename] = h.downloadTextFile.mock.calls[0];
     expect(text).toContain("沧海一声笑");
@@ -748,16 +749,16 @@ describe("Home · 简谱转减字", () => {
   });
 
   it("翻译出候选并选中后，往谱尾追加一列音符", async () => {
-    h.translateJianpuToJianzi.mockResolvedValue(CANDIDATES);
+    h.translateJianpuToJianziSync.mockReturnValue(CANDIDATES);
     const { container } = render(<Home />);
     expect(noteColumns(container).length).toBe(0);
 
     fireEvent.change(screen.getByLabelText("简谱数字"), { target: { value: "5" } });
     fireEvent.click(screen.getByRole("button", { name: "查音位" }));
 
-    await waitFor(() => expect(h.translateJianpuToJianzi).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(h.translateJianpuToJianziSync).toHaveBeenCalledTimes(1));
     // 传给 WASM 的载荷带上了数字/八度/调式
-    expect(JSON.parse(h.translateJianpuToJianzi.mock.calls[0][0])).toEqual({
+    expect(JSON.parse(h.translateJianpuToJianziSync.mock.calls[0][0])).toEqual({
       number: 5,
       octave: 0,
       tuning: "zheng",
@@ -771,7 +772,7 @@ describe("Home · 简谱转减字", () => {
   });
 
   it("翻译失败时展示错误文案", async () => {
-    h.translateJianpuToJianzi.mockRejectedValue(new Error("WASM 未初始化"));
+    h.translateJianpuToJianziSync.mockImplementation(() => { throw new Error("WASM 未初始化"); });
     render(<Home />);
 
     fireEvent.change(screen.getByLabelText("简谱数字"), { target: { value: "1" } });

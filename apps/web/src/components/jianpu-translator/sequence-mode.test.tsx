@@ -43,14 +43,17 @@ vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
   return {
     ...actual,
-    translateJianpuSequenceToJianzi: vi.fn(),
-    arrangeJianpuSequence: vi.fn(),
+    translateJianpuSequenceToJianziSync: vi.fn(),
+    arrangeJianpuSequenceSync: vi.fn(),
+    // S2 迁移哨兵：这两个事件处理器已走同步版，误调 async 版就红。
+    translateJianpuSequenceToJianzi: () => { throw new Error("sequence-mode 仍在走 async 翻译"); },
+    arrangeJianpuSequence: () => { throw new Error("sequence-mode 仍在走 async 编排"); },
   };
 });
 
 import {
-  translateJianpuSequenceToJianzi,
-  arrangeJianpuSequence,
+  translateJianpuSequenceToJianziSync,
+  arrangeJianpuSequenceSync,
   type JianpuArrangement,
   type PathStats,
   type PhraseSpan,
@@ -60,7 +63,7 @@ import {
  * 造一条候选减字。
  *
  * 字段必须与 Rust 生成的 `GuqinNote` 完全一致——这份对象现在直接喂给
- * `arrangeJianpuSequence` 的 mock 返回值，缺字段编译期就会炸，
+ * `arrangeJianpuSequenceSync` 的 mock 返回值，缺字段编译期就会炸，
  * 不会等到运行时才在谱面上变成空白减字。
  */
 function makeCandidate(
@@ -132,7 +135,7 @@ describe("SequenceMode · 候选缺失不丢音", () => {
   it("翻译漏回一组候选时，确认全部仍产出全部音符（缺失音减字留空、简谱保留）", async () => {
     const onSelect = vi.fn();
     // 输入 3 个音，但后端只回了 2 组候选（第三组为空）
-    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+    vi.mocked(translateJianpuSequenceToJianziSync).mockReturnValue(
       JSON.stringify({
         candidates_per_note: [
           [makeCandidate("按", 9, 6, "Gou", 3)],
@@ -170,7 +173,7 @@ describe("SequenceMode · 候选缺失不丢音", () => {
 
   it("全部候选齐全时照常成谱", async () => {
     const onSelect = vi.fn();
-    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+    vi.mocked(translateJianpuSequenceToJianziSync).mockReturnValue(
       JSON.stringify({
         candidates_per_note: [
           [makeCandidate("按", 9, 6, "Gou", 3)],
@@ -202,7 +205,7 @@ describe("SequenceMode · 智能编排", () => {
 
   it("编排后用的是全局路径选中的候选，而不是单音第一名", async () => {
     const onSelect = vi.fn();
-    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+    vi.mocked(translateJianpuSequenceToJianziSync).mockReturnValue(
       JSON.stringify({
         candidates_per_note: [
           [makeCandidate("散", 0, 0, "Tiao", 1), makeCandidate("按", 9, 6, "Gou", 3)],
@@ -212,7 +215,7 @@ describe("SequenceMode · 智能编排", () => {
     );
     // 全局编排把第一音换成了按音（弦三），并把它提到候选首位——这是 Rust 端的契约：
     // 返回的候选已经被按路径整理过，selections 恒指向首位。
-    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+    vi.mocked(arrangeJianpuSequenceSync).mockReturnValue(
       makeArrangement(
         [
           [makeCandidate("按", 9, 6, "Gou", 3), makeCandidate("散", 0, 0, "Tiao", 1)],
@@ -247,7 +250,7 @@ describe("SequenceMode · 智能编排", () => {
 
   it("编排结果要按休止符对齐，否则后面每个音都会左移、小节全错", async () => {
     const onSelect = vi.fn();
-    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+    vi.mocked(translateJianpuSequenceToJianziSync).mockReturnValue(
       JSON.stringify({
         candidates_per_note: [
           [makeCandidate("散", 0, 0, "Tiao", 1)],
@@ -255,7 +258,7 @@ describe("SequenceMode · 智能编排", () => {
         ],
       }),
     );
-    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+    vi.mocked(arrangeJianpuSequenceSync).mockReturnValue(
       makeArrangement(
         [
           [makeCandidate("散", 0, 0, "Tiao", 1)],
@@ -289,7 +292,7 @@ describe("SequenceMode · 智能编排", () => {
 
   it("手动改选候选后，编排标记要消失（旧代价已不对应当前选择）", async () => {
     const onSelect = vi.fn();
-    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+    vi.mocked(translateJianpuSequenceToJianziSync).mockReturnValue(
       JSON.stringify({
         candidates_per_note: [
           [
@@ -299,7 +302,7 @@ describe("SequenceMode · 智能编排", () => {
         ],
       }),
     );
-    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+    vi.mocked(arrangeJianpuSequenceSync).mockReturnValue(
       makeArrangement(
         [
           [
@@ -344,13 +347,13 @@ describe("SequenceMode · 智能编排", () => {
   it("按气口标出第几句，休止符不占句内音数、但占行号", async () => {
     const onSelect = vi.fn();
     const cand = () => [makeCandidate("散", 0, 0, "Tiao", 1)];
-    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+    vi.mocked(translateJianpuSequenceToJianziSync).mockReturnValue(
       JSON.stringify({
         candidates_per_note: [cand(), cand(), cand(), cand(), cand()],
       }),
     );
     // 5 6 (休止) 1 - 2 3 → 「1」放足两拍，这里是气口
-    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+    vi.mocked(arrangeJianpuSequenceSync).mockReturnValue(
       makeArrangement(
         [cand(), cand(), cand(), cand(), cand()],
         [0, 0, 0, 0, 0],
@@ -420,10 +423,10 @@ describe("SequenceMode · 智能编排", () => {
   it("只有一句时不画分隔线（短曲标「第 1 句」纯属噪声）", async () => {
     const onSelect = vi.fn();
     const cand = () => [makeCandidate("散", 0, 0, "Tiao", 1)];
-    vi.mocked(translateJianpuSequenceToJianzi).mockResolvedValue(
+    vi.mocked(translateJianpuSequenceToJianziSync).mockReturnValue(
       JSON.stringify({ candidates_per_note: [cand(), cand()] }),
     );
-    vi.mocked(arrangeJianpuSequence).mockResolvedValue(
+    vi.mocked(arrangeJianpuSequenceSync).mockReturnValue(
       makeArrangement(
         [cand(), cand()],
         [0, 0],

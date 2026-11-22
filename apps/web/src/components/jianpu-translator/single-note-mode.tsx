@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { JianpuNumber, JianpuOctave, NoteColumn } from "@/lib/types";
-import { translateJianpuToJianzi } from "@/lib/client";
+import { translateJianpuToJianziSync } from "@/lib/client";
 import { useNotePreview } from "@/lib/use-note-preview";
 import type { JianziCandidate } from "@/lib/generated/taiyin";
 import { buildJianziState, candidateToNoteColumn } from "./candidate";
@@ -44,12 +44,13 @@ export function SingleNoteMode({
     [candidates, stringFilter],
   );
 
-  async function handleTranslate() {
+  // S2 同步路径：同 sequence-mode，就绪门控由父组件统一管；未就绪抛错走 try/catch。
+  function handleTranslate() {
     if (!number) return;
     setLoading(true);
     setError(null);
     try {
-      const raw = await translateJianpuToJianzi(
+      const raw = translateJianpuToJianziSync(
         JSON.stringify({ number: parseInt(number, 10), octave: octaveValue, tuning }),
       );
       let parsed: { candidates: JianziCandidate[] } = { candidates: [] };

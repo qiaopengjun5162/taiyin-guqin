@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### S2 批 2：再迁 3 个事件处理器，并记录「保留 async」的边界（2026-11-22 晚）
+
+批 1 之后继续梳理剩下 6 个调用方，按「async 是否只是因为 API 形状」分级：
+
+- **迁了 3 个**（async 只为等初始化，纯事件处理器）：`use-score-export` 的
+  `encodeJianziBatch`、sequence-mode 的序列翻译与编排、single-note-mode 的单音翻译。
+  事件里的 try/catch/finally 与「失败降级」语义原样保留。
+- **保留 3 个 async**（有真实理由，迁了是负收益）：`jianzi-dictionary` /
+  `jianzi-frequency-panel` 在 useEffect 里加载，靠 `cancelled` 做竞态取消、把
+  setState 放进微任务回调以避 `react-hooks/set-state-in-effect`（代码注释明确写明）；
+  `score-phrases` 把「WASM 未就绪时内部等待」写进契约，hook 靠它 + 静默降级「不显示
+  分句」，且测试面最广。这三处把 async 换成同步会丢掉上面每一条语义，不迁。
+
+踩坑与取舍：
+
+- 曾给两个 translator mode 自加 `useWasmInit()` ready 门控，结果让独立渲染时的
+  两条用例（翻译成功 / 失败降级）点不动按钮——父组件 `jianpu-translator.tsx`
+  本就传 `disabled={!wasmReady}`，重复门控是过度设计，已回退并在代码留注释。
+- 测试 mock 一律打在绑定层 `@/lib/taiyin-wasm`（非门面）。迁 sync 后必须把
+  fixture 从 async 版换到 sync 版并给 async 版放「误调即抛」哨兵；否则行为一致、
+  功能用例分辨不出走哪条路。`page-interactions` / 两个 translator 测试都这么改了。
+- **已知守卫缺口**：`use-score-export` 没有专属 hook 测试；`page-panels` /
+  `page-wiring` 虽补了 sync mock，但没有「导出文本」用例，哨兵是空哨兵，
+  对 export 改回 async 的变异不红。功能正确性由 `page-interactions` 的真实 wasm
+  导出用例间接覆盖。补专属 hook 测试需 mock 多个依赖，性价比不足，记录在案。
+
+变异验证：两个 translator mode 改回 async → 大量用例红（哨兵拦住）；门面删同步
+导出（批 1 的闸门）仍有效。未动 `taiyin-core`，三份 WASM 无需重建。
+
 ### S2 批 1：同步 getter 第一次跑在真实业务路径上（2026-11-22）
 
 S2 的桥接（`taiyin-wasm.ts` 的 9 个 `...Sync`）与启动预加载（`WasmBootstrap`）早在

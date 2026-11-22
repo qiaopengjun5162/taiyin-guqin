@@ -10,8 +10,8 @@ import { JianpuTranslator } from "../jianpu-translator";
 import { resetTuningCache, setTuning } from "@/lib/tuning";
 import { ARRANGEMENT_TUNING_IDS, isArrangementTuning } from "../jianpu-translator/types";
 import {
-  translateJianpuToJianzi,
-  translateJianpuSequenceToJianzi,
+  translateJianpuToJianziSync,
+  translateJianpuSequenceToJianziSync,
   useWasmInit,
 } from "@/lib/taiyin-wasm";
 
@@ -65,10 +65,10 @@ vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/taiyin-wasm")>();
   return {
     ...actual,
-  translateJianpuToJianzi: vi.fn(async () =>
+  translateJianpuToJianziSync: vi.fn(() =>
     JSON.stringify({ candidates: [singleCandidate] }),
   ),
-  translateJianpuSequenceToJianzi: vi.fn(async () =>
+  translateJianpuSequenceToJianziSync: vi.fn(() =>
     JSON.stringify({
       candidates_per_note: [
         [singleCandidate],
@@ -109,6 +109,9 @@ vi.mock("@/lib/taiyin-wasm", async (importOriginal) => {
       ],
     }),
   ),
+  // S2 迁移哨兵：translator 已走同步版，误调 async 版就红。
+  translateJianpuToJianzi: () => { throw new Error("single-note 仍在走 async 翻译"); },
+  translateJianpuSequenceToJianzi: () => { throw new Error("sequence-mode 仍在走 async 翻译"); },
   useWasmInit: vi.fn(() => ({ state: "ready", error: null })),
   };
 });
@@ -171,7 +174,7 @@ describe("JianpuTranslator single mode", () => {
     await waitFor(() => {
       expect(getByText("散挑一")).toBeInTheDocument();
     });
-    expect(vi.mocked(translateJianpuToJianzi).mock.calls.at(-1)?.[0]).toContain('"tuning":"ruibin"');
+    expect(vi.mocked(translateJianpuToJianziSync).mock.calls.at(-1)?.[0]).toContain('"tuning":"ruibin"');
   });
 
   it("invalidates candidates when tuning changes", async () => {
@@ -296,7 +299,7 @@ describe("JianpuTranslator sequence mode", () => {
     await waitFor(() => {
       expect(getByText("散挑一")).toBeInTheDocument();
     });
-    const payload = vi.mocked(translateJianpuSequenceToJianzi).mock.calls.at(-1)?.[0] ?? "";
+    const payload = vi.mocked(translateJianpuSequenceToJianziSync).mock.calls.at(-1)?.[0] ?? "";
     expect(payload).toContain('"tuning":"manjiao"');
     expect(payload).toContain('"notes":');
   });
