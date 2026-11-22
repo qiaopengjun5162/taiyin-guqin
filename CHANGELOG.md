@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### 成品镜像终于有人拉下来跑了（2026-11-23）
+
+排查 CI 闸门时发现一个真空带：**服务器真正要 `docker pull` 的那个镜像，全仓库没有
+任何一处跑过**。
+
+- `backend-image.yml` 的 build 只做 build + push，推完就结束；
+- `runbook-smoke.yml` 调 `smoke-backend.sh`，而那个脚本是**本地 `docker build`**；
+- `deploy-smoke.yml` 为了避开「latest 还是上一个提交」的竞态，也**故意本地 build**。
+
+三条路都在验「代码能不能打包」，没有一条验「打出来的包能不能用」。于是缺静态库、
+CMD 写错、迁移没打进镜像、架构标错——这些都能让 push 成功而一拉下来就死，
+CI 全绿，服务器 `docker pull` 之后才发现。
+
+补法：`smoke-backend.sh` 支持 `SMOKE_IMG`，给了就**总是重新拉**这份镜像来跑同一条
+全链路（不复用本机同名标签——那会让一次坏推送被本机的旧好镜像盖过去）；
+`backend-image.yml` 推送后新增 `smoke` job，用**本次提交的 `sha-` 标签**拉回来跑
+（不用 `latest`：并发推送时它可能已经指向别人的提交，验了等于没验），并对注册表
+最终一致性做三次重试。
+
+本地用假 `docker` 验过三条分支：给了 `SMOKE_IMG` 只 pull 不 build；没给且本机有镜像
+就都不做；没给且没镜像才 build。
+
 ### 线上真浏览器验收：烟测首次在 Pages 上跑通（2026-11-23）
 
 `scripts/smoke-browser.mjs` 是一道「真浏览器 + 真视口 + 真断言」的发布前闸门，

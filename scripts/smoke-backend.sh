@@ -7,6 +7,15 @@
 #   CI  ：由 .github/workflows/runbook-smoke.yml 调用，改 Dockerfile / 手册 /
 #         服务端代码时自动跑一次，防止手册与代码各说各话。
 #
+#   验**已发布的成品镜像**（而不是本地构建）：
+#         SMOKE_IMG=ghcr.io/owner/taiyin-server:sha-1a2b3c4 bash scripts/smoke-backend.sh
+#         由 .github/workflows/backend-image.yml 在推送后调用。
+#
+#   为什么要专门有一条「验成品镜像」：这里默认是**本地 build**（deploy-smoke 也是），
+#   于是推送成功只证明「镜像存进 ghcr 了」，不证明「拉下来能跑」。服务器的 `docker pull`
+#   拿到的缺失静态库、写错的 CMD、没打进镜像的迁移……全都只有真拉真跑才暴露。
+#   「build 绿 ≠ 产物可用」和本项目其它几处是同一类问题。
+#
 # 它验的正是手册里最容易过时的几条承诺：
 #   1. 迁移内置：启动即自动建表，不需要手动跑 SQL；
 #   2. /health 200，且 CORS 白名单对陌生来源不回 allow-origin；
@@ -26,7 +35,10 @@ set -euo pipefail
 NET=taiyin-smoke-net
 PG=taiyin-pg-smoke
 SVR=taiyin-server-smoke
-IMG=taiyin-server:latest
+# 用哪个镜像跑。默认本地构建的 `taiyin-server:latest`；
+# 给了 SMOKE_IMG 就改成「用指定镜像」——用于验证 ghcr 上的成品，
+# 这样同一条脚本既能验「代码能不能打包」，也能验「打包出来的东西能不能用」。
+IMG="${SMOKE_IMG:-taiyin-server:latest}"
 PG_PW=taiyin_smoke_pw
 HOST_PORT="${HOST_PORT:-13001}"
 KEEP=0
@@ -48,11 +60,17 @@ docker rm -f "$PG"  >/dev/null 2>&1 || true
 docker network rm "$NET" >/dev/null 2>&1 || true
 docker network create "$NET" >/dev/null
 
-if ! docker image inspect "$IMG" >/dev/null 2>&1; then
+if [[ -n "${SMOKE_IMG:-}" ]]; then
+  # 给了镜像地址就**总是重新拉**，不复用本机同名标签：
+  # 复用的后果是「本机恰好有一份好的同标签镜像」把一次坏推送盖过去，
+  # 而那正是这条路径唯一要抓的东西。
+  echo "▶ 拉取成品镜像 $IMG"
+  docker pull "$IMG" || fail "拉不到成品镜像 $IMG"
+elif ! docker image inspect "$IMG" >/dev/null 2>&1; then
   echo "▶ 构建镜像（首次约 10 分钟）"
   timeout 1800 docker build -t "$IMG" . || fail "镜像构建失败"
 fi
-ok "镜像就绪"
+ok "镜像就绪（$IMG）"
 
 echo "▶ 起 Postgres（手册第 2 步：数据卷 + 只绑本机）"
 docker run -d --name "$PG" --network "$NET" \

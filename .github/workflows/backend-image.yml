@@ -64,3 +64,51 @@ jobs:
           # Rust 全量编译十几分钟，缓存命中能把后续构建压到 1~2 分钟
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  smoke:
+    # 为什么「推送成功」之后还要再拉一遍：这一步验的**不是代码，是产物**。
+    #
+    # 在它之前，全仓库没有任何一处跑过 ghcr 上的东西——
+    #   - 本 job 的 build 只做 build + push；
+    #   - runbook-smoke 的 smoke-backend.sh 是**本地 build**；
+    #   - deploy-smoke 为了避开「latest 还是上一个提交」的竞态，也故意本地 build。
+    # 于是服务器 `docker pull` 拿到的镜像是什么质量，CI 从来不知道：
+    # 缺静态库、CMD 写错、迁移没打进镜像、架构标错——这些都能让 push 成功而运行即死。
+    # 「build 绿 ≠ 产物可用」，和本项目其它几处「绿了但没真跑」是同一类事故。
+    #
+    # 用 **sha 标签**而不是 latest：并发推送时 latest 可能已经指向别人的提交，
+    # 用它验等于验了个不知道是谁的镜像。
+    name: 拉回成品镜像照手册跑一遍
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 登录 ghcr（公开镜像是匿名可拉，登录只为避免限速）
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 拼出本次推送的 sha 标签
+        id: ref
+        # 与上面 docker/metadata-action 的 `type=sha,format=short` 同一口径（7 位）
+        run: echo "image=ghcr.io/${{ github.repository_owner }}/taiyin-server:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: 照手册全链路验证（不重新构建，直接用拉下来的成品）
+        env:
+          SMOKE_IMG: ${{ steps.ref.outputs.image }}
+        run: |
+          set -euo pipefail
+          # 刚 push 完立刻 pull 偶尔会撞上注册表的最终一致性（明明推成功了却是 404），
+          # 那是登记延迟不是镜像坏。重试三次把这种情况和真失败分开。
+          for i in 1 2 3; do
+            if docker pull "$SMOKE_IMG"; then break; fi
+            echo "第 $i 次 pull 失败，等 10 秒重试"
+            sleep 10
+            [[ $i -lt 3 ]] || { echo "❌ 三次都拉不到 $SMOKE_IMG"; exit 1; }
+          done
+          bash scripts/smoke-backend.sh
+
