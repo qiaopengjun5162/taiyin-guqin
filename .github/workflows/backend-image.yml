@@ -85,30 +85,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 登录 ghcr（公开镜像是匿名可拉，登录只为避免限速）
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
+      # 刻意**不**登录 ghcr。
+      #
+      # 服务器是匿名拉的（手册 3A：「镜像已公开、匿名可拉」）。这条 job 一旦登录，
+      # `GITHUB_TOKEN` 自带包读权限，**包被误设成私有也照样拉得下来**——手册里记着
+      # 这个坑踩过一次：CI 一直绿，服务器 denied。闸门的凭据必须和真用户的凭据一致，
+      # 否则它验的就不是同一条路。
       - name: 拼出本次推送的 sha 标签
         id: ref
         # 与上面 docker/metadata-action 的 `type=sha,format=short` 同一口径（7 位）
         run: echo "image=ghcr.io/${{ github.repository_owner }}/taiyin-server:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: 照手册全链路验证（不重新构建，直接用拉下来的成品）
+      - name: 照手册全链路验证（匿名拉成品，不重新构建）
         env:
           SMOKE_IMG: ${{ steps.ref.outputs.image }}
         run: |
           set -euo pipefail
           # 刚 push 完立刻 pull 偶尔会撞上注册表的最终一致性（明明推成功了却是 404），
           # 那是登记延迟不是镜像坏。重试三次把这种情况和真失败分开。
+          #
+          # 这里的 pull 同时兼作「包可见性」检查：匿名拉不到就是服务器也拉不到。
           for i in 1 2 3; do
             if docker pull "$SMOKE_IMG"; then break; fi
             echo "第 $i 次 pull 失败，等 10 秒重试"
             sleep 10
-            [[ $i -lt 3 ]] || { echo "❌ 三次都拉不到 $SMOKE_IMG"; exit 1; }
+            [[ $i -lt 3 ]] || {
+              echo "❌ 三次都拉不到 $SMOKE_IMG"
+              echo "   若报 denied/unauthorized：去 Packages → taiyin-server → Package settings 把可见性改回 Public"
+              exit 1
+            }
           done
           bash scripts/smoke-backend.sh
 
