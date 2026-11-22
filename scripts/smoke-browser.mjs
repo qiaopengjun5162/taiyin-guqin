@@ -335,6 +335,73 @@ async function desktop(browser) {
 }
 
 /**
+ * 序列编排 → 「说人话」：验证**线上产物**里的 wasm 真的导出了 describe_arrangement。
+ *
+ * 为什么要真浏览器：这两句文案 2026-11-23 从 TS 搬进了 Rust（`describe.rs`），
+ * 单测读的是仓库里的 `.wasm` 文件，验不到「静态导出产物 + basePath + 部署」这条
+ * 链路；而这条链路上任何一环不对，页面都会静默少一句话（代码里是空串降级）——
+ * 正好是「测试全绿但实际不可用」的典型形态。
+ *
+ * 顺带查静态产物里有没有 `taiyin_core.d.ts`：`wasm/` 与 `public/wasm/` 是两份拷贝，
+ * 只更新一份就会出现「声明说导出、运行时没有」。
+ */
+async function seqArrange(browser) {
+  console.log("\n=== 序列编排 · 说人话 ===");
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(BASE, { waitUntil: "networkidle", timeout: 60000 });
+  await page.waitForTimeout(1500);
+
+  // 产物层：用页面内 fetch，才走得通浏览器自己的代理设置
+  const dts = await page.evaluate(async (url) => {
+    const r = await fetch(url);
+    return { ok: r.ok, status: r.status, text: r.ok ? await r.text() : "" };
+  }, `${BASE}/wasm/taiyin_core.d.ts`);
+  check(
+    "静态产物里有 wasm 声明，且声明了 describe_arrangement / describe_phrases",
+    dts.ok &&
+      dts.text.includes("describe_arrangement") &&
+      dts.text.includes("describe_phrases"),
+    `HTTP ${dts.status}，${dts.text.length} 字节`,
+  );
+
+  try {
+    const jpTab = page.getByRole("button", { name: "简谱转减字" }).first();
+    await jpTab.click({ timeout: 8000 });
+    await page.waitForTimeout(400);
+    await page.getByRole("button", { name: "序列", exact: true }).first().click({ timeout: 8000 });
+    await page.waitForTimeout(300);
+
+    const ta = page.locator("#keyboard-area textarea").first();
+    await ta.fill("5 6 1 2 3 5 6 1 2 3");
+    await page.getByRole("button", { name: "翻译", exact: true }).first().click({ timeout: 8000 });
+    // 翻译走 WASM，首次要等产物加载
+    await page.waitForTimeout(1500);
+
+    const arrangeBtn = page.getByRole("button", { name: "智能编排" }).first();
+    check("翻译成功后出现「智能编排」按钮", (await arrangeBtn.count()) > 0);
+    await arrangeBtn.click({ timeout: 8000 });
+    await page.waitForTimeout(1200);
+
+    const summary = await page.evaluate(() => {
+      const el = document.querySelector("[data-arrange-summary]");
+      return el ? (el.textContent ?? "").trim() : "";
+    });
+    check(
+      "编排后给出「说人话」结论（文案由核心 Rust 提供）",
+      /^(已编排：|已重排：|这条已经是最顺)/.test(summary),
+      `实际：${JSON.stringify(summary)}`,
+    );
+  } catch (e) {
+    check("序列编排交互可走通", false, String(e).split("\n")[0]);
+  }
+
+  check("序列编排全过程无 JS 运行时错误", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+/**
  * 撤销/重做与节拍器状态提示。
  *
  * 两处都是「按钮在、点了没反馈」的经典形态：
@@ -545,9 +612,18 @@ async function subPages(browser) {
   }
 }
 
-const browser = await chromium.launch();
+/*
+ * 本机代理：线上的 GitHub Pages 直连会直接拿不到响应（本项目实测 curl 恒 000），
+ * 所以对着线上跑要带 SMOKE_PROXY=http://127.0.0.1:7890。
+ * 同时 bypass 掉 localhost——本机冒烟不该被代理绕一圈。
+ */
+const PROXY = process.env.SMOKE_PROXY ?? "";
+const browser = await chromium.launch(
+  PROXY ? { proxy: { server: PROXY, bypass: "localhost,127.0.0.1" } } : {},
+);
 try {
   await desktop(browser);
+  await seqArrange(browser);
   await editingControls(browser);
   await subPages(browser);
   await mobile(browser);

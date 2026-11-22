@@ -366,7 +366,10 @@ export function SequenceMode({
       </div>
       {/* 编排到底省了什么，单独一行说清楚：塞在按钮行里会被挤成省略号 */}
       {arrangeResult && notesTuning === tuning && (
-        <p className="text-[10px] leading-relaxed tracking-wider text-amber-800/70">
+        <p
+          data-arrange-summary
+          className="text-[10px] leading-relaxed tracking-wider text-amber-800/70"
+        >
           {describeArrangement(arrangeResult)}
         </p>
       )}
