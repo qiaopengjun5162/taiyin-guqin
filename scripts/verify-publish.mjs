@@ -19,6 +19,12 @@
  * 一旦其中一个停在旧版，「先听一首」点了没声音，首访修复就白做一半。
  * 这些检查以前全靠人手工做，本脚本把它们收成一条命令。
  *
+ *
+ * 2026-11-23 修一处假红：首访检查还在找 11-18 就删掉的「太音是什么」介绍区，
+ * 于是线上恒报 FAIL，且前置一失败就跳过「点先听一首真出声」这段最该验的链路
+ * ——闸门报红反而把真问题藏了起来。锚点改为现行的 `aria-label="开始使用"`
+ * （与 page.test.tsx 同一口径）。变异验证：介绍区和按钮都在、只摘掉自动出声，
+ * 闸门立刻报 `AudioContext=0 / 播放态=false`，证明它验的是声音不是静态标签。
  * 2026-11-09 又补一条：方向 C 改完仓库口径后，草稿箱待群发的定位文没跟上
  * （仍把已判定失效的「拍照认谱」当核心入口写）。故新增「对外口径无超线表述」，
  * 把当前有效口径文件里的禁用短语收进闸门，防止口径改完又悄悄回退。
@@ -419,7 +425,17 @@ async function checkBrowser() {
       const page = await browser.newPage({ viewport: { width: 480, height: 900 } });
       await page.addInitScript(INIT);
       await page.goto(t.url, { waitUntil: "networkidle", timeout: 60000 });
-      const intro = await page.locator('section[aria-label="太音是什么"]').count();
+      /*
+       * ⚠ 锚点在 2026-11-18 跟着首屏一起改了：旧版是 `section[aria-label="太音是什么"]`
+       * + 407 字三类入口，那天按「一句话原则」重写成 `aria-label="开始使用"` +
+       * 两个按钮（见 page.tsx 首屏注释 / page.test.tsx）。闸门没跟着改，于是在线上
+       * 恒判 FAIL——但更糟的是这个前置条件一失败，下面的「点先听一首真出声」
+       * 整段被跳过：发布闸门报了红，反而把真正该验的链路藏了起来。
+       *
+       * 用 aria-label 而非 class / 文本：文案还会改，语义锚点才稳定；且和
+       * page.test.tsx 的断言同一口径，两边不会各认一个页面。
+       */
+      const intro = await page.locator('section[aria-label="开始使用"]').count();
       const btn = page.getByRole("button", { name: /先听一首/ });
       if (!intro || !(await btn.count())) {
         bad(`${t.name} 首访链路`, "介绍区或「先听一首」按钮缺失");
