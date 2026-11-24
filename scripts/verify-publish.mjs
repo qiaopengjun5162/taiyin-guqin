@@ -125,6 +125,40 @@ export function isCurrentCopy(html) {
 }
 
 /**
+ * 首访链路判定，纯函数、便于 --self-test 变异验证。
+ *
+ * 2026-11-23 踩过：原实现拿 `section[aria-label="…"]` 介绍区当前置，还把
+ * 「介绍区/按钮缺失」与「按钮点了不出声」混成一个 FAIL。11-18 首屏重写换了
+ * 介绍区的 aria-label，闸门就一直报红，并把后面的出声断言整段跳过——
+ * **报红不等于验到，那次是没验到**。
+ *
+ * 现在只认「按钮在不在」这一个真前置：介绍区是容器、与出声无关，它存不存在
+ * 由 `page.test.tsx` 守，别在发布闸门里重复耦合。三种结论分开报：
+ *
+ *   1. 按钮不在 → FAIL「没验到」，明说链路没走到，不是出声坏了；
+ *   2. 按钮在但没出声 → FAIL「验到坏的」，这才是真故障；
+ *   3. 按钮在且真出声 → PASS。
+ */
+export function firstVisitVerdict({ buttonCount, audio, playing }) {
+  if (!buttonCount) {
+    return {
+      level: "FAIL",
+      detail: "找不到「先听一首」按钮 → 本次没验到出声链路（是没验到，不是出声坏了）",
+    };
+  }
+  if (audio.created >= 1 && audio.running >= 1 && playing) {
+    return {
+      level: "PASS",
+      detail: `AudioContext ${audio.created} 次 / running / 播放键变停止`,
+    };
+  }
+  return {
+    level: "FAIL",
+    detail: `按钮点了但没出声（验到坏的）：AudioContext=${JSON.stringify(audio)} 播放态=${playing}`,
+  };
+}
+
+/**
  * 纯函数：返回命中的禁用短语（去重）。
  * 注释行豁免——组件头部注释要保留「旧注释称…是错的，已更正」这段误判史，
  * 属否定语境；UI 文案行不豁免，出现即判红。
@@ -426,31 +460,24 @@ async function checkBrowser() {
       await page.addInitScript(INIT);
       await page.goto(t.url, { waitUntil: "networkidle", timeout: 60000 });
       /*
-       * ⚠ 锚点在 2026-11-18 跟着首屏一起改了：旧版是 `section[aria-label="太音是什么"]`
-       * + 407 字三类入口，那天按「一句话原则」重写成 `aria-label="开始使用"` +
-       * 两个按钮（见 page.tsx 首屏注释 / page.test.tsx）。闸门没跟着改，于是在线上
-       * 恒判 FAIL——但更糟的是这个前置条件一失败，下面的「点先听一首真出声」
-       * 整段被跳过：发布闸门报了红，反而把真正该验的链路藏了起来。
-       *
-       * 用 aria-label 而非 class / 文本：文案还会改，语义锚点才稳定；且和
-       * page.test.tsx 的断言同一口径，两边不会各认一个页面。
+       * 只认「按钮在不在」这一个前置，结论统一走 firstVisitVerdict()。
+       * 不再检查介绍区容器：11-18 首屏重写时它换了 aria-label，闸门跟着报红，
+       * 还把出声断言整段跳过（见 firstVisitVerdict 注释）。它是页面结构，
+       * 由 page.test.tsx 守，发布闸门只管「点下去有没有声音」。
        */
-      const intro = await page.locator('section[aria-label="开始使用"]').count();
       const btn = page.getByRole("button", { name: /先听一首/ });
-      if (!intro || !(await btn.count())) {
-        bad(`${t.name} 首访链路`, "介绍区或「先听一首」按钮缺失");
-      } else {
+      const buttonCount = await btn.count();
+      let audio = { created: 0, running: 0 };
+      let playing = false;
+      if (buttonCount) {
         await btn.click();
         await page.waitForTimeout(1500);
-        const audio = await page.evaluate(() => window.__audio);
+        audio = await page.evaluate(() => window.__audio);
         const texts = await page.locator("button").allTextContents();
-        const playing = texts.some((b) => /停止|暂停/.test(b));
-        if (audio.created >= 1 && audio.running >= 1 && playing) {
-          ok(`${t.name} 首访链路`, `AudioContext ${audio.created} 次 / running / 播放键变停止`);
-        } else {
-          bad(`${t.name} 首访链路`, `AudioContext=${JSON.stringify(audio)} 播放态=${playing}`);
-        }
+        playing = texts.some((b) => /停止|暂停/.test(b));
       }
+      const verdict = firstVisitVerdict({ buttonCount, audio, playing });
+      add(verdict.level, `${t.name} 首访链路`, verdict.detail);
     } catch (e) {
       bad(`${t.name} 首访链路`, String(e).slice(0, 120));
     } finally {
@@ -473,6 +500,38 @@ function selfTest() {
     ["注释里的更正史应豁免", bannedCopyIn(" * 旧注释称「大九勾四这类整字都在」是错的，已更正。").length, 0],
     ["UI 文案里的旧口径须判红", bannedCopyIn('        "AI 按坐标识别每个减字"').length > 0, true, true],
   ];
+
+  // ── 首访链路（2026-11-24）：「没验到」与「验到坏的」必须分开报 ──
+  const fv = (o) => firstVisitVerdict({ audio: { created: 0, running: 0 }, playing: false, ...o });
+  cases.push(
+    ["按钮在且真出声应通过", fv({ buttonCount: 1, audio: { created: 1, running: 1 }, playing: true }).level, "PASS"],
+    [
+      "按钮在但没出声须判红（验到坏的）",
+      fv({ buttonCount: 1 }).detail.includes("验到坏的"),
+      true,
+      true,
+    ],
+    [
+      "按钮不在须判红且明说没验到",
+      (() => {
+        const v = fv({ buttonCount: 0, audio: { created: 1, running: 1 }, playing: true });
+        return v.level === "FAIL" && v.detail.includes("没验到") && !v.detail.includes("没出声");
+      })(),
+      true,
+      true,
+    ],
+    [
+      "出声数据再好也不能替代按钮存在",
+      fv({ buttonCount: 0, audio: { created: 9, running: 9 }, playing: true }).level,
+      "FAIL",
+      true,
+    ],
+    [
+      "介绍区漂移不再影响判定",
+      fv({ buttonCount: 1, introCount: 0, audio: { created: 1, running: 1 }, playing: true }).level,
+      "PASS",
+    ],
+  );
 
   // ── 物料层（2026-11-09 新增）────────────────────────────────
   const has = (text, opts = {}) => scanMaterial({ text, file: "t.md", hashFn: sha16, requiredPhrases: [], ...opts }).findings.length > 0;
