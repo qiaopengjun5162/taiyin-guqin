@@ -15,6 +15,13 @@ on:
       - crates/taiyin-core/**
       - crates/taiyin-server/**
       - .github/workflows/backend-image.yml
+      # smoke job 跑的就是这两份脚本，且它是**唯一**验「匿名拉成品」路径的地方
+      # （runbook-smoke 跑同脚本但走本地 build 分支，验不到 SMOKE_IMG 那条路）。
+      # 历史实证：6287884 给脚本加了收藏链路，只改脚本+文档，本 workflow 没触发。
+      # 补上 paths 后，改成品闸门脚本一定会连着把成品再拉一遍验掉。
+      # 低频（脚本不常改）+ buildx 的 gha 缓存命中，重建成本可接受。
+      - scripts/smoke-backend.sh
+      - scripts/smoke-domain-http.mjs
   workflow_dispatch:
 
 permissions:
