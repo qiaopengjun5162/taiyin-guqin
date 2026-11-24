@@ -1,5 +1,21 @@
 # 更新日志
 
+## [Unreleased]
+
+### 成品闸门脚本改了不触发的问题（2026-11-24）
+
+`backend-image.yml` 的 smoke job 是**唯一**验「匿名拉成品镜像」路径的地方，
+但它的 `paths:` 里没有那两份脚本——`runbook-smoke.yml` 虽覆盖脚本改动，跑的却是
+本地 build 分支，验不到 `SMOKE_IMG`。历史实证：`6287884` 给 `smoke-backend.sh`
+加了收藏链路（只改脚本+文档），本 workflow 根本没触发。
+
+把 `scripts/smoke-backend.sh` 与 `scripts/smoke-domain-http.mjs` 补进 paths。
+低频改动 + buildx gha 缓存，成本可接受；这和当初拒绝把 `crates/taiyin-server/**`
+塞进 `deploy-smoke` 的理由不同——那会让每次后端改动第三次重建镜像。
+
+用历史提交的文件列表跑本地匹配器：`6287884` 现在会命中 `smoke-backend.sh`；
+假 docker 确认成品路径只 `pull`、不 `build`。
+
 ### 首访闸门把「没验到」与「验到坏的」分开（2026-11-24）
 
 上一轮修锚点时留的未完成改进，这一轮收口。原实现拿介绍区 `section[aria-label=…]`
