@@ -18,6 +18,10 @@ export default defineConfig({
         "src/**/__tests__/**",
         "src/lib/generated/**",
         "src/lib/svg-paths.qiji.ts",
+        // 纯 re-export 门面：没有可执行语句，v8 对它恒报 0%，属于口径噪声而不是质量信号。
+        // 它的价值是「谁能 import 什么」这条约束，由 `client-boundary.test.ts`（组件不许绕过）
+        // 与 `client-facade.test.ts`（承诺过的导出还在、模块真能加载）两条测试守，不靠覆盖率。
+        "src/lib/client/index.ts",
         // 静态资源不是可执行代码，计入只会制造 0% 噪声
         "src/**/*.css",
         "src/app/favicon.ico",

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### 补薄点：断网判据从 30% 分支覆盖到 100%，门面公开面加守卫（2026-11-25）
+
+覆盖率四条都过线，但有两处「数字过了、该守的没守」：
+
+| 位置 | 之前 | 现在 |
+| --- | --- | --- |
+| `lib/net-error.ts`（断网判据） | 行 50% / 分支 30% | 行、语句、分支、函数全 100% |
+| `lib/client/index.ts`（门面 re-export） | 恒 0%，无人过问 | 移出口径 + 公开面加测试 |
+
+**断网判据错在两个方向都很难看**：判宽了，真实缺陷（读 `undefined` 引发的 `TypeError`）
+被当成断网吞掉——2026-11-18 真踩过；判窄了，断网时不敢降级，用户辛苦打的一段谱直接弹错误框。
+新测试按浏览器实际文案把四条「连不上」逐条钉住（Chrome/Edge `Failed to fetch`、
+Firefox `NetworkError`、Safari `Load failed`、RN 壳 `Network request failed`——**是四个来源不是四种情况**），
+并显式列出**不许**判成断网的输入：读 `undefined` 的 `TypeError`、空文案 `TypeError`、
+普通 `Error`（只认 `TypeError` 不加宽）、非 Abort 的 `DOMException`、长得像 `AbortError` 的普通对象。
+变异（把 `instanceof TypeError` 放宽成 `instanceof Error`）确认测试立刻红。
+
+**门面 `lib/client/index.ts` 是纯 re-export，没有可执行语句**，v8 对它恒报 0%，
+那是口径噪声不是质量信号。移出覆盖率口径，改由两条测试守它真正的价值：
+`client-boundary.test.ts`（组件不许绕过门面直连绑定层）+ 新增 `client-facade.test.ts`
+（承诺过的导出还在、`api` 仍是命名空间、模块真能加载）。断言方向是**子集**：
+新增导出自由，删掉承诺过的才红。
+
+覆盖率 91.90 / 84.68 / 92.91 / 94.54（四项均升或持平），96 文件 / 1420 用例全绿。
+
 ### 补两条「同源闸门」：isComplete 真值表 + UI 枚举（2026-11-25）
 
 体检留下的两个洞，性质一样：**两份实现各自全绿，没人证明它们一致**。本轮都补成闸门，
