@@ -29,6 +29,11 @@ fn main() {
     // 前者会递归导出 JianziCandidate 及其全部依赖（GuqinNote、各枚举等）到同一 generated 目录。
     taiyin_core::jianpu::JianziCandidate::export_all().expect("failed to export taiyin TS types");
 
+    // 谱字节点树与曲谱顶层：前者是新增的域模型（撮式/旁注/独体），
+    // 后者的 notes 已从 Vec<GuqinNote> 升为 Vec<Puzi>，不导出来前端就看不到这次契约变化。
+    taiyin_core::Puzi::export_all().expect("failed to export Puzi TS types");
+    taiyin_core::GuqinScore::export_all().expect("failed to export GuqinScore TS types");
+
     // ts-rs 生成结果带行尾空白（如 `export type X = { `），会触发 pre-commit 的空白检查。
     // 生成后统一去除行尾空白，保证提交钩子与 check-types-fresh 稳定通过。
     strip_trailing_whitespace(&out_dir);

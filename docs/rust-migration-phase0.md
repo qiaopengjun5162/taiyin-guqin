@@ -263,8 +263,9 @@
 
 ### 10.4 下一步（未做）
 
-第 4 项「谱字节点树（`Puzi`）」与第 5 项「识别改为部件 + 布局」仍未开工——
-它们动数据契约与字形资产，按原计划各需独立一轮。
+第 4 项「谱字节点树（`Puzi`）」于 11-25 完成**核心数据模型层**（见第 13 节），
+绑定层与 UI 尚未接线；第 5 项「识别改为部件 + 布局」仍未开工——
+它动字形资产与识别流程，按原计划独立一轮。
 
 ---
 
@@ -293,8 +294,8 @@
   等于造一个没人调用的公开面。等 App 真要做编排时再一起加。
 
 经过本轮，`taiyin-wasm.ts` 里已经没有任何领域口径，只剩三件事：加载状态机
-（async / sync 两条路径）、JSON 桥接、降级。第 10.4 节的两项（谱字节点树
-`Puzi`、识别改「部件 + 布局」）仍未开工，各自需要独立一轮。
+（async / sync 两条路径）、JSON 桥接、降级。第 10.4 节里识别改「部件 + 布局」
+仍未开工；谱字节点树 `Puzi` 已于 11-25 落地核心数据模型（见第 13 节）。
 
 ---
 
@@ -338,3 +339,62 @@ C 组 5 项：
 ### 12.3 顺带订正的历史数字
 
 `verify-domain-contracts.mjs` 原记「20 项 / 20 条变异」，实测是 **18 项 / 16 条**。本轮补 5 项 / 5 条后为 **23 项 / 21 条**，第 4 节表格与第 9 节勾选清单已按实数订正。这类「文档数字比实际虚高」和「文档待办 ≠ 没做」是同一个坑：写的人凭印象加了数，后来没人再跑一次去核。
+
+---
+
+## 13. 谱字节点树 `Puzi`：核心数据模型落地（2026-11-25）
+
+第 10.4 节第 4 项终于开工，但**只做数据模型层**，不接绑定层与 UI。
+理由：`Puzi` 的价值在「定义什么是一个谱字」，先把定义与兼容性钉死；
+录入、渲染、导出要在定义稳定之后再接，否则定义错了要连 UI 一起返工。
+
+### 13.1 四类形式，以及一个刻意的缺席
+
+`crates/taiyin-core/src/puzi.rs` 按 alephpi/jianzipu 归纳的四类语法形式定义：
+
+| 形式 | Rust | 解决什么 |
+| --- | --- | --- |
+| 简单 | `Puzi::Simple(GuqinNote)` | 旧曲谱的每一条 note，原样落进这里 |
+| 撮式 | `Cuochuo { first, second }` | 同一拍两个发声点；拆成两个音就丢了「一个谱字」的语义 |
+| 旁注 | `Annotation { note, moves }` | 「上七徽九分」「二上七六」走手落点，不再塞 `ornaments` 当字形 |
+| 独体 | `Standalone { mark }` | 少息/再作等不发声但单独占位的谱面记号 |
+
+**第四类「联袂指法」刻意不做成变体**：`crates/taiyin-core/src/lianmei.rs` 已经把联袂建成
+「音符之间的关系」。记号是谱字**本身**，联袂是谱字**之间**的关系；
+塞进同一个枚举就会有两套互相竞争的成组模型——这正是本项目反复想避免的重复口径。
+
+### 13.2 旧曲谱不破：靠 `untagged` + `Simple` 打头
+
+`#[serde(untagged)]` 让裸 `GuqinNote` JSON 原样反序列化成 `Puzi::Simple`，
+序列化回去逐字段不变。`Simple` 必须排第一，且 `GuqinNote` 没开 `deny_unknown_fields`，
+所以将来加字段也不会让旧 note 落到后面的变体上。
+
+9 条 Rust 单测里最关键的两条：
+
+- `old_note_json_is_simple_and_roundtrips_byte_for_byte`：裸音符 JSON 往返后作为
+  `serde_json::Value` **逐值相等**（不是「能 parse 就行」）。
+- `old_score_json_with_plain_notes_still_deserializes`：整首旧 score（含两条裸 note）
+  往返后与输入 JSON 逐值相等。这条若红，意味着每次打开旧谱都要先迁移——那就不是兼容。
+
+另外 `TryFrom<Puzi> for GuqinNote` 对三种复杂形式一律返回**带原因的错误**，
+不悄悄只留第一个音：「丢一半」比报错难查得多。
+
+### 13.3 接线范围与验证
+
+- `GuqinScore.notes: Vec<GuqinNote>` → `Vec<Puzi>`（全仓**只有 core 自己用**，
+  前端与 server 都不直接构造 `GuqinScore`，影响面已逐个 grep 核过）。
+- `Tuning` 与 `GuqinScore` 补 `TS` derive；`gen_types.rs` 追加 `Puzi::export_all()` /
+  `GuqinScore::export_all()`，新增 `generated/Puzi.ts` / `GuqinScore.ts` / `Tuning.ts`。
+- 因 `crates/taiyin-core/src/**` 有改动，按红线跑了 `just rebuild-probe-wasm`：
+  三份 WASM + 探针产物 + 来源清单同步；`verify-wasm.mjs` / `verify-wasm-fresh.mjs` /
+  `just verify-probe`（7 个校验器）/`just check-types-fresh` 全绿。
+  WASM 二进制 hash 未变（新类型暂未导出到 wasm），但源码指纹已更新——
+  **指纹变、字节不变是正常的**，不是「重建没生效」。
+- Rust：270 条 core 单测通过，`cargo check --all`、`cargo clippy -D warnings` 通过。
+
+### 13.4 边界（别当成已完成的功能）
+
+这一轮只让 `Puzi` **能存**：撮式 / 旁注 / 独体目前没有 WASM 导出、没有录入入口、
+没有渲染路径。用户看不到任何变化，这是刻意的——数据契约先于交互。
+下一步若接绑定层，应先加 WASM 导出 + 真实产物黄金样例，再动 UI；
+识别改「部件 + 布局」仍独立排期。

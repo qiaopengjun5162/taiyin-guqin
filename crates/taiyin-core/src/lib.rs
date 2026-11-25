@@ -34,6 +34,9 @@ pub mod jianzi_stats;
 pub mod jianzi_text;
 pub mod lianmei;
 pub mod pitch;
+pub mod puzi;
+
+pub use puzi::Puzi;
 
 // ──────────────────────────────────────────────
 // 基础类型
@@ -193,7 +196,8 @@ pub struct HuiPosition {
 ///
 /// 古琴常用五种调式 + 自定义。目前以正调为默认。
 /// 不同调式下七条弦的散音音高不同，影响简谱到减字的映射。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
+#[ts(export_to = "Tuning.ts")]
 pub enum Tuning {
     /// 正调（最常用，一弦到七弦为 5 6 1 2 3 5 6）
     ZhengDiao,
@@ -478,7 +482,8 @@ pub struct GuqinNote {
 ///
 /// `version` 用于社区协作场景：每次编辑保存递增版本号，
 /// 作为版权确权和历史追踪的锚点。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
+#[ts(export_to = "GuqinScore.ts")]
 pub struct GuqinScore {
     /// 曲名（如《仙翁操》《沧海一声笑》）
     pub title: String,
@@ -492,8 +497,13 @@ pub struct GuqinScore {
     pub beat_denominator: u32,
     /// 速度（Beats Per Minute）
     pub bpm: u32,
-    /// 有序的音符序列——整首曲子
-    pub notes: Vec<GuqinNote>,
+    /// 有序的谱字序列——整首曲子。
+    ///
+    /// 11-25 起从 `Vec<GuqinNote>` 升为 `Vec<Puzi>`。旧谱里每个音符都是裸
+    /// `GuqinNote` JSON，由 `Puzi` 的 `#[serde(untagged)]` 原样收成 `Simple`，
+    /// 序列化回去逐字段不变（`puzi.rs::old_score_json_with_plain_notes_still_deserializes` 守）。
+    /// 新增的撮式 / 旁注 / 独体让一个谱字能承载单音表达不了的结构。
+    pub notes: Vec<Puzi>,
     /// 版本号（从 1 开始，每次编辑 +1）
     pub version: u32,
 }
@@ -753,8 +763,14 @@ mod tests {
             bpm: 80,
             version: 1,
             notes: vec![
-                GuqinNote::open_string(RightAction::Tiao, StringNumber::new(5).unwrap()),
-                GuqinNote::open_string(RightAction::Tiao, StringNumber::new(6).unwrap()),
+                Puzi::from(GuqinNote::open_string(
+                    RightAction::Tiao,
+                    StringNumber::new(5).unwrap(),
+                )),
+                Puzi::from(GuqinNote::open_string(
+                    RightAction::Tiao,
+                    StringNumber::new(6).unwrap(),
+                )),
             ],
         };
 

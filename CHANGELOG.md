@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### 谱字节点树 `Puzi`：核心数据模型落地（2026-11-25）
+
+迁移清单最后一项数据契约改动开工，**只做模型层，不接 UI**：
+`crates/taiyin-core/src/puzi.rs` 按减字谱四类语法形式定义 `Puzi`——
+简单（叶子是 `GuqinNote`）、撮式（同一拍两个发声点）、旁注（走手落点序列）、
+独体（不发声的谱面记号）。`GuqinScore.notes` 随之从 `Vec<GuqinNote>` 升为 `Vec<Puzi>`。
+
+**联袂刻意不做成变体**：它已经是 `lianmei.rs` 里「音符之间的关系」，
+而记号是谱字本身；塞进同一枚举就会有两套互相竞争的成组模型。
+
+**旧曲谱不破**是这一轮的重点：`#[serde(untagged)]` + `Simple` 排第一，
+让裸 `GuqinNote` JSON 原样收成 `Simple`，序列化回去逐字段不变。
+9 条 Rust 单测含「旧 score JSON 往返后作为 JSON 值逐值相等」——
+只验「能 parse」不算兼容。复杂形式压回单音一律返回带原因的错误，
+不悄悄只留第一个音（丢一半比报错难查）。
+
+同步更新：`Tuning` / `GuqinScore` 补 `TS` derive，新增生成类型
+`Puzi.ts` / `GuqinScore.ts` / `Tuning.ts`。因动了 `crates/**`，按红线重建三份 WASM
+与探针产物；WASM 二进制 hash 未变（新类型暂未导出），源码指纹已更新。
+
+**边界**：目前只能存、不能录也不能画——没有 WASM 导出、没有录入入口、没有渲染路径。
+用户侧零变化是刻意的：数据契约先稳住，再接绑定层与 UI。识别改「部件 + 布局」仍独立排期。
+
+验证：Rust core 270 单测、`cargo check --all`、clippy、WASM 五道闸门、
+`just verify-probe` 七项、`just check-types-fresh` 全绿。
+
 ### 补薄点：断网判据从 30% 分支覆盖到 100%，门面公开面加守卫（2026-11-25）
 
 覆盖率四条都过线，但有两处「数字过了、该守的没守」：

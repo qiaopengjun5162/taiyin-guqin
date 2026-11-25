@@ -214,7 +214,13 @@ alephpi 的做法：`ortho`（正写，无歧义）与 `abbr`（简写，好打�
 3. ~~**`jianpu-parser.ts` → 核心库**~~ **已完成（2026-11-18）**：189 行 + 时值表迁入
    `crates/taiyin-core/src/jianpu_parse.rs`，15 个 Rust 单测。
    前端只剩映射（`ParsedJianpuItem` 形状保持不变，调用方一行没改）。
-4. **谱字节点树（`Puzi`）**：动数据契约，需与 `ts-rs` 生成、旧曲谱兼容一起走，单独一个 PR。
+4. ~~**谱字节点树（`Puzi`）**~~ **核心数据模型已完成（2026-11-25）**：
+   `crates/taiyin-core/src/puzi.rs` 定义四类形式，`GuqinScore.notes` 由
+   `Vec<GuqinNote>` 升为 `Vec<Puzi>`，`#[serde(untagged)]` + `Simple` 打头保证旧谱逐字段不变；
+   9 条 Rust 单测（含旧 score JSON 往返逐值相等）+ 三份新生成类型
+   （`Puzi.ts` / `GuqinScore.ts` / `Tuning.ts`）。**边界**：绑定层与 UI 尚未接线，
+   撮式/旁注/独体目前只能存不能录也不能画；联袂刻意不进 `Puzi`（它已是音符间关系，
+   `lianmei.rs` 有独立模型），避免两套成组模型打架。详见 `docs/rust-migration-phase0.md` 第 13 节。
 5. **识别改为部件 + 布局**：依赖 4 的字形资产整理，最后做。
 
 ### 状态拆分剩余清单

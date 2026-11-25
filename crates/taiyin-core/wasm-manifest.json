@@ -1,6 +1,6 @@
 {
-  "sourceFingerprint": "4986fea6eeed4b0d0c6434ae1b12fb259053479473c0d6b00f5a9c43e57bda60",
-  "sourceFileCount": 15,
+  "sourceFingerprint": "3b8b1a72595d8e3f83ae667e90e1742a8016235a4434f4d5421107a5a5bd6410",
+  "sourceFileCount": 16,
   "artifacts": {
     "apps/web/wasm/taiyin_core_bg.wasm": "f90028e39c1b6e58692716a492654be3837daaa0d60bfa55a89e9849591206dc",
     "apps/web/public/wasm/taiyin_core_bg.wasm": "f90028e39c1b6e58692716a492654be3837daaa0d60bfa55a89e9849591206dc"
