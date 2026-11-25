@@ -31,6 +31,8 @@
  *   ③ apps/web/src/lib/types.ts             —— StructureMark 联合
  *   ④ crates/taiyin-core/src/lib.rs         —— StructureMark 枚举的 serde 标签
  *
+ *   ⚠️ ④ 是「结构记号」这一路；音色 / 节奏两个枚举的跨语言对齐见 C 组。
+ *
  *   **码表已收归 Rust 一份**：连打文法从 `jianzi-rapid.ts` 迁进
  *   `crates/taiyin-core/src/jianzi_rapid.rs`，前端只剩薄壳。原先这里逐项比对
  *   「Rust ↔ 连打」两份表，就是为防它们漂移；现在没有第二份，比对照样删掉。
@@ -44,11 +46,28 @@
  *   两者是「归一化映射」关系而非同一张表。把它们塞进来只会制造误报。
  *   SlideMark 联合也不在这里比：多一个不在联合里的值 tsc 会直接红。
  *
+ * ── C 组：UI 枚举 ↔ ts-rs 生成类型 ↔ 默认键盘 ────────────
+ *   ① apps/web/src/lib/types.ts                  —— NoteType / RhythmMode / StructureMark 联合
+ *   ② apps/web/src/lib/generated/{NoteType,RhythmMode,StructureMark}.ts —— ts-rs 产物
+ *   ③ apps/web/src/lib/types.ts                  —— DEFAULT_KEYBOARD 的 toneTypes / rhythmModes
+ *
+ *   这三个枚举有**三份**皮：Rust 枚举（真相源）→ ts-rs 生成 → 手写的 UI 联合。
+ *   前两步是机械的，坏在第三步：Rust 加了「徽」音色、跑一遍 ts-rs，
+ *   `generated/NoteType.ts` 变了，`types.ts` 那份手抄的联合却纹丝不动 ——
+ *   tsc 只在**用到新值**的地方报错，用不到就一路全绿，直到线上有人录不进这个音色。
+ *   故本组把「手抄 == 生成」钉死；③ 再补一刀「枚举里有、键盘上没有」：
+ *   录不进去的音色等于不存在，这种漏比写错更安静。
+ *
+ *   `generated/` 与 Rust 是否同步已由 CI 管住（`cargo run -p taiyin-core --bin gen_types`
+ *   后 `git diff --exit-code`，见 `.github/workflows/build.yml`），本脚本不重复做那一步；
+ *   这里只补它管不到的一环 —— **生成文件对了，手抄的那份仍可以是错的**。
+ *
  * 用法：node scripts/verify-domain-contracts.mjs
  *       node scripts/verify-domain-contracts.mjs --self-test   # 变异验证，含双文件同步改
  * 退出码 1 = 契约被破坏，或自测里某条变异没被指定检查抓到。
  *
- * 本脚本**只读**：变异只在内存副本上做，不写回任何源码；按项目惯例不接 CI。
+ * 本脚本**只读**：变异只在内存副本上做，不写回任何源码。
+ * CI 里由 `.github/workflows/build.yml` 的 web job 带 `--self-test` 跑（基线 + 变异都验）。
  */
 
 import { readFileSync } from "node:fs";
@@ -67,6 +86,9 @@ const FILES = {
   exampleScoresTestTs: "apps/web/src/lib/__tests__/example-scores.test.ts",
   jianziTs: "apps/web/src/lib/jianzi.ts",
   typesTs: "apps/web/src/lib/types.ts",
+  genNoteType: "apps/web/src/lib/generated/NoteType.ts",
+  genRhythmMode: "apps/web/src/lib/generated/RhythmMode.ts",
+  genStructureMark: "apps/web/src/lib/generated/StructureMark.ts",
 };
 
 // ── 解析小工具（都只锚定声明，不执行任何源码） ──────────────
@@ -180,6 +202,16 @@ function parse(files) {
   const slideMarks = quoted(tsArray(files.jianziTs, "SLIDE_MARKS"));
   const structureMarks = quoted(tsArray(files.jianziTs, "STRUCTURE_MARKS"));
   const tsStructure = quoted(section(files.typesTs, /export type StructureMark\s*=/, /;/));
+
+  // ── C 组 ──
+  // 手写的 UI 联合。注意 `KeyboardConfig` 接口里也有 `toneTypes: NoteType[];`，
+  // 但紧跟着的是类型名而不是 `[`，故下面的正则只会命中 DEFAULT_KEYBOARD 里的字面量。
+  const uiNoteType = quoted(section(files.typesTs, /export type NoteType\s*=/, /;/));
+  const uiRhythmMode = quoted(section(files.typesTs, /export type RhythmMode\s*=/, /;/));
+  const uiStructure = tsStructure;
+  const keyboardTones = quoted(section(files.typesTs, /toneTypes:\s*\[/, /\]/));
+  const keyboardRhythms = quoted(section(files.typesTs, /rhythmModes:\s*\[/, /\]/));
+
   const rustStructure = [
     ...section(files.libRs, /pub enum StructureMark/, /\n\}/).matchAll(
       /#\[serde\(rename\s*=\s*"([^"]+)"\)\]/g,
@@ -191,6 +223,11 @@ function parse(files) {
     tsFractions, tsHarmonic, tsDegrees, huiTicksDerived, playerDerived, testNoHardcode,
     rustTone, rustSlide, rustHui, rustFen, rustString,
     slideMarks, structureMarks, tsStructure, rustStructure,
+    uiNoteType, uiRhythmMode, uiStructure,
+    genNoteType: quoted(section(files.genNoteType, /export type NoteType\s*=/, /;/)),
+    genRhythmMode: quoted(section(files.genRhythmMode, /export type RhythmMode\s*=/, /;/)),
+    genStructureMark: quoted(section(files.genStructureMark, /export type StructureMark\s*=/, /;/)),
+    keyboardTones, keyboardRhythms,
   };
 }
 
@@ -334,6 +371,19 @@ function check(p) {
   add("减字/STRUCTURE_MARKS == Rust StructureMark 枚举标签",
     sameSet(p.structureMarks, p.rustStructure), `${fmt(p.structureMarks)} / ${fmt(p.rustStructure)}`);
 
+  // ── C 组：UI 枚举 ↔ ts-rs 生成类型 ↔ 默认键盘 ──
+  // 三条「手抄 == 生成」+ 两条「枚举里有、键盘上就得能按」。
+  add("UI/NoteType 联合 == ts-rs generated/NoteType.ts",
+    sameSet(p.uiNoteType, p.genNoteType), `手写 ${fmt(p.uiNoteType)} / 生成 ${fmt(p.genNoteType)}`);
+  add("UI/RhythmMode 联合 == ts-rs generated/RhythmMode.ts",
+    sameSet(p.uiRhythmMode, p.genRhythmMode), `手写 ${fmt(p.uiRhythmMode)} / 生成 ${fmt(p.genRhythmMode)}`);
+  add("UI/StructureMark 联合 == ts-rs generated/StructureMark.ts",
+    sameSet(p.uiStructure, p.genStructureMark), `手写 ${fmt(p.uiStructure)} / 生成 ${fmt(p.genStructureMark)}`);
+  add("UI/DEFAULT_KEYBOARD.toneTypes 序列 == NoteType 联合（枚举里有就必须能录）",
+    sameSeq(p.uiNoteType, p.keyboardTones), `联合 ${fmt(p.uiNoteType)} / 键盘 ${fmt(p.keyboardTones)}`);
+  add("UI/DEFAULT_KEYBOARD.rhythmModes 序列 == RhythmMode 联合（枚举里有就必须能录）",
+    sameSeq(p.uiRhythmMode, p.keyboardRhythms), `联合 ${fmt(p.uiRhythmMode)} / 键盘 ${fmt(p.keyboardRhythms)}`);
+
   const failures = checks.filter((c) => !c.ok);
   return { checks, failures };
 }
@@ -360,7 +410,11 @@ function healthy(p) {
     p.rustHarmonic.length > 0 && p.tsHarmonic.length > 0 &&
     p.rustDegrees.length > 0 && p.tsDegrees.length > 0 &&
     p.rustSlide.length > 0 && p.slideMarks.length > 0 &&
-    p.structureMarks.length > 0 && p.rustStructure.length > 0;
+    p.structureMarks.length > 0 && p.rustStructure.length > 0 &&
+    p.uiNoteType.length > 0 && p.genNoteType.length > 0 &&
+    p.uiRhythmMode.length > 0 && p.genRhythmMode.length > 0 &&
+    p.genStructureMark.length > 0 &&
+    p.keyboardTones.length > 0 && p.keyboardRhythms.length > 0;
 }
 
 /**
@@ -419,6 +473,24 @@ function selfTest(base) {
     { name: "Rust StructureMark 少息改名",
       edits: [{ key: "libRs", from: '#[serde(rename = "少息")]', to: '#[serde(rename = "少息X")]' }],
       expect: "减字/STRUCTURE_MARKS == Rust StructureMark 枚举标签" },
+    // ── C 组 ──
+    // 这一组的典型事故是「Rust 改了、ts-rs 也重生了、手抄那份没人动」，
+    // 所以四条变异里三条打在**生成文件**或**键盘配置**上，而不是手写联合本身。
+    { name: "ts-rs 重生出「泛音」音色，手写联合没跟",
+      edits: [{ key: "genNoteType", from: '"散" | "泛" | "按"', to: '"散" | "泛" | "按" | "泛音"' }],
+      expect: "UI/NoteType 联合 == ts-rs generated/NoteType.ts" },
+    { name: "手写 RhythmMode 漏了「宕」",
+      edits: [{ key: "typesTs", from: 'export type RhythmMode = "板" | "散" | "宕";', to: 'export type RhythmMode = "板" | "散";' }],
+      expect: "UI/RhythmMode 联合 == ts-rs generated/RhythmMode.ts" },
+    { name: "手写 StructureMark 漏了「入拍」",
+      edits: [{ key: "typesTs", from: 'export type StructureMark = "少息" | "大息" | "再作" | "从头再作" | "入拍";', to: 'export type StructureMark = "少息" | "大息" | "再作" | "从头再作";' }],
+      expect: "UI/StructureMark 联合 == ts-rs generated/StructureMark.ts" },
+    { name: "枚举里有「按」音色，键盘上按不出来",
+      edits: [{ key: "typesTs", from: '  toneTypes: ["散", "泛", "按"],', to: '  toneTypes: ["散", "泛"],' }],
+      expect: "UI/DEFAULT_KEYBOARD.toneTypes 序列 == NoteType 联合（枚举里有就必须能录）" },
+    { name: "枚举里有「宕」节奏，键盘上按不出来",
+      edits: [{ key: "typesTs", from: '  rhythmModes: ["板", "散", "宕"],', to: '  rhythmModes: ["板", "散"],' }],
+      expect: "UI/DEFAULT_KEYBOARD.rhythmModes 序列 == RhythmMode 联合（枚举里有就必须能录）" },
   ];
 
   let bad = 0;

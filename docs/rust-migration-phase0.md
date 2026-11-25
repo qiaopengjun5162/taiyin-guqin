@@ -119,7 +119,7 @@
 
 | 批次 | 范围 | 前置 | 目的 |
 | --- | --- | --- | --- |
-| **批 0（已销项）** | 四组重复口径**已用跨语言静态闸门钉死**（定弦 11 项 / 时值码 7 项 / 领域常量 20 项，各带变异自测），半音表另收敛为单一来源 `JIANPU_DEGREES`。11-16 复核后取消 S3 常量生成（理由见第 4 节） | 已具备 | 零行为变化，先消掉已出过事故的那类错；物理上仍是多份，靠闸门防漂移 |
+| **批 0（已销项）** | 四组重复口径**已用跨语言静态闸门钉死**（定弦 11 项 / 时值码 7 项 / 领域常量 23 项，各带变异自测），半音表另收敛为单一来源 `JIANPU_DEGREES`。11-16 复核后取消 S3 常量生成（理由见第 4 节）。11-25 复核发现这里原记「20 项」是虚高，实数 18 项，已补 C 组 5 项并订正（第 12 节） | 已具备 | 零行为变化，先消掉已出过事故的那类错；物理上仍是多份，靠闸门防漂移 |
 | **批 1** | 低扇出样板：`metronome`(1/5)、`duration-drag`(1/13)、`score-bars`(1/15)、`qin-board`(1/16)、`qin-fingering`(1/18)、`pinyin-dict`(1/9) | S1 或 S2 确认 | 跑通「Rust 实现 + 逐字节对照 + WASM 三份同步」全流程 |
 | **批 2** | 本来就在异步链路里：`midi-export`(1/20)、`audio-export` 的 WAV 编码(1/13)、`score-export`(1/18)、`unsaved-guard`(1/11)、`score-concordance`(1/16) | 批 1 通过 | 收益明确、不动渲染 |
 | **批 3** | 中扇出：`jianpu-parser`(2/22)、`jianzi-rapid`(2/49)、`lianmei`(2/21)、`play-along`(1/25)、`practice-log`(3/23)、`practice-progress`(4/18)、`player`(5/24) | 批 2 通过 | 覆盖简谱解析与练琴统计 |
@@ -134,15 +134,16 @@
 | --- | --- | --- |
 | `verify-tuning-contract.mjs`（既有） | 定弦名单 4 份同源 | 11 项 / 7 条变异 |
 | `verify-duration-code-contract.mjs` | 时值 ↔ 码尾数字 4 处；`"16"` 必须排在 `"1"` 前的顺序陷阱 | 7 项 / 8 条变异 |
-| `verify-domain-contracts.mjs` | 徽位音高表 10 项（含 2 条防抄表）+ 减字记号表 10 项 | 20 项 / 20 条变异 |
+| `verify-domain-contracts.mjs` | 徽位音高表 10 项（含 2 条防抄表）+ 减字记号表 8 项 + UI 枚举 ↔ ts-rs 生成 ↔ 默认键盘 5 项 | 23 项 / 21 条变异 |
 
 `scripts/verify-domain-contracts.mjs` 覆盖的两组：
 - **徽位音高**：Rust `HUI_RATIOS` / `HUI_HARMONIC` / `DEGREE_SEMITONES` ↔ TS `HUI_FRACTION` / `HUI_HARMONIC`，外加「比例约分后的分母 == 泛音谐波次数」这条物理一致性（一徽 1/8→8 次、六徽 2/5→5 次、九徽 2/3→3 次）。它专门能抓住**两端一起改、集合仍然对齐、但物理上已经错了**的情况。另守 `HUI_TICKS` 必须由 `huiFraction` 派生，不许再抄一份表。`DEGREE_SEMITONES` 现在与前端唯一来源 `JIANPU_DEGREES` 逐项比，并额外静态检查 `player.ts::SEMITONES` 与示例谱测试都是「派生 / 导入」而非硬编码。
 - **减字记号**：Rust `TONE/SLIDE/HUI/FEN/STRING_TOKENS` ↔ `jianzi-rapid.ts` 的连打表 ↔ `jianzi.ts` 的 `SLIDE_MARKS` / `STRUCTURE_MARKS` ↔ `types.ts` 联合 ↔ Rust `StructureMark` 枚举，字母、汉字、顺序都逐项比。
+- **UI 枚举**（11-25 新增）：`types.ts` 手写的 `NoteType` / `RhythmMode` / `StructureMark` 联合 ↔ `generated/` 的 ts-rs 产物；另查 `DEFAULT_KEYBOARD` 的 `toneTypes` / `rhythmModes` 是否把枚举里每个值都摆上了键盘。`generated/` 与 Rust 是否同步已由 CI 的 `gen_types` + `git diff --exit-code` 管住，这一组补的是它管不到的一环——**生成文件对了，手抄的那份仍可以是错的**。
 
 **边界（别误加）**：`ACTION_TOKENS` / `LEFT_TOKENS` 与连打 `rightAction` / `leftFinger` **不是同源**——Rust 存全字（挑/抹/食/名），连打存省写字形（乚/木/亻/夕），是归一化映射。把它们塞进静态比对只会制造误报。`SlideMark` 联合也不必比，多一个不在联合里的值 `tsc` 会直接红。
 
-现有 vitest 行为测试守的是**单侧性质**（21 个、无重复、抽查 1/7/13 徽位、5 个记号都有释义），这三个脚本守的是**跨语言同源**，层次不同、不重复。三个脚本都带 `--self-test`，变异逐条由 `expect` 指定的那一项检查抓到，防「改哪儿都全红」的假抓到。本地入口 `just verify-contracts`，按项目惯例不接 CI。
+现有 vitest 行为测试守的是**单侧性质**（21 个、无重复、抽查 1/7/13 徽位、5 个记号都有释义），这三个脚本守的是**跨语言同源**，层次不同、不重复。三个脚本都带 `--self-test`，变异逐条由 `expect` 指定的那一项检查抓到，防「改哪儿都全红」的假抓到。本地入口 `just verify-contracts`；CI 里由 `build.yml` 的 web job 带 `--self-test` 跑（此句原写「不接 CI」是过时说法，11-25 订正）。
 
 **半音表单一来源（11-16 已销项）**：原先前端有三份各自为政的半音表——`player.ts::SEMITONES`（播放）、`jianzi-pitch.ts::degrees`（频率 → 唱名）、`example-scores.test.ts`（硬编码校验）；闸门最初只钉住「Rust ↔ 测试」这一对，播放那份从没跨语言比过。现在把 `jianzi-pitch.ts::JIANPU_DEGREES` 提成全项目唯一来源：Rust `DEGREE_SEMITONES` 与它逐项比，`player.ts` 由 `Object.fromEntries(JIANPU_DEGREES)` 派生，示例谱测试直接 import 使用；闸门再守两条「不许再抄一份」的静态检查，并各配一条变异验证。
 
@@ -210,7 +211,7 @@
 - [x] 写清每批验收命令与回滚点
 - [x] 实测 S2：`initSync` 同步初始化可行，9 个导出可同步调用
 - [x] 批 0 前置闸门：时值码四处同源，7 项基线 + 8 条变异自测全绿
-- [x] 补齐另两组闸门（徽位音高 8 项 + 减字记号 10 项，18 条变异自测全绿；11-16 扩到 20 项 / 20 条）
+- [x] 补齐另两组闸门（徽位音高 10 项 + 减字记号 8 项，当时 18 项 / 16 条变异全绿；「20 项」是当时写错的数字，11-25 复核订正）
 - [x] 半音表收敛为单一来源 `JIANPU_DEGREES`，player / 示例谱测试均派生，另加 2 条防抄表检查与变异
 - [x] 批 0 以「四组静态闸门 + 半音表单一来源」销项；S3 常量生成经复核取消
 - [x] S2 在真实 Chromium 静态导出产物里实测同步初始化通过（`just probe-wasm-sync`）
@@ -294,3 +295,46 @@
 经过本轮，`taiyin-wasm.ts` 里已经没有任何领域口径，只剩三件事：加载状态机
 （async / sync 两条路径）、JSON 桥接、降级。第 10.4 节的两项（谱字节点树
 `Puzi`、识别改「部件 + 布局」）仍未开工，各自需要独立一轮。
+
+---
+
+## 12. 补两条「同源闸门」（2026-11-25）：isComplete 真值表 + UI 枚举
+
+11-24 的全面体检留了两个洞，都属于「两份实现各自全绿、没人证明它们一致」：
+
+| 洞 | 之前的状况 | 本轮的落法 |
+| --- | --- | --- |
+| `isComplete` 双侧重复 | 前端 `jianzi.ts::isComplete` 与 Rust `jianzi_text.rs::is_complete` 各一份，两侧测试只验自己 | `__tests__/is-complete-parity.test.ts`：真实 WASM 产物跑 80 条全真值表 |
+| `types.ts` 枚举与 `generated/` 可能分家 | ts-rs 产物有 CI 管，手抄的 UI 联合没人管 | `verify-domain-contracts.mjs` C 组 5 项 / 5 条变异 |
+
+### 12.1 `isComplete`：为什么不合并，而是证明两边一样
+
+第 10.4 节把「把 `isComplete` 搬进 Rust」列为候选。本轮**没搬**，理由写在 `jianzi.ts` 头部已久：它在渲染路径上每帧要问好几次（键盘 4 处 + 预览 1 处 + 保存条 1 处），走 WASM 往返不划算；改成「同步 getter + JS 兜底」还会留下**兜底与 Rust 必须永远一致**这个同款问题，而且首屏 SSR 用兜底、客户端用 Rust，一旦不一致就是 hydration 警告。合并没消掉重复，只是换了个位置。
+
+真正缺的是**证明**，所以补的是闸门：
+
+- **不用替身**：替身要和 Rust 一起改，真实产物不会撒谎。
+- **也不新增 WASM 导出**：`encode` 第一句就是 `if !is_complete(state) { return Err }`，「编不出码」就是「不完整」的可观测后果。用现成的 `encode_jianzi_batch` 驱动，验的是用户真正会撞上的链路。
+- **等价于全真值表**：判断只取决于 5 个字段有没有值，故 5 个音色（3 个合法 + 2 个越界）× 16 种有无 = 80 条，不必跑几万条。
+- **越界音色是故意放的**：Rust 用 `match` 兜 `_ => false`，前端原先写 `toneType !== null && …`。脏 JSON 带「泛音」「花指」进来时两边会**反着答**（界面说能入谱、后端编不出码）。前端已改成显式 `switch` 对齐 Rust，这条差异由真值表钉住。
+- **变异验证**：给前端 `case` 补一个 `"花"`，测试立刻红并指出「音色「花」有 leftFinger+hui+rightAction+stringNumber」——报错直接说出是哪一格，不是一句「期望相等」。
+
+`toneType === null`（还没选音色）这一格不在真值表里：`encode` 的入参 `tone_type` 是 `String`，Rust 侧没有「没选音色」的表示法。这一格由前端单独负责，测试里另起一条断言（`createEmptyState()` 必须为 false），并写清了不在表里的原因。
+
+### 12.2 UI 枚举：生成文件对了，手抄的仍可以是错的
+
+三个枚举有**三份**皮：Rust 枚举（真相源）→ ts-rs 生成（`generated/`）→ 手写的 UI 联合（`types.ts`）。前两步 CI 已经管住（`cargo run -p taiyin-core --bin gen_types` 后 `git diff --exit-code`），坏在第三步：Rust 加一个音色、跑一遍 ts-rs，`generated/NoteType.ts` 变了，`types.ts` 那份手抄的联合纹丝不动。`tsc` 只在**用到新值**的地方报错，用不到就一路全绿，直到线上有人录不进这个音色。
+
+C 组 5 项：
+
+1. `NoteType` 联合 == `generated/NoteType.ts`
+2. `RhythmMode` 联合 == `generated/RhythmMode.ts`
+3. `StructureMark` 联合 == `generated/StructureMark.ts`
+4. `DEFAULT_KEYBOARD.toneTypes` 序列 == `NoteType` 联合
+5. `DEFAULT_KEYBOARD.rhythmModes` 序列 == `RhythmMode` 联合
+
+后两项是「枚举里有、键盘上没有」：录不进去的音色等于不存在，这种漏比写错更安静。变异验证里三条打在**生成文件**或**键盘配置**上（而不是手写联合本身），因为这才是事故的真实发生方式。
+
+### 12.3 顺带订正的历史数字
+
+`verify-domain-contracts.mjs` 原记「20 项 / 20 条变异」，实测是 **18 项 / 16 条**。本轮补 5 项 / 5 条后为 **23 项 / 21 条**，第 4 节表格与第 9 节勾选清单已按实数订正。这类「文档数字比实际虚高」和「文档待办 ≠ 没做」是同一个坑：写的人凭印象加了数，后来没人再跑一次去核。

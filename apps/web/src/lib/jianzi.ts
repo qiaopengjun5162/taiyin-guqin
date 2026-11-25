@@ -62,20 +62,38 @@ export function isInlineMark(mark: SlideMark): boolean {
   return INLINE_MARKS.has(mark);
 }
 
-/** 判断减字是否已完成（各音色类型所需字段不同）。 */
+/**
+ * 判断减字是否已完成（各音色类型所需字段不同）。
+ *
+ * 三个音色的必需部件：
+ * - 散：右手指法 + 弦序（空弦，没有左手动作）
+ * - 泛 / 按：左手指法 + 徽位 + 右手指法 + 弦序
+ *
+ * **按音色显式分支，不写「非空就算过」**：Rust 侧同名的 `is_complete`
+ * （`jianzi_code` → `jianzi_text` → `jianzi_dictionary` 三处调用）用的是
+ * `match`，未列出的音色一律判不完整。前端若写成 `toneType !== null && …`，
+ * 一旦有脏数据带着「泛音」「花指」这类越界音色进来，两边就会给出相反的答案
+ * —— 界面显示「可以入谱」，后端却编不出码。
+ * 这条对齐全靠 `__tests__/is-complete-parity.test.ts` 拿**真实 WASM 产物**
+ * 跑全真值表钉住（不是替身，替身会跟着一起错）。
+ */
 export function isComplete(state: JianziState): boolean {
-  // 散音：只需要右手指法和弦序
-  if (state.toneType === "散") {
-    return state.rightAction !== null && state.stringNumber !== null;
+  switch (state.toneType) {
+    // 散音：只需要右手指法和弦序
+    case "散":
+      return state.rightAction !== null && state.stringNumber !== null;
+    // 泛音、按音：需要左手指法 + 徽位 + 右手指法 + 弦序
+    case "泛":
+    case "按":
+      return (
+        state.leftFinger !== null &&
+        state.hui !== null &&
+        state.rightAction !== null &&
+        state.stringNumber !== null
+      );
+    default:
+      return false;
   }
-  // 泛音、按音：需要左手指法 + 徽位 + 右手指法 + 弦序
-  return (
-    state.toneType !== null &&
-    state.leftFinger !== null &&
-    state.hui !== null &&
-    state.rightAction !== null &&
-    state.stringNumber !== null
-  );
 }
 
 /** 创建空状态。 */
