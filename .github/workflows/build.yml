@@ -210,6 +210,20 @@ jobs:
         run: |
           node scripts/verify-duration-code-contract.mjs --self-test && node scripts/verify-duration-code-contract.mjs
           node scripts/verify-domain-contracts.mjs --self-test && node scripts/verify-domain-contracts.mjs
+      - name: Verify production dependency audit
+        # 前端依赖审计。2026-11-25 加：此前 CI 只审 Rust（cargo audit），
+        # pnpm 侧从来没有门禁——实测生产依赖一度有 5 个 critical
+        # （next 16.2.6 的服务端 RCE / middleware bypass；静态导出下不可达，
+        #   但「版本落后没人知道」这件事本身就是债）。
+        #
+        # **只卡 --prod**：devDependencies（vitest / jsdom / undici 等）不进运行产物，
+        # 它们的漏洞不该拦住发布；生产依赖一旦出 high 就必须处理或显式豁免。
+        # 当前基线：生产依赖 0 漏洞（next 16.4.6 + pnpm-workspace.yaml 的 overrides
+        # 把 4 个构建链包顶到修复版）。
+        #
+        # 不加 `|| true` 兜底：审计闸门的价值全在「不过就放不过去」。
+        # advisory 库每日更新，新出的 high 会直接红——这正是要的效果。
+        run: pnpm --filter web audit --prod --audit-level=high
       - name: Lint
         run: pnpm --filter web lint
       - name: Type check

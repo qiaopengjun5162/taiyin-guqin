@@ -4,3 +4,13 @@ packages:
 onlyBuiltDependencies:
   - sharp
   - unrs-resolver
+
+# 传递依赖安全补丁（pnpm 12 起 overrides 只在这里生效，package.json 的 pnpm 字段会被忽略）。
+# 这 4 个只出现在构建链（babel / browserslist / tailwind / styled-jsx），不进运行产物；
+# 但 pnpm audit --prod 把它们算作生产依赖，所以在这里顶到修复版。
+# 都是 patch/minor 级差距，不改变行为。升级 next 时复核是否仍需 override。
+overrides:
+  browserslist: ^4.28.7
+  baseline-browser-mapping: ^2.11.0
+  source-map-js: ^1.2.2
+  "@babel/core": ^7.29.6

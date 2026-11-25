@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### 前端依赖审计进 CI，生产依赖漏洞清零（2026-11-25）
+
+体检时发现一个盲区：CI 只审计 Rust（`cargo audit`），**前端依赖从来没有门禁**。
+实测 `pnpm audit --prod` 有 39 条 advisory（**5 critical**），核心是 `next` 卡在 16.2.6。
+
+三层处理：
+
+| 层 | 动作 | 结果 |
+| --- | --- | --- |
+| 运行时 | `next` 16.2.6 → 16.4.6（`eslint-config-next` 同步） | 5 个 critical 清零 |
+| 构建链 | `pnpm-workspace.yaml` 的 `overrides` 顶 4 个包（browserslist / baseline-browser-mapping / source-map-js / @babel/core） | 生产依赖 **0 漏洞** |
+| 门禁 | `build.yml` 加 `pnpm audit --prod --audit-level=high` | 生产依赖出 high 即红 |
+
+**只卡 `--prod`**：vitest / jsdom / undici 等 61 条 advisory 不进运行产物，不该拦住
+发布。**不加 `|| true`**：审计闸门的价值全在「不过就放不过去」。
+
+验证：next 升级后 8 个静态页面正常生成、1397 用例全绿；变异确认
+`pnpm audit --audit-level=high`（不限 prod）会 exit 1 并报 28 个 high，闸门不是空哨兵。
+
+⚠️ 踩坑：pnpm 12 起 `package.json` 里的 `pnpm.overrides` **不再生效**（只警告、不报错）。
+第一次写在那里，`pnpm install` 显示「Already up to date」，但漏洞一个没修。
+overrides 必须写进 `pnpm-workspace.yaml`。
+
 ### 成品闸门脚本改了不触发的问题（2026-11-24）
 
 `backend-image.yml` 的 smoke job 是**唯一**验「匿名拉成品镜像」路径的地方，
