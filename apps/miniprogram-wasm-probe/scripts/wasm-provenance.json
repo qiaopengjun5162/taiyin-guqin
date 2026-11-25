@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "note": "由 scripts/build-worker.mjs 生成，勿手改。不含时间戳，无变化重跑不会产生 diff。",
-  "sourceFingerprint": "sha256:ac877bfac50d35010c124a8fff088a2e015d67647577cc342dc3f213ebc30a91",
+  "sourceFingerprint": "sha256:bbb0f8af1ea9128d946966258de90e312004e189ccf67276d75eade4d49c7bf2",
   "sourceInputs": [
     "Cargo.toml",
     "crates/taiyin-core/Cargo.toml",
@@ -22,12 +22,12 @@
     "crates/taiyin-core/src/wasm.rs"
   ],
   "wasm": {
-    "bytes": 357781,
-    "sha256": "f90028e39c1b6e58692716a492654be3837daaa0d60bfa55a89e9849591206dc"
+    "bytes": 405670,
+    "sha256": "8a4366862bd6bbe7384e7481f8d7c40ea99a8c5c68de154c2e357c0de5d92bd8"
   },
   "glue": {
-    "bytes": 30196,
-    "sha256": "8639e8165b04a396468fc31a8a58d53bee05c42b6d244a24908c5e89796365e3"
+    "bytes": 31733,
+    "sha256": "807703e8111d80d56258a947c44622b233b4da95d631eba39cd70ae451b3c29e"
   },
   "publicExports": [
     "analyze_jianzi_frequency",
@@ -53,6 +53,8 @@
     "parse_jianpu",
     "parse_jianzi_text",
     "parse_rapid_input",
+    "puzi_to_note",
+    "score_puzi_summary",
     "short_caption",
     "split_phrases_to_json",
     "structure_marks",

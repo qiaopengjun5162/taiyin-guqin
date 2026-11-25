@@ -238,6 +238,50 @@ export function jianzi_to_text(input_json) {
 }
 
 /**
+ * 谱字 → 单音。只有简单形式能压回单音，复杂形式返回 `{"error":...}`。
+ *
+ * 输入 JSON: `{"puzi": <Puzi JSON>}`；输出：`{"note": <GuqinNote>}` 或 `{"error": "..."}`。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function puzi_to_note(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.puzi_to_note(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * 曲谱里四种谱字形式各有多少。旧谱全部落 simple；出现其它三种才说明真用了新模型。
+ *
+ * 输入 JSON: `GuqinScore`；输出：`{"total","simple","cuochuo","annotation","standalone"}`。
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function score_puzi_summary(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.score_puzi_summary(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * 减字文本 → 状态。解析不出完整减字时返回 `null`。
  *
  * 输入 JSON: `{"text":"大九勾四"}`；输出：状态对象或 `null`。

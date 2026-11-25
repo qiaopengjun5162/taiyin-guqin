@@ -22,11 +22,15 @@
 `Puzi.ts` / `GuqinScore.ts` / `Tuning.ts`。因动了 `crates/**`，按红线重建三份 WASM
 与探针产物；WASM 二进制 hash 未变（新类型暂未导出），源码指纹已更新。
 
-**边界**：目前只能存、不能录也不能画——没有 WASM 导出、没有录入入口、没有渲染路径。
-用户侧零变化是刻意的：数据契约先稳住，再接绑定层与 UI。识别改「部件 + 布局」仍独立排期。
+同日补绑定层：新增 `puzi_to_note` / `score_puzi_summary` 两个 WASM 导出（28 → 30），
+只有简单形式能压回单音，复杂形式给带原因的错误；曲谱谱字计数让「旧谱全 simple、
+出现复杂形式」变成可观测事实。8 条真实产物黄金样例钉住桥接，变异（把旁注计成撮式）确认会红。
 
-验证：Rust core 270 单测、`cargo check --all`、clippy、WASM 五道闸门、
-`just verify-probe` 七项、`just check-types-fresh` 全绿。
+**边界**：目前能存、能数、能安全压回单音，但仍**不能录也不能画**——没有录入入口与渲染路径。
+用户侧零变化是刻意的：数据契约与绑定层先稳住，再动 UI。识别改「部件 + 布局」仍独立排期。
+
+验证：Rust core 272 单测、`cargo check --all`、clippy、WASM 五道闸门、
+`just verify-probe` 七项、`just check-types-fresh` 全绿；前端 97 文件 / 1428 用例。
 
 ### 补薄点：断网判据从 30% 分支覆盖到 100%，门面公开面加守卫（2026-11-25）
 

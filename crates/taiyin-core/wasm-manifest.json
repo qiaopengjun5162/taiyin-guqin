@@ -1,8 +1,8 @@
 {
-  "sourceFingerprint": "3b8b1a72595d8e3f83ae667e90e1742a8016235a4434f4d5421107a5a5bd6410",
+  "sourceFingerprint": "084c533bf9d92ce46a9ae5286ccea51d307e0c9760fc90001c16d16483cfc733",
   "sourceFileCount": 16,
   "artifacts": {
-    "apps/web/wasm/taiyin_core_bg.wasm": "f90028e39c1b6e58692716a492654be3837daaa0d60bfa55a89e9849591206dc",
-    "apps/web/public/wasm/taiyin_core_bg.wasm": "f90028e39c1b6e58692716a492654be3837daaa0d60bfa55a89e9849591206dc"
+    "apps/web/wasm/taiyin_core_bg.wasm": "8a4366862bd6bbe7384e7481f8d7c40ea99a8c5c68de154c2e357c0de5d92bd8",
+    "apps/web/public/wasm/taiyin_core_bg.wasm": "8a4366862bd6bbe7384e7481f8d7c40ea99a8c5c68de154c2e357c0de5d92bd8"
   }
 }

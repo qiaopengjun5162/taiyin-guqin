@@ -398,6 +398,22 @@ pub fn jianzi_to_text(input_json: &str) -> String {
     }
 }
 
+/// 谱字 → 单音。只有简单形式能压回单音，复杂形式返回 `{"error":...}`。
+///
+/// 输入 JSON: `{"puzi": <Puzi JSON>}`；输出：`{"note": <GuqinNote>}` 或 `{"error": "..."}`。
+#[wasm_bindgen]
+pub fn puzi_to_note(input_json: &str) -> String {
+    crate::puzi::to_note_json(input_json)
+}
+
+/// 曲谱里四种谱字形式各有多少。旧谱全部落 simple；出现其它三种才说明真用了新模型。
+///
+/// 输入 JSON: `GuqinScore`；输出：`{"total","simple","cuochuo","annotation","standalone"}`。
+#[wasm_bindgen]
+pub fn score_puzi_summary(input_json: &str) -> String {
+    crate::puzi::score_summary_json(input_json)
+}
+
 /// 减字文本 → 状态。解析不出完整减字时返回 `null`。
 ///
 /// 输入 JSON: `{"text":"大九勾四"}`；输出：状态对象或 `null`。

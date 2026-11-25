@@ -218,8 +218,9 @@ alephpi 的做法：`ortho`（正写，无歧义）与 `abbr`（简写，好打�
    `crates/taiyin-core/src/puzi.rs` 定义四类形式，`GuqinScore.notes` 由
    `Vec<GuqinNote>` 升为 `Vec<Puzi>`，`#[serde(untagged)]` + `Simple` 打头保证旧谱逐字段不变；
    9 条 Rust 单测（含旧 score JSON 往返逐值相等）+ 三份新生成类型
-   （`Puzi.ts` / `GuqinScore.ts` / `Tuning.ts`）。**边界**：绑定层与 UI 尚未接线，
-   撮式/旁注/独体目前只能存不能录也不能画；联袂刻意不进 `Puzi`（它已是音符间关系，
+   （`Puzi.ts` / `GuqinScore.ts` / `Tuning.ts`）。同日补了两个 WASM 导出（`puzi_to_note` / `score_puzi_summary`）+ 8 条真实产物黄金样例。
+   **边界**：UI 尚未接线，
+   撮式/旁注/独体目前能存、能数，但不能录也不能画；联袂刻意不进 `Puzi`（它已是音符间关系，
    `lianmei.rs` 有独立模型），避免两套成组模型打架。详见 `docs/rust-migration-phase0.md` 第 13 节。
 5. **识别改为部件 + 布局**：依赖 4 的字形资产整理，最后做。
 

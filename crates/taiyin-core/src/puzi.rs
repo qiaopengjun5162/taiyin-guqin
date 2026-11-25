@@ -23,9 +23,14 @@
 //! 否则一个裸音符可能被后面的变体抢走。`Puzi` 的完整测试在文件末尾。
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use ts_rs::TS;
 
-use crate::{GuqinNote, HuiPosition, StructureMark};
+use crate::{GuqinNote, GuqinScore, HuiPosition, StructureMark};
+
+fn error_json(message: &str) -> String {
+    json!({ "error": message }).to_string()
+}
 
 /// 一个谱字。叶子是 `GuqinNote`，复杂形式在这里分层承载。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
@@ -77,11 +82,59 @@ impl TryFrom<Puzi> for GuqinNote {
     }
 }
 
+/// 把一个 `Puzi` 压回单音的 JSON 桥接（供 WASM / HTTP 绑定层调用）。
+///
+/// 输入：`{"puzi": <Puzi JSON>}`；输出：`{"note": <GuqinNote>}` 或 `{"error": "..."}`。
+/// 复杂形式给错误而不是降级成第一个音——「丢一半」比报错难查。
+pub fn to_note_json(input_json: &str) -> String {
+    #[derive(Deserialize)]
+    struct Input {
+        puzi: Puzi,
+    }
+    let input = match serde_json::from_str::<Input>(input_json) {
+        Ok(v) => v,
+        Err(e) => return error_json(&format!("谱字 JSON 解析失败：{e}")),
+    };
+    match GuqinNote::try_from(input.puzi) {
+        Ok(note) => json!({ "note": note }).to_string(),
+        Err(e) => error_json(&e),
+    }
+}
+
+/// 统计一首曲子里四种谱字形式各有多少。
+///
+/// 输入：`GuqinScore` JSON；输出：`{"total":n,"simple":n,"cuochuo":n,"annotation":n,"standalone":n}`。
+/// 这是旧谱与新谱的**可观测分界**：旧谱全部落 simple，出现其它三种才说明有人真的用了新模型。
+/// 编辑器将来要提示「这一句里有撮式，当前渲染器还画不出来」，靠的就是这个计数。
+pub fn score_summary_json(input_json: &str) -> String {
+    let score = match serde_json::from_str::<GuqinScore>(input_json) {
+        Ok(v) => v,
+        Err(e) => return error_json(&format!("曲谱 JSON 解析失败：{e}")),
+    };
+    let (mut simple, mut cuochuo, mut annotation, mut standalone) = (0, 0, 0, 0);
+    for puzi in &score.notes {
+        match puzi {
+            Puzi::Simple(_) => simple += 1,
+            Puzi::Cuochuo { .. } => cuochuo += 1,
+            Puzi::Annotation { .. } => annotation += 1,
+            Puzi::Standalone { .. } => standalone += 1,
+        }
+    }
+    json!({
+        "total": score.notes.len(),
+        "simple": simple,
+        "cuochuo": cuochuo,
+        "annotation": annotation,
+        "standalone": standalone,
+    })
+    .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{RightAction, StringNumber};
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn san_gou_san() -> GuqinNote {
         GuqinNote::open_string(RightAction::Gou, StringNumber::new(3).unwrap())
@@ -204,5 +257,59 @@ mod tests {
         // 乱写 kind 的复合形式不能因为「字段不够」就被 Simple 吞掉。
         let bad = json!({ "kind": "cuochuo", "first": null });
         assert!(serde_json::from_value::<Puzi>(bad).is_err());
+    }
+
+    #[test]
+    fn to_note_json_collapses_only_simple() {
+        let note = san_gou_san();
+        let simple = json!({ "puzi": note });
+        let out: Value = serde_json::from_str(&to_note_json(&simple.to_string())).unwrap();
+        assert_eq!(out["note"], serde_json::to_value(&note).unwrap());
+        assert!(out.get("error").is_none());
+
+        let complex = json!({
+            "puzi": { "first": note, "second": san_tiao_wu() }
+        });
+        let out: Value = serde_json::from_str(&to_note_json(&complex.to_string())).unwrap();
+        assert!(out["error"].as_str().unwrap().contains("两个发声点"));
+        assert!(out.get("note").is_none());
+
+        let bad = serde_json::from_str::<Value>(&to_note_json("not json")).unwrap();
+        assert!(bad["error"].as_str().unwrap().contains("解析失败"));
+    }
+
+    #[test]
+    fn score_summary_counts_every_form() {
+        let simple = serde_json::to_value(san_gou_san()).unwrap();
+        let old = json!({
+            "title": "旧谱", "author": "", "tuning": "ZhengDiao",
+            "beat_numerator": 4, "beat_denominator": 4, "bpm": 80, "version": 1,
+            "notes": [simple.clone(), simple.clone()],
+        });
+        let out: Value = serde_json::from_str(&score_summary_json(&old.to_string())).unwrap();
+        assert_eq!(
+            out,
+            json!({
+                "total": 2, "simple": 2, "cuochuo": 0, "annotation": 0, "standalone": 0,
+            })
+        );
+
+        let mixed = json!({
+            "title": "新谱", "author": "", "tuning": "ZhengDiao",
+            "beat_numerator": 4, "beat_denominator": 4, "bpm": 80, "version": 1,
+            "notes": [
+                simple,
+                { "first": san_gou_san(), "second": san_tiao_wu() },
+                { "note": san_tiao_wu(), "moves": [] },
+                { "mark": "少息" }
+            ],
+        });
+        let out: Value = serde_json::from_str(&score_summary_json(&mixed.to_string())).unwrap();
+        assert_eq!(
+            out,
+            json!({
+                "total": 4, "simple": 1, "cuochuo": 1, "annotation": 1, "standalone": 1,
+            })
+        );
     }
 }

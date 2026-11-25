@@ -56,6 +56,18 @@ export function structure_marks(): string;
  */
 export function jianzi_to_text(input_json: string): string;
 /**
+ * 谱字 → 单音。只有简单形式能压回单音，复杂形式返回 `{"error":...}`。
+ *
+ * 输入 JSON: `{"puzi": <Puzi JSON>}`；输出：`{"note": <GuqinNote>}` 或 `{"error": "..."}`。
+ */
+export function puzi_to_note(input_json: string): string;
+/**
+ * 曲谱里四种谱字形式各有多少。旧谱全部落 simple；出现其它三种才说明真用了新模型。
+ *
+ * 输入 JSON: `GuqinScore`；输出：`{"total","simple","cuochuo","annotation","standalone"}`。
+ */
+export function score_puzi_summary(input_json: string): string;
+/**
  * 减字文本 → 状态。解析不出完整减字时返回 `null`。
  *
  * 输入 JSON: `{"text":"大九勾四"}`；输出：状态对象或 `null`。
@@ -257,6 +269,8 @@ export interface InitOutput {
   readonly parse_jianpu: (a: number, b: number) => [number, number];
   readonly parse_jianzi_text: (a: number, b: number) => [number, number];
   readonly parse_rapid_input: (a: number, b: number) => [number, number];
+  readonly puzi_to_note: (a: number, b: number) => [number, number];
+  readonly score_puzi_summary: (a: number, b: number) => [number, number];
   readonly short_caption: (a: number, b: number) => [number, number];
   readonly split_phrases_to_json: (a: number, b: number) => [number, number];
   readonly structure_marks: () => [number, number];
