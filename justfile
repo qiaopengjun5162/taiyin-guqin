@@ -97,6 +97,11 @@ demo:
 verify-demo:
     DEMO_URL=${DEMO_URL:-http://127.0.0.1:3100/taiyin-guqin} node scripts/verify-demo.mjs
 
+# 打开投屏介绍稿（单文件、零依赖、离线可用）：
+# ← → / 空格 翻页 · F 全屏 · S 演讲者备注 · 浏览器「打印」可存成 6 页 PDF。
+intro:
+    open docs/preview/project-intro.html
+
 # 构建前端
 build-web:
     {{pnpm}} --filter web build

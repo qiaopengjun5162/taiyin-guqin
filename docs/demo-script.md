@@ -25,6 +25,7 @@ DEMO_URL=http://127.0.0.1:3100/taiyin-guqin node scripts/verify-demo.mjs
 - [ ] 提前导出一张 PNG 放桌面（万一现场导出卡住，直接切图片）
 - [ ] 关掉会弹通知的软件（微信/邮件），避免投屏时跳窗
 - [ ] 如果要用手机演示：手机连同一个 Wi-Fi，开 `http://<本机局域网IP>:3100/taiyin-guqin`
+- [ ] 想先讲 2 分钟再进工具：`just intro` 打开投屏介绍稿（6 页，`→` 翻页 / `F` 全屏 / `S` 看备注；浏览器「打印」可存成 6 页 PDF）
 
 ---
 
