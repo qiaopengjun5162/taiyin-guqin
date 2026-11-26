@@ -87,6 +87,16 @@ check-types-fresh:
 dev:
     {{pnpm}} --filter web dev
 
+# 演示用开发服务器（固定 3100，避免别的项目占着 3000）。
+# 演示脚本 docs/demo-script.md 里的地址就按这个端口写。
+demo:
+    cd apps/web && PORT=3100 {{pnpm}} dev
+
+# 演示前自检：只验「晚上要现场走的那条线」——出声 → 简谱转减字 → 智能编排
+# → 入谱 → 导出 PNG（约 40 秒）。前置：另开终端跑 `just demo`。
+verify-demo:
+    DEMO_URL=${DEMO_URL:-http://127.0.0.1:3100/taiyin-guqin} node scripts/verify-demo.mjs
+
 # 构建前端
 build-web:
     {{pnpm}} --filter web build

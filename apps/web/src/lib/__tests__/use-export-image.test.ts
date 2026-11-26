@@ -110,6 +110,45 @@ describe("useExportImage", () => {
     expect(addSpy).toHaveBeenCalledWith("hidden");
   });
 
+  it("截图尺寸覆盖「页脚显示之后」的高度，且给页脚补上 flex", async () => {
+    // 2026-11-26 线上实测：不加这两条，导出的 PNG 会把页脚切掉——曲名和定弦
+    // 正好落在画布外，图上只剩「太音智能」半行。jsdom 没有真实布局，所以这里
+    // 直接把尺寸 stub 出来，断言的是「传给 html-to-image 的数」而不是渲染效果。
+    const { container, footer } = setupContainer();
+    Object.defineProperty(container, "scrollWidth", { configurable: true, value: 576 });
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 312 });
+    container.getBoundingClientRect = () =>
+      ({ top: 100, bottom: 412, left: 0, right: 576, width: 576, height: 312, x: 0, y: 100, toJSON: () => ({}) }) as DOMRect;
+    // 页脚显示后容器长到 408；页脚底边换算成容器内坐标是 408
+    footer.getBoundingClientRect = () =>
+      ({ top: 400, bottom: 508, left: 0, right: 576, width: 576, height: 108, x: 0, y: 400, toJSON: () => ({}) }) as DOMRect;
+
+    let footerHadFlex: boolean | null = null;
+    let footerHadHidden: boolean | null = null;
+    toPng.mockImplementation(async () => {
+      footerHadFlex = footer.classList.contains("flex");
+      footerHadHidden = footer.classList.contains("hidden");
+      return "data:image/png;base64,AAAA";
+    });
+
+    const ref = { current: container } as React.RefObject<HTMLElement | null>;
+    const { result } = renderHook(() => useExportImage({ containerRef: ref }));
+
+    await act(async () => {
+      await result.current.exportPng();
+    });
+
+    const opts = toPng.mock.calls[0]![1] as { width: number; height: number };
+    expect(opts.width).toBe(576);
+    // 页脚底边 508 - 容器顶 100 = 408，比 scrollHeight 的 312 大 → 取 408，再留 32 余量
+    expect(opts.height).toBe(440);
+    expect(footerHadFlex).toBe(true);
+    expect(footerHadHidden).toBe(false);
+    // 收尾要还原干净：页脚不能一直显示着
+    expect(footer.classList.contains("hidden")).toBe(true);
+    expect(footer.classList.contains("flex")).toBe(false);
+  });
+
   it("does nothing when container ref is null", async () => {
     const ref = { current: null } as React.RefObject<HTMLElement | null>;
     const { result } = renderHook(() => useExportImage({ containerRef: ref }));

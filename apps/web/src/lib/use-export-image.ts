@@ -24,8 +24,21 @@ export function useExportImage({ containerRef, title, timeout = 15_000 }: UseExp
       setIsExporting(true);
       const footer = document.getElementById("export-footer");
       try {
-        // 显示预埋的页脚容器（export-footer 默认 hidden），让它入画
+        // 显示预埋的页脚容器（export-footer 默认 hidden），让它入画。
+        // `flex` 必须显式补上：组件里只有 `print:flex`，屏幕上摘掉 `hidden`
+        // 会退回 `block`，`items-center` 随之失效、页脚文字左对齐贴边。
         footer?.classList.remove("hidden");
+        footer?.classList.add("flex");
+
+        // 等一帧再截：`hidden` 去掉后容器高度要下一次布局才更新，而 html-to-image
+        // 读的是当前布局尺寸。2026-11-26 实测不等这一帧，导出的 PNG 会把页脚
+        // **只截到上半截**——曲名与定弦正好被切掉，图上只剩半行字。
+        await new Promise<void>((resolve) => {
+          const raf = typeof requestAnimationFrame === "function"
+            ? requestAnimationFrame
+            : (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0);
+          raf(() => raf(() => resolve()));
+        });
 
         const timer = setTimeout(() => {
           setIsExporting(false);
@@ -40,10 +53,25 @@ export function useExportImage({ containerRef, title, timeout = 15_000 }: UseExp
         // html-to-image 的 toPng/toSvg 入参一致，仅返回格式不同
         const render = format === "svg" ? toSvg : toPng;
         const extension = format === "svg" ? "svg" : "png";
+
+        // 尺寸自己给，不靠库内部去读：`hidden` 移除后它拿到的 clientHeight
+        // 可能仍是去掉页脚前那一刻的旧值（2026-11-26 实测导出图把页脚切掉半行，
+        // 曲名与定弦正好丢失）。这里读的是**页脚已经参与布局之后**的真实尺寸。
+        //
+        // 再留 32px 余量：html-to-image 在克隆里重建样式，字体回退会让页脚行高
+        // 比页面上明显变大（实测三行里最后一版仍会吃掉最后一行）。多出来的部分
+        // 是背景色，视觉上看不出来；宁可下面多一条留白，也别把定弦切掉。
+        const top = node.getBoundingClientRect().top;
+        const footerBottom = footer ? footer.getBoundingClientRect().bottom - top : 0;
+        const width = Math.ceil(node.scrollWidth);
+        const height = Math.ceil(Math.max(node.scrollHeight, footerBottom)) + 32;
+
         const dataUrl = await render(node, {
           backgroundColor: "#f8f3eb",
           pixelRatio: 2,
           cacheBust: true,
+          width,
+          height,
         });
 
         clearTimeout(timer);
@@ -60,6 +88,7 @@ export function useExportImage({ containerRef, title, timeout = 15_000 }: UseExp
         console.error(`export ${format} failed:`, err);
       } finally {
         footer?.classList.add("hidden");
+        footer?.classList.remove("flex");
         setIsExporting(false);
       }
     },
