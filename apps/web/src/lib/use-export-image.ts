@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { toPng, toSvg } from "html-to-image";
+import { buildSubsetFontEmbedCss } from "./export-font-embed";
 
 interface UseExportImageOptions {
   /** 截图目标容器 ref（应包裹乐谱 + 页脚） */
@@ -66,12 +67,26 @@ export function useExportImage({ containerRef, title, timeout = 15_000 }: UseExp
         const width = Math.ceil(node.scrollWidth);
         const height = Math.ceil(Math.max(node.scrollHeight, footerBottom)) + 32;
 
+        // ⚠️ 字体分片只内联「这张图用得到的」。
+        // html-to-image 默认会把文档里 613 个 `@font-face` 全拉一遍再 base64 塞进
+        // SVG：本机只是慢，GitHub Pages 上每个分片要十几秒、导出 60 秒都出不来
+        // （2026-11-26 线上实测挂起 507 个请求）。这里先按 unicode-range 过滤再内联。
+        // 取不到规则时返回 null，退回库默认行为——宁可慢，不能导不出。
+        let fontEmbedCSS: string | undefined;
+        try {
+          const embed = await buildSubsetFontEmbedCss(node);
+          fontEmbedCSS = embed.css ?? undefined;
+        } catch (err) {
+          console.warn("subset font embed failed, fallback to default:", err);
+        }
+
         const dataUrl = await render(node, {
           backgroundColor: "#f8f3eb",
           pixelRatio: 2,
           cacheBust: true,
           width,
           height,
+          ...(fontEmbedCSS ? { fontEmbedCSS } : {}),
         });
 
         clearTimeout(timer);
