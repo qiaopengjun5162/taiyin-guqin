@@ -22,6 +22,8 @@ import { chromium } from "playwright";
 import { statSync } from "node:fs";
 
 const BASE = process.env.DEMO_URL ?? "http://localhost:3000/taiyin-guqin";
+/** 验线上（github.io）时要走本机代理；本机服务不需要。 */
+const PROXY = process.env.DEMO_PROXY;
 const failures = [];
 const step = (name, ok, detail = "") => {
   console.log(`${ok ? "✓" : "✗"} ${name}${detail ? ` — ${detail}` : ""}`);
@@ -29,7 +31,8 @@ const step = (name, ok, detail = "") => {
 };
 
 const browser = await chromium.launch({
-  args: ["--no-proxy-server", "--autoplay-policy=no-user-gesture-required"],
+  args: PROXY ? ["--autoplay-policy=no-user-gesture-required"] : ["--no-proxy-server", "--autoplay-policy=no-user-gesture-required"],
+  proxy: PROXY ? { server: PROXY } : undefined,
 });
 const ctx = await browser.newContext({
   viewport: { width: 1440, height: 1000 },
@@ -94,23 +97,17 @@ await page.waitForTimeout(2000);
 const arrangeBtn = page.getByRole("button", { name: "智能编排" }).first();
 step("翻译后有候选与「智能编排」", (await arrangeBtn.count()) > 0);
 
-// ③ 智能编排 —— 结论由 Rust 生成，是「专业性」最强的一幕
-if (await arrangeBtn.count()) {
-  await arrangeBtn.click();
-  await page.waitForTimeout(1500);
-  const summary = await page.evaluate(() =>
-    (document.querySelector("[data-arrange-summary]")?.textContent ?? "").trim(),
-  );
-  step("编排给出「说人话」结论", summary.length > 0, summary);
-}
-
-// ④ 确认全部 —— 数字真正变成谱面上的减字
+// ③ 确认全部 —— 数字真正变成谱面上的减字
 await page.getByRole("button", { name: "确认全部" }).first().click();
 await page.waitForTimeout(1200);
 const notes = await page.locator("[data-note-column]").count();
 step("确认后谱面成谱", notes === 10, `${notes} 个谱字（期望 10）`);
 
-// ⑤ 导出 PNG —— 演示的「带走」环节，页脚必须完整（曲名 + 定弦）
+// ④ 导出 PNG —— 演示的「带走」环节，页脚必须完整（曲名 + 定弦）
+//
+// 顺序刻意排在「智能编排」**之前**：编排会把一部分散音改写成按音
+// （大指反九徽这类），而这类减字的连字字形还没补齐，谱面上会散成
+// 「大 反 九」几个部件——导出的图同样如此。先导后编，拿到的图是完整的。
 await page.waitForTimeout(400);
 const [download] = await Promise.all([
   page.waitForEvent("download", { timeout: 60000 }).catch(() => null),
@@ -128,6 +125,16 @@ const footerText = await page.evaluate(
   () => document.getElementById("export-footer")?.textContent?.trim() ?? "",
 );
 step("导出页脚含曲名与定弦", footerText.includes("定弦") && footerText.includes("《"), footerText);
+
+// ⑤ 智能编排 —— 结论由 Rust 生成，是「专业性」最强的一幕
+if (await arrangeBtn.count()) {
+  await arrangeBtn.click();
+  await page.waitForTimeout(1500);
+  const summary = await page.evaluate(() =>
+    (document.querySelector("[data-arrange-summary]")?.textContent ?? "").trim(),
+  );
+  step("编排给出「说人话」结论", summary.length > 0, summary);
+}
 
 step("全程无 JS 运行时错误", pageErrors.length === 0, pageErrors.slice(0, 3).join(" | "));
 
