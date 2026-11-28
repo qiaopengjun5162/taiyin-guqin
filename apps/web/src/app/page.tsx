@@ -9,17 +9,18 @@ import {
   useSyncExternalStore,
   type SetStateAction,
 } from "react";
+import Link from "next/link";
 import type { NoteColumn } from "@/lib/types";
 import { ScoreView } from "@/components/score-view";
 import { JianzipuKeyboard } from "@/components/jianzipu-keyboard";
 import { PhrasePractice } from "@/components/phrase-practice";
 import { FollowPlayPanel } from "@/components/follow-play-panel";
-import { PracticePanels } from "@/components/practice-panels";
-import { SkipLink, SiteHeader, SectionNav, SiteFooter, BackToTop } from "@/components/page-chrome";
+import { SkipLink, SiteHeader, SiteFooter, BackToTop } from "@/components/page-chrome";
+import { FeatureNav } from "@/components/feature-shell";
 import { SaveLoadToolbar } from "@/components/save-load-toolbar";
 import { LoadDialog, type LoadDialogTab } from "@/components/load-dialog";
-import { BackendSettings } from "@/components/backend-settings";
 import { ExportFooter } from "@/components/export-footer";
+import { takeQueuedNotes, takeQueuedPhrase } from "@/lib/workbench-bridge";
 import { JianpuTranslator } from "@/components/jianpu-translator";
 import { JianziCodeImport } from "@/components/jianzi-code-import";
 import {
@@ -257,7 +258,6 @@ export default function Home() {
 
   const {
     scorePhrases,
-    sticking,
     activePractice,
     activePracticeIndex,
     activeJoinTo,
@@ -402,11 +402,11 @@ export default function Home() {
     onError: showError,
   });
 
-  function showInfo(message: string) {
+  const showInfo = useCallback((message: string) => {
     setInfoMessage(message);
     if (infoTimerRef.current) clearTimeout(infoTimerRef.current);
     infoTimerRef.current = setTimeout(() => setInfoMessage(null), 4000);
-  }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1304,6 +1304,22 @@ export default function Home() {
     void play();
   }, [score, play]);
 
+  // 2026-11-28 拆页：识别 / 简谱录入 / 练琴日志各自独立成页，
+  // 结果通过 sessionStorage 一次性带回来。ref 保证只处理一次——
+  // commitScore 与 showInfo 的引用会随 state 变，不能放进「仅首次」的依赖判断。
+  const bridgeHandledRef = useRef(false);
+  useEffect(() => {
+    if (bridgeHandledRef.current) return;
+    bridgeHandledRef.current = true;
+    const notes = takeQueuedNotes();
+    if (notes.length > 0) {
+      commitScore((prev) => [...prev, ...notes]);
+      showInfo(`已从功能页带回 ${notes.length} 个谱字`);
+    }
+    const phrase = takeQueuedPhrase();
+    if (phrase !== null) practiceSticking(phrase);
+  }, [commitScore, showInfo, practiceSticking]);
+
 
   return (
     <>
@@ -1311,6 +1327,7 @@ export default function Home() {
       <main id="main-content" tabIndex={-1} className="flex flex-col items-center min-h-dvh py-10 px-4 xl:grid xl:grid-cols-[minmax(0,576px)_360px] xl:gap-6 xl:items-start xl:justify-center xl:max-w-[1280px] xl:mx-auto xl:px-6 xl:mt-6">
 
       <SiteHeader />
+      <FeatureNav />
 
       <div className="xl:col-start-1 w-full min-w-0 flex flex-col items-center">
 
@@ -1367,9 +1384,9 @@ export default function Home() {
                 第一次用？看这三行
               </summary>
               <ul className="mt-2 space-y-1 text-[12px] leading-relaxed text-stone-600">
-                <li>· 手上有老谱照片 → 下面「识别减字图片」，逐格校对</li>
-                <li>· 想自己打谱 → 下面键盘点几下就出一个字，或直接粘简谱</li>
-                <li>· 在学琴 → 逐句慢练、节拍器、调音器都在右侧</li>
+                <li>· 想先听：点「先听一首」，听听减字谱能变成什么声音</li>
+                <li>· 想自己打：下面键盘点几下就出一个字；粘简谱可去「简谱转减字」页</li>
+                <li>· 查音位、调音、跟录音练、练琴记录：用顶部「功能导航」进对应页面</li>
               </ul>
             </details>
           </div>
@@ -1507,48 +1524,9 @@ export default function Home() {
         {score.length > 0 && <ExportFooter title={scoreTitle} tuning={tuningLabel} />}
       </div>
 
-      {/*
-       * ── 轻用场景引导：只在空谱时出现 ──
-       * 放在 #score-area 之外：那一块是整谱导出截图的靶子，写进来会被一起截进 PNG。
-       * 内容对应的能力是真的闭环（连打敲完的字也能「存为常用 → 图 / 矢」），
-       * 不是宣传话术；有音符以后收起，不占正在打谱的人的屏幕。
-       *
-       * 移动端同样 `order-last`：与「太音是什么」一样，它是引导不是主操作，
-       * 不该把减字键盘推到一屏之外（详见上方介绍区的说明）。
-       */}
-      {/*
-       * ── 「只想记一个字」：改成折叠，默认收起（2026-11-18） ──
-       *
-       * 这是**次要场景**（记一个指法贴进课件），却和主路径（打一首谱）平排在首屏，
-       * 各占一大块。实测量过：它把首屏文字从 400 字推到「看不清重点」的程度。
-       *
-       * 现在收成一行标题，想用的人点开。主路径上不该有两个同等重量的入口。
-       */}
-      {score.length === 0 && (
-        <details className="no-print order-last mt-3 w-full max-w-xl rounded-lg border border-amber-700/25 bg-[var(--paper)] shadow-sm xl:order-none xl:col-start-1">
-          <summary className="cursor-pointer px-4 py-3 text-[12px] tracking-wider text-stone-600 select-none">
-            只想记一个字？不必打整首谱
-          </summary>
-          <div className="px-4 pb-4">
-            <ul className="space-y-1 text-[12px] leading-relaxed text-stone-600">
-              <li>· 课后记下老师所授的一处指法</li>
-              <li>· 备课、批改时在课件里标一个减字</li>
-              <li>· 写文章、发视频时配一张准确的减字图</li>
-            </ul>
-            <p className="mt-2 text-[12px] leading-relaxed text-stone-600">
-              敲一个减字 →「存为常用」→ 点卡片上的「图 / 矢」，即得 PNG / SVG，
-              贴进笔记或课件。不用装字体、不用装输入法。
-            </p>
-            <button
-              type="button"
-              onClick={jumpToKeyboard}
-              className="mt-3 min-h-[40px] rounded border border-amber-700/40 px-3 text-[12px] tracking-wider text-amber-900 transition-colors hover:bg-amber-700/10"
-            >
-              去敲一个字
-            </button>
-          </div>
-        </details>
-      )}
+      {/* 2026-11-28：「只想记一个字」引导已移除。它和主路径平排在首屏，
+          两个入口同重量，正是「一页塞满功能」的来源。敲单字的能力仍在键盘区，
+          需要图 / 矢量直接用工具栏的导出按钮，不必再放一张引导卡。 */}
 
       {/* ── 工具栏：标题 + 保存 / 加载 / 导出 ── */}
       <div className="xl:col-start-1 w-full flex justify-center">
@@ -1688,6 +1666,12 @@ export default function Home() {
                 提示：在「简谱转减字」里输入简谱（如{" "}
                 <code className="rounded bg-amber-900/10 px-1">5 6 1 2 | 3 5 6 -</code>
                 ），可一键生成多套减字谱候选并智能编排指法；也支持「减字码入谱」整段粘入。
+                <Link
+                  href="/translate"
+                  className="ml-2 underline underline-offset-2 text-amber-700 hover:text-amber-900"
+                >
+                  在独立页专心录入 →
+                </Link>
               </p>
               {inputTab === "jianpu" ? (
                 <JianpuTranslator
@@ -1717,8 +1701,6 @@ export default function Home() {
       </div>
 
       <div className="xl:col-start-2 w-full min-w-0 flex flex-col items-stretch">
-      <SectionNav />
-
       {/* ── 演奏控制台 ── */}
       <div id="sec-console" className="ty-panel no-print mt-4 w-full max-w-xl p-4 xl:col-start-2">
         <div className="mb-3 flex items-center gap-2">
@@ -1917,10 +1899,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── 社区后端设置（可选）：填了就能浏览 / 发布社区曲谱 ── */}
-      <div className="xl:col-start-2 w-full flex justify-center">
-        <BackendSettings />
-      </div>
+      {/* 2026-11-28：社区后端设置搬到 /settings。这里只保留加载对话框（打谱的一部分）。 */}
 
       {/* ── 加载对话框 ── */}
       <LoadDialog
@@ -1944,14 +1923,6 @@ export default function Home() {
         onCommunityFilterChange={handleCommunityFilterChange}
       />
 
-
-      {/* 右栏工具组：五个折叠面板的开合 / tab 状态都收在组件内部 */}
-      <PracticePanels
-        onImportNotes={(notes) => commitScore((prev) => [...prev, ...notes])}
-        scoreTitle={scoreTitle}
-        sticking={sticking}
-        onPracticePhrase={practiceSticking}
-      />
 
       </div>
 

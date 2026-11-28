@@ -623,8 +623,10 @@ describe("Home · 编辑与删除", () => {
     fireEvent.click(noteColumns(container)[0]);
 
     expect(container.textContent).toContain("正在编辑第 1 音 · 确认后更新");
-    // 编辑模式下不再显示「简谱转减字」入口，避免误往谱尾追加
-    expect(container.textContent).not.toContain("简谱转减字");
+    // 编辑模式下键盘区不再显示「简谱转减字」入口，避免误往谱尾追加。
+    // 限定在键盘区：顶部功能导航里也有这个链接，全文档断言会误判。
+    const keyboard = container.querySelector("#keyboard-area");
+    expect(keyboard?.textContent).not.toContain("简谱转减字");
 
     fireEvent.click(screen.getByRole("button", { name: "取消编辑" }));
     expect(container.textContent).not.toContain("正在编辑第 1 音");
@@ -652,21 +654,6 @@ describe("Home · 编辑与删除", () => {
 
     fireEvent.keyDown(window, { key: "z", ctrlKey: true, shiftKey: true });
     await waitFor(() => expect(noteColumns(container).length).toBe(8));
-  });
-});
-
-describe("Home · 识别面板", () => {
-  it("展开后可切换单字 / 整页", async () => {
-    const { container } = render(<Home />);
-
-    fireEvent.click(screen.getByRole("button", { name: "＋ 识别减字图片" }));
-    expect(screen.getByText("减字谱单字识别（后端模型）")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "整页" }));
-    expect(screen.queryByText("减字谱单字识别（后端模型）")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "收起识别" }));
-    expect(container.textContent).toContain("＋ 识别减字图片");
   });
 });
 

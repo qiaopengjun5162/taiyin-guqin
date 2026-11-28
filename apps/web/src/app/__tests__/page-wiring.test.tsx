@@ -359,15 +359,6 @@ describe("Home · 录入与识别导入接线", () => {
     expect(container.textContent).toContain("提示");
   });
 
-  it("整页识别的 onImport 把音符追加到谱尾", async () => {
-    const { container } = await loadExample();
-
-    fireEvent.click(screen.getByRole("button", { name: "＋ 识别减字图片" }));
-    fireEvent.click(screen.getByRole("button", { name: "整页" }));
-    fireEvent.click(screen.getByRole("button", { name: "模拟整页导入" }));
-
-    expect(noteColumns(container).length).toBe(9);
-  });
 });
 
 describe("Home · 社区排序与筛选接线", () => {
@@ -624,29 +615,6 @@ describe("Home · 跟弹判定回调接线", () => {
         }),
       ),
     );
-  });
-});
-
-describe("Home · 卡点句「练这句」接线", () => {
-  it("有成绩的句按最好成绩档起练，没成绩的退回当前档", async () => {
-    // 第 2 句（键 4-7-4）练到 0.8，第 1 句没练过。
-    // 进度键 = local|曲名|音数，示例曲全名带「（片段）」
-    window.localStorage.setItem(
-      "taiyin.practiceProgress.v1:local|沧海一声笑（片段）|8",
-      JSON.stringify({ "4-7-4": 0.8 }),
-    );
-    await loadExample();
-
-    fireEvent.click(screen.getByText(/练琴记录/));
-    fireEvent.click(screen.getByText("打卡与统计"));
-    expect(await screen.findByTestId("sticking-count")).toHaveTextContent("1");
-
-    // 先点没成绩的句：退回当前档（默认 0.6），再点卡点句：按最好成绩 0.8 起练
-    fireEvent.click(screen.getByRole("button", { name: "练第1句" }));
-    expect(h.play).toHaveBeenCalledWith(0, { endIndex: 3, repeat: 3, tempo: 0.6 });
-
-    fireEvent.click(screen.getByRole("button", { name: "练卡点句" }));
-    expect(h.play).toHaveBeenCalledWith(4, { endIndex: 7, repeat: 3, tempo: 0.8 });
   });
 });
 

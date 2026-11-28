@@ -142,33 +142,23 @@ async function desktop(browser) {
   check("演奏控制台无控件溢出", ctrlOverflow === 0, `${ctrlOverflow} 个元素越界`);
 
   /*
-   * 右栏五个工具面板必须是**手风琴**（同时只开一个）。
-   *
-   * 2026-11-18 实拍发现：五个独立 useState 允许全开，全展开后右栏 2775px、
-   * 左栏 1777px，页面被撑到 3214px，底部一大片空白；用户点第二个面板时
-   * 第一个还占着位置，得一路滚过去才看得到新的。
+   * 2026-11-28 拆页：右栏五个折叠面板已各自独立成页。
+   * 主页只保留打谱工作台 + 功能导航；这里验证「工具不再堆在一页」。
    */
-  const accordion = await page.evaluate(async () => {
-    const labels = ["识别减字图片", "琴面音位全览", "调音", "跟录音练", "练琴记录"];
-    const results = [];
-    for (const label of labels) {
-      const btn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent || "").includes(label),
-      );
-      if (!btn) continue;
-      btn.click();
-      await new Promise((r) => setTimeout(r, 250));
-      const open = Array.from(document.querySelectorAll("button"))
-        .map((b) => (b.textContent || "").trim())
-        .filter((t) => t.startsWith("收起"));
-      results.push({ label, open: open.length });
-    }
-    return results;
+  const splitNav = await page.evaluate(() => {
+    const nav = document.querySelector('nav[aria-label="功能导航"]');
+    const links = Array.from(nav?.querySelectorAll("a") ?? []).map((a) =>
+      (a.textContent || "").trim(),
+    );
+    const toggles = Array.from(document.querySelectorAll("button")).filter((b) =>
+      /^(收起|＋ )/.test((b.textContent || "").trim()),
+    ).length;
+    return { links, toggles };
   });
   check(
-    "右栏工具面板同时只开一个（手风琴）",
-    accordion.length > 0 && accordion.every((r) => r.open <= 1),
-    accordion.map((r) => `${r.label}:${r.open}`).join(" "),
+    "工具已拆成独立页：功能导航齐全、主页无折叠面板",
+    splitNav.links.length >= 8 && splitNav.toggles === 0,
+    `导航 ${splitNav.links.length} 项 / 折叠按钮 ${splitNav.toggles}`,
   );
 
   /*

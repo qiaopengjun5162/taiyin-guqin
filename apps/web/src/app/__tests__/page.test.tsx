@@ -167,27 +167,12 @@ describe("Home（主页面冒烟）", () => {
     expect(start).toHaveBeenCalled();
   });
 
-  it("「只想记一个字」收成折叠入口，打开后能「去敲一个字」", async () => {
-    /*
-     * 2026-11-18 改：它是**次要场景**，不该和主路径并排各占一大块。
-     * 现在是 details，默认收起——想用的人点开，不想用的人只看到一行标题。
-     */
+  it("单字引导卡已移除，敲单字的能力仍在键盘区", () => {
     const { container } = render(<Home />);
-
-    const details = container.querySelector("details");
-    expect(details).not.toBeNull();
-    expect(details?.open).toBe(false);
-    expect(screen.getByText("只想记一个字？不必打整首谱")).toBeTruthy();
-
-    // 展开后按钮可用；jsdom 没有 scrollIntoView，点它不该抛 TypeError
-    fireEvent.click(screen.getByText("只想记一个字？不必打整首谱"));
-    expect(() => fireEvent.click(screen.getByRole("button", { name: "去敲一个字" }))).not.toThrow();
-
-    // 有音符后整个入口消失
-    fireEvent.click(screen.getByRole("button", { name: "沧海一声笑" }));
-    await waitFor(() => {
-      expect(screen.queryByText("只想记一个字？不必打整首谱")).toBeNull();
-    });
+    expect(screen.queryByText("只想记一个字？不必打整首谱")).toBeNull();
+    expect(container.querySelector("#keyboard-area")).not.toBeNull();
+    // 顶部换成功能导航，跨页去「简谱转减字」等单功能页
+    expect(screen.getByRole("navigation", { name: "功能导航" })).toBeTruthy();
   });
 
   it("轻用引导卡在整谱导出靶子之外", () => {

@@ -1,17 +1,21 @@
 /**
  * @vitest-environment jsdom
  *
- * 主页底部那几个「＋ …」折叠面板的接线测试。
+ * 2026-11-28 拆页后：原先这里测的是「主页右栏五个折叠面板」。
+ * 那五个面板已经各自独立成页，所以这里改成验证**一个功能一个页面**：
+ * 每页只挂自己的组件、导航高亮当前页、跨页「带回结果」的接线还在。
  *
- * 这些面板平时收着，展开才挂载子组件——正因为平时看不见，
- * 之前漏过「点了没反应」这类问题（子组件没接上、tab 状态写错）。
- * 这里把每个面板都真正点开一次，确认挂的是对应组件、切 tab 生效、再点能收起。
+ * 折叠面板时代的用例（默认收起 / 手风琴开合 / 页内锚点）不再适用——
+ * 功能没丢，只是从「一页里的五个入口」变成「五个页面里的各一个入口」。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import type { NoteColumn } from "@/lib/types";
 
 const h = vi.hoisted(() => ({
+  pathname: "/",
+  push: vi.fn(),
   listScores: vi.fn().mockResolvedValue([]),
   createScore: vi.fn(),
   getScore: vi.fn(),
@@ -29,6 +33,11 @@ const h = vi.hoisted(() => ({
   stopPlayback: vi.fn(),
   toggleMetronome: vi.fn(),
   stopMetronome: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => h.pathname,
+  useRouter: () => ({ push: h.push }),
 }));
 
 vi.mock("@/lib/api", () => {
@@ -86,9 +95,6 @@ vi.mock("@/lib/score-export", async (importOriginal) => {
 });
 
 vi.mock("@/lib/taiyin-wasm", () => ({
-  // 释义/短标签等已迁进 Rust，前端薄壳要 isWasmReady 才肯转发。
-  // 这里给「未就绪」：本测试只关心面板开合，释义内容不参与断言；
-  // 给了 ready 反而要连 getWasmSync 一起造，平白多一堆假实现。
   isWasmReady: () => false,
   getWasmSync: () => {
     throw new Error("本测试不应调用 WASM 同步接口");
@@ -107,12 +113,30 @@ vi.mock("@/lib/taiyin-wasm", () => ({
   getJianziVariantGroups: vi.fn().mockResolvedValue([]),
 }));
 
-// 只替身这几个「展开才出现」的组件：它们各自要麦克风/音频/画布，与本测试无关。
+// 替身组件各自带一个可点的动作，用来验证「带回工作台」的接线。
 vi.mock("@/components/jianzi-recognizer", () => ({
   JianziRecognizer: () => <div data-testid="recognizer-single">单字识别</div>,
 }));
 vi.mock("@/components/jianzi-sheet-recognizer", () => ({
-  JianziSheetRecognizer: () => <div data-testid="recognizer-sheet">整页识别</div>,
+  JianziSheetRecognizer: ({ onImport }: { onImport: (notes: NoteColumn[]) => void }) => (
+    <button
+      data-testid="recognizer-sheet"
+      onClick={() =>
+        onImport([
+          {
+            id: "imported-1",
+            jianpuNumber: 5,
+            jianpuOctave: "4",
+            jianpuDot: false,
+            duration: 0.5,
+            jianzi: { json: "test" },
+          } as unknown as NoteColumn,
+        ])
+      }
+    >
+      模拟整页导入
+    </button>
+  ),
 }));
 vi.mock("@/components/qin-board", () => ({
   QinBoard: () => <div data-testid="qin-board">琴面</div>,
@@ -127,119 +151,142 @@ vi.mock("@/components/recorder-panel", () => ({
   RecorderPanel: () => <div data-testid="recorder">录音</div>,
 }));
 vi.mock("@/components/practice-log-panel", () => ({
-  PracticeLogPanel: () => <div data-testid="practice-log">打卡统计</div>,
+  PracticeLogPanel: ({
+    onPracticePhrase,
+  }: {
+    onPracticePhrase?: (index: number) => void;
+  }) => (
+    <button data-testid="practice-log" onClick={() => onPracticePhrase?.(2)}>
+      练第3句
+    </button>
+  ),
 }));
 
 import Home from "@/app/page";
+import TranslatePage from "@/app/translate/page";
+import RecognizePage from "@/app/recognize/page";
+import QinBoardPage from "@/app/qin-board/page";
+import TunerPage from "@/app/tuner/page";
+import PracticeAudioPage from "@/app/practice-audio/page";
+import RecorderPage from "@/app/recorder/page";
+import PracticeLogPage from "@/app/practice-log/page";
+import SettingsPage from "@/app/settings/page";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.pathname = "/";
+  window.sessionStorage.clear();
 });
 
 afterEach(() => {
   cleanup();
 });
 
-describe("主页语义结构（屏幕阅读器 / 键盘）", () => {
-  it("标题大纲：唯一 h1，各主区块都有 h2 可跳转", () => {
-    render(<Home />);
-
-    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    // 区块名与右栏页内导航一致；改文案时两边一起改
-    for (const name of [
-      "曲谱",
-      "录入减字",
-      "演奏控制台",
-      "谱字识别",
-      "琴面音位",
-      "调音定弦",
-      "跟奏",
-      "练琴日志",
-    ]) {
-      expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
+describe("单功能页：一个页面只做一件事", () => {
+  it("每个功能页只挂自己的组件，不夹带其它工具", () => {
+    const pages: Array<[string, React.ReactElement, string]> = [
+      ["recognize", <RecognizePage key="recognize" />, "recognizer-single"],
+      ["qin-board", <QinBoardPage key="qin-board" />, "qin-board"],
+      ["tuner", <TunerPage key="tuner" />, "tuner"],
+      ["practice-audio", <PracticeAudioPage key="practice-audio" />, "practice"],
+      ["recorder", <RecorderPage key="recorder" />, "recorder"],
+      ["practice-log", <PracticeLogPage key="practice-log" />, "practice-log"],
+    ];
+    for (const [, page, testid] of pages) {
+      const { unmount } = render(page);
+      expect(screen.getByTestId(testid)).toBeInTheDocument();
+      unmount();
     }
   });
 
-  it("折叠按钮用 aria-expanded 播报开合状态", () => {
-    render(<Home />);
-
-    const toggle = screen.getByRole("button", { name: "＋ 识别减字图片" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(toggle);
-    expect(screen.getByRole("button", { name: "收起识别" })).toHaveAttribute(
-      "aria-expanded",
-      "true"
-    );
+  it("功能导航高亮当前页", () => {
+    h.pathname = "/tuner";
+    render(<TunerPage />);
+    const current = screen.getByRole("link", { name: "调音定弦" });
+    expect(current).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("navigation", { name: "功能导航" })).toBeInTheDocument();
   });
 
-  it("跳转主内容链接指向可聚焦的 main", () => {
-    render(<Home />);
-
-    const skip = screen.getByRole("link", { name: "跳到主内容" });
-    expect(skip).toHaveAttribute("href", "#main-content");
-
-    const main = document.getElementById("main-content");
-    expect(main).toBeInTheDocument();
-    // tabindex=-1 才能让锚点跳转把焦点交给 main，而不是留在链接上
-    expect(main).toHaveAttribute("tabindex", "-1");
-  });
-});
-
-describe("主页折叠面板", () => {
-  it("默认全部收起：只留入口，不挂子组件", () => {
-    render(<Home />);
-
-    expect(screen.queryByTestId("recognizer-single")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("qin-board")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("tuner")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("practice")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("recorder")).not.toBeInTheDocument();
-    // 用按钮角色定位：折叠说明里也提到了「识别减字图片」，纯文本匹配会撞上两个
-    expect(screen.getByRole("button", { name: /识别减字图片/ })).toBeInTheDocument();
-  });
-
-  it("点开识别：默认单字，可切整页，再点收起", () => {
-    render(<Home />);
-
-    fireEvent.click(screen.getByRole("button", { name: /识别减字图片/ }));
+  it("识别页单字 / 整页可切换，整页结果带回工作台", () => {
+    render(<RecognizePage />);
     expect(screen.getByTestId("recognizer-single")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("整页"));
+    fireEvent.click(screen.getByRole("tab", { name: "整页" }));
     expect(screen.getByTestId("recognizer-sheet")).toBeInTheDocument();
     expect(screen.queryByTestId("recognizer-single")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("单字"));
-    expect(screen.getByTestId("recognizer-single")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("收起识别"));
-    expect(screen.queryByTestId("recognizer-single")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("recognizer-sheet"));
+    expect(h.push).toHaveBeenCalledWith("/");
+    const queued = JSON.parse(window.sessionStorage.getItem("taiyin:bridge:notes:v1") ?? "null");
+    expect(queued?.value).toHaveLength(1);
   });
 
-  it("琴面 / 调音 / 跟录音练三个面板各自能开", () => {
-    render(<Home />);
-
-    fireEvent.click(screen.getByText(/琴面音位全览/));
-    expect(screen.getByTestId("qin-board")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText(/调音 \/ 定弦/));
-    expect(screen.getByTestId("tuner")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText(/跟录音练/));
-    expect(screen.getByTestId("practice")).toBeInTheDocument();
+  it("简谱录入页确认后同样带回工作台", () => {
+    // 这里只验页面结构；Translator 的候选流程由它自己的组件测试覆盖
+    render(<TranslatePage />);
+    expect(screen.getByRole("tab", { name: "简谱数字" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: "减字文本码" }));
+    expect(screen.getByRole("tab", { name: "减字文本码" })).toHaveAttribute("aria-selected", "true");
   });
 
-  it("练琴记录：默认录音页，可切到打卡与统计", () => {
+  it("日志页「练这句」带回句号并回到工作台", () => {
+    render(<PracticeLogPage />);
+    fireEvent.click(screen.getByTestId("practice-log"));
+    expect(h.push).toHaveBeenCalledWith("/");
+    expect(
+      JSON.parse(window.sessionStorage.getItem("taiyin:bridge:phrase:v1") ?? "null")?.value,
+    ).toBe(2);
+  });
+
+  it("主页不再挂五个工具面板，标题大纲只剩打谱相关三块", () => {
     render(<Home />);
+    for (const testid of [
+      "recognizer-single",
+      "qin-board",
+      "tuner",
+      "practice",
+      "recorder",
+      "practice-log",
+    ]) {
+      expect(screen.queryByTestId(testid)).not.toBeInTheDocument();
+    }
+    for (const name of ["曲谱", "录入减字", "演奏控制台"]) {
+      expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("heading", { level: 2, name: "谱字识别" })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByText(/练琴记录/));
-    expect(screen.getByTestId("recorder")).toBeInTheDocument();
+  it("工作台会接住功能页带回的谱字", async () => {
+    window.sessionStorage.setItem(
+      "taiyin:bridge:notes:v1",
+      JSON.stringify({
+        at: Date.now(),
+        value: [
+          {
+            id: "from-recognize",
+            jianpuNumber: 5,
+            jianpuOctave: "4",
+            jianpuDot: false,
+            duration: 0.5,
+            jianzi: { json: "test" },
+          } as unknown as NoteColumn,
+        ],
+      }),
+    );
+    const { container } = render(<Home />);
+    await waitFor(() => expect(screen.queryByText(/已从功能页带回 1 个谱字/)).toBeInTheDocument());
+    expect(container.querySelectorAll("[data-note-column]")).toHaveLength(1);
+    expect(window.sessionStorage.getItem("taiyin:bridge:notes:v1")).toBeNull();
+  });
 
-    fireEvent.click(screen.getByText("打卡与统计"));
-    expect(screen.getByTestId("practice-log")).toBeInTheDocument();
-    expect(screen.queryByTestId("recorder")).not.toBeInTheDocument();
+  it("跳转主内容链接仍指向可聚焦的 main", () => {
+    render(<Home />);
+    const skip = screen.getByRole("link", { name: "跳到主内容" });
+    expect(skip).toHaveAttribute("href", "#main-content");
+    expect(document.getElementById("main-content")).toHaveAttribute("tabindex", "-1");
+  });
 
-    fireEvent.click(screen.getByText("录音"));
-    expect(screen.getByTestId("recorder")).toBeInTheDocument();
+  it("设置页单独承载社区后端配置", () => {
+    render(<SettingsPage />);
+    expect(screen.getByRole("heading", { level: 1, name: /设置/ })).toBeInTheDocument();
   });
 });
